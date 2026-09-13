@@ -68,7 +68,8 @@ for f in \
   BuyWindow.swift \
   DeskBots.swift \
   DeskChrome.swift \
-  VarianceChart.swift
+  VarianceChart.swift \
+  BeatTrend.swift
 do
   [ -f "HubPrediction/$f" ] || bad "missing HubPrediction/$f"
   grep -q "$f" "$pbx" || bad "$f not in pbxproj"
@@ -208,7 +209,17 @@ grep -q 'openFromMin = 4' HubPrediction/BuyWindow.swift || bad "buy window 4m mi
 grep -q 'BUY UP' HubPrediction/BuyWindow.swift || bad "buy headline missing"
 grep -q 'NO BUY' HubPrediction/BuyWindow.swift || bad "no-buy headline missing"
 grep -q 'func tickBots' HubPrediction/DeskStore.swift || bad "bot executor missing"
-grep -q 'BOTS // EXECUTE' HubPrediction/DeskChrome.swift || bad "bot lane missing"
+grep -q 'BOTS // SCOUT' HubPrediction/DeskChrome.swift || bad "bot lane missing"
+grep -q '"SCOUT"' HubPrediction/DeskBots.swift || bad "SCOUT bot missing"
+grep -q '"SIGNAL"' HubPrediction/DeskBots.swift || bad "SIGNAL bot missing"
+grep -q '"RISK"' HubPrediction/DeskBots.swift || bad "RISK bot missing"
+grep -q 'STRIKE' HubPrediction/DeskBots.swift || bad "Strike alias missing"
+grep -q 'func evaluate' HubPrediction/BeatTrend.swift || bad "BeatTrend missing"
+grep -q 'BEAT TREND' HubPrediction/BeatTrend.swift || bad "beat chrome missing"
+grep -q 'store.beat.chrome' HubPrediction/DeskView.swift || bad "beat chrome not on call bar"
+grep -q 'pack.naive' HubPrediction/ChartCanvas.swift || bad "naive trend ray missing"
+grep -q 'pack.beat' HubPrediction/ChartCanvas.swift || bad "beat path missing"
+grep -q 'kalshiCall(attached, beat:' HubPrediction/DeskStore.swift || bad "call does not use beat-trend"
 grep -q 'confirmFromBot' HubPrediction/DeskStore.swift || bad "live bot confirm missing"
 grep -q 'expectedProfit' HubPrediction/SizeCash.swift || bad "profit sizing missing"
 grep -q 'CASH' HubPrediction/DeskChrome.swift || bad "cash strip missing"

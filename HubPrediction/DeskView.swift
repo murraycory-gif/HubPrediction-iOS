@@ -50,6 +50,8 @@ struct DeskView: View {
                         prior: store.quote?.prior ?? [],
                         lean: store.call.side,
                         dash: store.dash,
+                        quote: store.quote,
+                        beat: store.beat,
                         clockNow: now,
                         chartHeight: HubDesk.phoneChartHeight
                     )
@@ -100,6 +102,8 @@ struct DeskView: View {
                         prior: store.quote?.prior ?? [],
                         lean: store.call.side,
                         dash: store.dash,
+                        quote: store.quote,
+                        beat: store.beat,
                         clockNow: now,
                         chartHeight: HubDesk.macChartHeight
                     )
@@ -150,6 +154,9 @@ struct DeskView: View {
                     .font(.system(size: 30, weight: .bold, design: .monospaced))
                     .monospacedDigit()
             }
+            Text(store.beat.chrome)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .opacity(0.92)
             Text(BuyWindow.detail(phase: buyPhase, closeAt: store.quote?.closeAt ?? 0, now: now))
                 .font(.system(size: 11, design: .monospaced))
                 .opacity(0.85)

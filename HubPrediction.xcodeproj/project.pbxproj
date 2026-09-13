@@ -30,6 +30,7 @@
 		HP0100000000000000000A21 /* DeskBots.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B21 /* DeskBots.swift */; };
 		HP0100000000000000000A22 /* DeskChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B22 /* DeskChrome.swift */; };
 		HP0100000000000000000A23 /* VarianceChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B23 /* VarianceChart.swift */; };
+		HP0100000000000000000A24 /* BeatTrend.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B24 /* BeatTrend.swift */; };
 		HP0100000000000000000A90 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B90 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -57,6 +58,7 @@
 		HP0100000000000000000B21 /* DeskBots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskBots.swift; sourceTree = "<group>"; };
 		HP0100000000000000000B22 /* DeskChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskChrome.swift; sourceTree = "<group>"; };
 		HP0100000000000000000B23 /* VarianceChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VarianceChart.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B24 /* BeatTrend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeatTrend.swift; sourceTree = "<group>"; };
 		HP0100000000000000000B90 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		HP0100000000000000000B93 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		HP0100000000000000000B94 /* HubPrediction.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HubPrediction.entitlements; sourceTree = "<group>"; };
@@ -108,6 +110,7 @@
 				HP0100000000000000000B21 /* DeskBots.swift */,
 				HP0100000000000000000B22 /* DeskChrome.swift */,
 				HP0100000000000000000B23 /* VarianceChart.swift */,
+				HP0100000000000000000B24 /* BeatTrend.swift */,
 				HP0100000000000000000B90 /* Assets.xcassets */,
 				HP0100000000000000000B93 /* Info.plist */,
 				HP0100000000000000000B94 /* HubPrediction.entitlements */,
@@ -210,6 +213,7 @@
 				HP0100000000000000000A21 /* DeskBots.swift in Sources */,
 				HP0100000000000000000A22 /* DeskChrome.swift in Sources */,
 				HP0100000000000000000A23 /* VarianceChart.swift in Sources */,
+				HP0100000000000000000A24 /* BeatTrend.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

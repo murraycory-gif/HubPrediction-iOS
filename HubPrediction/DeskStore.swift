@@ -29,6 +29,7 @@ final class DeskStore: ObservableObject {
     @Published var botFiredTicker: String?
     @Published var confirmFromBot: Bool = false
     @Published var lastQuoteAt: Double = 0
+    @Published var beat: BeatPath = BeatPath()
 
     static let quoteIntervalMs = 1_000.0
     static let dashIntervalMs = 5_000.0
@@ -289,9 +290,22 @@ final class DeskStore: ObservableObject {
     private func publish(_ q: Quote) {
         let attached = attach(q)
         quote = attached
-        let raw = KalshiSignal.kalshiCall(attached)
+        recomputeBeat(attached)
+        let raw = KalshiSignal.kalshiCall(attached, beat: beat)
         call = KalshiSignal.holdThesis(quote: attached, next: raw, peek: peekThesis, write: writeThesis)
         if tradeSide == .sit, call.side != .sit { tradeSide = call.side }
+    }
+
+    private func recomputeBeat(_ q: Quote?) {
+        let now = Date.nowMs
+        beat = BeatTrend.evaluate(
+            quote: q ?? quote,
+            points: points.isEmpty ? (q?.points ?? []) : points,
+            prior: prior,
+            dash: dash,
+            now: now,
+            closeAt: q?.closeAt ?? quote?.closeAt ?? 0
+        )
     }
 
     func refreshQuote() async {
@@ -471,6 +485,7 @@ final class DeskStore: ObservableObject {
             if isToday && t >= nowSlot { upcoming.append(row) } else { elapsed.append(row) }
         }
         dash = Dash(day: ChicagoTime.dayKey(dayStart), weekday: ChicagoTime.weekdayName(dayStart), upcoming: upcoming, elapsed: elapsed)
+        recomputeBeat(quote)
     }
 
     private func nearest(_ points: [Point], _ t: Double) -> Double? {

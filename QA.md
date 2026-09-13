@@ -11,9 +11,9 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 | # | Check | Verdict | Notes |
 |---|--------|---------|-------|
 | 1 | Buy call in last 6–4 minutes before settle | KEEP (structural) | `BuyWindow`: WAIT / BUY UP / BUY DOWN / NO BUY / WINDOW CLOSED. Countdown on call bar. |
-| 2 | AI bots execute all buying (live + paper) | KEEP (structural) | Visible **BOTS // EXECUTE** lane (Strike / Tape / Path). Paper auto in window. LIVE Confirm. |
+| 2 | AI bots (SCOUT/SIGNAL/RISK) visible and in the forecast | KEEP (structural) | Port of desk.ts Strike/Tape/Path. Votes feed `BeatTrend`. Paper auto in window. LIVE Confirm. |
 | 3 | Show cash; size for profit | KEEP (structural) | `CashStrip` + quarter-Kelly `SizeCash` + expected profit EV. |
-| 4 | Beat-the-trend forecast; visible next-15m dash | KEEP (structural) | `chartWindow` + mint dash past now. |
+| 4 | Beat-the-trend forecast; visible next-15m dash | KEEP (structural) | Mint DASH = beat path (gap/tape/bots/shape). Orange dotted = naive last-6m. Not a last-week replot. Call bar shows BEAT/FADE/WITH TREND. |
 | 5 | Live updating tick | KEEP (structural) | Combine `.common` pulse (not `scheduledTimer`). Quote **1s**, dash **5s**, board **10s**. Chart uses wall-clock `clockNow`. |
 | 6 | Main chart: last week + theory + actual + current/upcoming | KEEP (structural) | `ChartCanvas` draws gray last week, blue theory, green actual/live, upcoming dash. |
 | 7 | Second chart: theory vs actual difference | KEEP (structural) | `VarianceChart` under TREND on Mac + iPhone. |

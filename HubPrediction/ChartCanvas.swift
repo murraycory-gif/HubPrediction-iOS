@@ -7,6 +7,8 @@ struct ChartCanvas: View {
     let prior: [Point]
     let lean: DeskSide
     var dash: Dash?
+    var quote: Quote?
+    var beat: BeatPath = BeatPath()
     var clockNow: Double = Date.nowMs
     var chartHeight: CGFloat = HubDesk.phoneChartHeight
 
@@ -25,12 +27,15 @@ struct ChartCanvas: View {
         let theory = dash?.theoryPath() ?? []
         let actualSlots = dash?.actualPath() ?? []
         let upcoming = dash?.upcomingTheory() ?? []
-        let forecast = Forecast.forwardRay(now: now, closeAt: closeAt, live: live, slopePerMin: slope, lean: lean)
-        let lastT = [forecast.last?.t, upcoming.last?.t, now + Forecast.futurePadMs].compactMap { $0 }.max()
+        let liveBeat = BeatTrend.evaluate(quote: quote, points: points, prior: prior, dash: dash, now: now, closeAt: closeAt)
+        let pack = liveBeat.beat.isEmpty ? beat : liveBeat
+        let naive = pack.naive
+        let forecast = pack.beat
+        let lastT = [forecast.last?.t, naive.last?.t, upcoming.last?.t, now + Forecast.futurePadMs].compactMap { $0 }.max()
         let window = Forecast.chartWindow(now: now, zoomMinutes: zoom, pan: pan, lastForecastT: lastT)
         let start = window.start
         let end = window.end
-        let ys = points.map(\.px) + lastWeek.map(\.px) + theory.map(\.px) + actualSlots.map(\.px) + forecast.map(\.px) + [live]
+        let ys = points.map(\.px) + lastWeek.map(\.px) + theory.map(\.px) + actualSlots.map(\.px) + forecast.map(\.px) + naive.map(\.px) + [live]
         let domain = Forecast.yDomain(live: live, values: ys)
 
         VStack(alignment: .leading, spacing: 8) {
@@ -108,8 +113,9 @@ struct ChartCanvas: View {
                         )
                     }
 
+                    line(naive, color: Color(red: 0.82, green: 0.52, blue: 0.18), width: 1.4, dash: true)
                     line(forecast, color: HubTheme.up.opacity(0.30), width: 5.0, dash: true)
-                    line(forecast, color: HubTheme.ink, width: 2.4, dash: true)
+                    line(forecast, color: HubTheme.ink, width: 2.6, dash: true)
 
                     func label(_ text: String, y: CGFloat, color: Color) {
                         ctx.draw(
@@ -124,7 +130,7 @@ struct ChartCanvas: View {
                 }
                 .frame(height: chartHeight)
             }
-            Text("GREEN actual/live · BLUE theory · GRAY last week · DASH next 15m + upcoming")
+            Text("GREEN actual · BLUE theory · GRAY last week · ORANGE naive · MINT DASH beat 15m")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(HubTheme.mute)
                 .tracking(0.8)

@@ -58,10 +58,10 @@ struct BotLane: View {
 
     var body: some View {
         let phase = BuyWindow.phase(closeAt: store.quote?.closeAt ?? 0, now: now)
-        let bots = DeskBots.analysts(quote: store.quote, call: store.call)
+        let bots = DeskBots.analysts(quote: store.quote, beat: store.beat)
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("BOTS // EXECUTE")
+                Text("BOTS // SCOUT · SIGNAL · RISK")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(HubTheme.mute)
                     .tracking(1.4)
@@ -80,12 +80,15 @@ struct BotLane: View {
             HStack(spacing: 8) {
                 ForEach(bots) { bot in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(bot.name)
+                        Text("\(bot.name) · \(bot.aka)")
                             .font(.system(size: 9, design: .monospaced))
                             .foregroundStyle(HubTheme.mute)
                         Text(bot.side == .up ? "UP" : bot.side == .down ? "DOWN" : "SIT")
                             .font(.system(size: 14, weight: .bold, design: .monospaced))
                             .foregroundStyle(bot.side == .up ? HubTheme.up : bot.side == .down ? HubTheme.down : HubTheme.ink)
+                        Text(bot.note)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(HubTheme.mute)
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
