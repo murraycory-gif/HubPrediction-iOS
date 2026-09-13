@@ -187,7 +187,7 @@ if grep -n 'Timer.scheduledTimer' HubPrediction/DeskStore.swift >/dev/null 2>&1;
   bad "DeskStore still uses scheduledTimer (Mac live tick FAIL)"
 fi
 grep -q 'func pulse(now' HubPrediction/DeskStore.swift || bad "pulse missing"
-grep -q 'quoteIntervalMs = 750' HubPrediction/DeskStore.swift || bad "750ms quote interval missing"
+grep -q 'quoteIntervalMs = 200' HubPrediction/DeskStore.swift || bad "200ms quote interval missing"
 grep -q 'func nudge()' HubPrediction/DeskStore.swift || bad "nudge missing"
 grep -q 'applyLiveChrome' HubPrediction/DeskStore.swift || bad "live chrome pulse missing"
 if grep -n 'Last ¢ is held on purpose' HubPrediction/DeskStore.swift >/dev/null 2>&1; then
@@ -236,7 +236,7 @@ grep -q 'in: .common' HubPrediction/DeskView.swift || bad "Combine timer must us
 grep -q 'clockNow: now' HubPrediction/GoldDesk.swift || bad "chart not wired to wall-clock now"
 grep -q 'clockNow' HubPrediction/ChartCanvas.swift || bad "ChartCanvas missing clockNow"
 grep -q 'waitsForConnectivity = false' HubPrediction/KalshiClient.swift || bad "session may stall on Catalyst"
-ok "live pulse 750ms quote / 5s dash / 10s board on Combine .common"
+ok "live pulse 200ms quote / 5s dash / 10s board on Combine .common"
 
 # Mac UX: titlebar inset + type scale (Catalyst traffic lights must not cover the call)
 grep -q 'macTitlebarInset' HubPrediction/HubDesk.swift || bad "macTitlebarInset missing"
@@ -281,6 +281,15 @@ if "allowsHitTesting(false)" not in view:
 desk = pathlib.Path("HubPrediction/HubDesk.swift").read_text()
 if "maximumSize" not in desk:
     print("FAIL: Catalyst window missing maximumSize (frozen at min)")
+    sys.exit(2)
+if "GeometryPreferences.Mac" not in desk or "systemFrame" not in desk:
+    print("FAIL: launch does not fill usable desktop via GeometryPreferences")
+    sys.exit(2)
+if "maxWidth: HubDesk.isMac ? 430" in gold:
+    print("FAIL: gold desk still locked to 430pt postage stamp")
+    sys.exit(2)
+if "GeometryReader" not in view:
+    print("FAIL: gold column does not scale with the window")
     sys.exit(2)
 if "WAIT · 6–4m WINDOW" in pathlib.Path("HubPrediction/TradePanel.swift").read_text():
     print("FAIL: dead WAIT button still blocks the trade row")

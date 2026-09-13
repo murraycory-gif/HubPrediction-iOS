@@ -19,13 +19,14 @@ enum HubDesk {
     /// Now + next slots on first paint — not the full 96-row wall.
     static let macNowNextRows = 8
     /// Small enough to sit on a 13" laptop without eating the display.
-    static let macMinWidth: CGFloat = 880
-    static let macMinHeight: CGFloat = 620
-    static let macDefaultWidth: CGFloat = 1200
-    static let macDefaultHeight: CGFloat = 800
+    static let macMinWidth: CGFloat = 720
+    static let macMinHeight: CGFloat = 520
+    static let macDefaultWidth: CGFloat = 1440
+    static let macDefaultHeight: CGFloat = 900
     /// Catalyst treats a missing maximum as min==max (window frozen).
-    static let macMaxWidth: CGFloat = 10_000
-    static let macMaxHeight: CGFloat = 10_000
+    static let macMaxWidth: CGFloat = 20_000
+    static let macMaxHeight: CGFloat = 20_000
+    private static var didFillDesktop = false
 
     /// Clear, non-hit-testable strip so the system titlebar stays a real drag region.
     static let macTitlebarInset: CGFloat = 28
@@ -48,7 +49,9 @@ enum HubDesk {
     }
 
     /// Visible system titlebar (drag + traffic lights) and a resizable window.
-    /// Omitting `maximumSize` freezes Catalyst at `minimumSize`.
+    /// `sizeRestrictions` is often nil on Catalyst (= fixed 924×648). Prefer
+    /// `GeometryPreferences.Mac` so launch fills the usable desktop without
+    /// locking full-screen — still drag and resize.
     static func pinMacTitlebar() {
         #if targetEnvironment(macCatalyst)
         for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
@@ -58,9 +61,31 @@ enum HubDesk {
             }
             scene.sizeRestrictions?.minimumSize = CGSize(width: macMinWidth, height: macMinHeight)
             scene.sizeRestrictions?.maximumSize = CGSize(width: macMaxWidth, height: macMaxHeight)
+            let bounds = scene.screen.bounds
+            let margin: CGFloat = 8
+            let menu: CGFloat = 25
+            let dock: CGFloat = 72
+            let frame = CGRect(
+                x: margin,
+                y: menu + margin,
+                width: max(macMinWidth, bounds.width - margin * 2),
+                height: max(macMinHeight, bounds.height - menu - dock - margin)
+            )
+            let fill = !didFillDesktop && !scene.windows.isEmpty
+            if fill { didFillDesktop = true }
+            if #available(macCatalyst 16.0, *) {
+                let prefs = UIWindowScene.GeometryPreferences.Mac()
+                prefs.minimumSize = CGSize(width: macMinWidth, height: macMinHeight)
+                prefs.maximumSize = CGSize(width: macMaxWidth, height: macMaxHeight)
+                if fill { prefs.systemFrame = frame }
+                scene.requestGeometryUpdate(prefs) { _ in }
+            }
             for window in scene.windows {
-                window.backgroundColor = UIColor(red: 0.027, green: 0.031, blue: 0.039, alpha: 1)
+                window.backgroundColor = .black
                 window.rootViewController?.additionalSafeAreaInsets = .zero
+                if fill {
+                    window.frame = frame
+                }
             }
         }
         #endif

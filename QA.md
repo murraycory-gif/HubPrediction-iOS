@@ -14,7 +14,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 | 2 | AI bots execute ALL buying (live + paper) in 6–4m | KEEP (structural) | SCOUT/SIGNAL/RISK. Armed bots call `confirmPlace` for paper and LIVE (keys required). Humans also gated to `BuyPhase.open`. |
 | 3 | Show cash; size for profit | KEEP (structural) | `CashStrip` + quarter-Kelly `SizeCash` + expected profit EV. |
 | 4 | Beat-the-trend forecast; visible next-15m dash | KEEP (structural) | Mint DASH = beat path (gap/tape/bots/shape). Orange dotted = naive last-6m. Not a last-week replot. Call bar shows BEAT/FADE/WITH TREND. |
-| 5 | Live spot-on refresh | KEEP (structural) | Combine `.common` pulse. Spot/asks **750ms**. Call is `kalshiCall` + `holdThesis` (LOCK until hard reverse). Halt does not freeze spot. Board cannot clobber fresher asks. |
+| 5 | Live spot-on refresh | KEEP (structural) | Combine `.common` pulse **200ms**. Spot/asks **200ms**. Call is `kalshiCall` + `holdThesis`. Halt does not freeze spot. Board cannot clobber fresher asks. |
 | 6 | Main chart: last week + theory + actual + current/upcoming | KEEP (structural) | `ChartCanvas` draws gray last week, blue theory, green actual/live, upcoming dash. |
 | 7 | Second chart: theory vs actual difference | KEEP (structural) | `VarianceChart` under TREND on Mac + iPhone. |
 | 8 | Markets browse + trade place/confirm + error/retry | KEEP (structural) | Markets sheet, PAPER/LIVE trade, banner Retry. |
@@ -27,7 +27,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 | TF HOLD | HOLD | Do not `./push-hub-testflight.sh`. |
 | Mac visual Soft KEEP PASS | **not claimed** | Cory Run is the only visual PASS. Linux cannot Run Catalyst. |
 | Top BUY call | KEEP (source) | Gold hero pill + POSTED / THEORY CLOSE / LIVE VS POSTED + KALSHI POSTED / THEORY AT CLOSE + huge UP/DOWN ¢ + Trend. `kalshiCall` + `holdThesis`. |
-| Mac window | KEEP (source) | Titlebar drag strip clear. Catalyst `maximumSize` set so the window is not frozen. |
+| Mac window | KEEP (source) | Launch fills usable desktop via `GeometryPreferences.Mac`. Still drag/resize. Gold desk stretches with the window. |
 | First-paint theory | KEEP (source) | Gold Trend card first; rest-of-day 9-col table stays in the scroll below. |
 | Device Run | Soft until Cory Run | Mac + iPhone. |
 

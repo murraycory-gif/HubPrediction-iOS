@@ -5,6 +5,7 @@ import SwiftUI
 struct GoldDesk: View {
     @EnvironmentObject private var store: DeskStore
     var now: Double
+    var chartHeight: CGFloat = 220
 
     private var quote: Quote? { store.quote }
     private var call: DeskCall { store.call }
@@ -33,9 +34,9 @@ struct GoldDesk: View {
             askPills
             trendCard
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, HubDesk.isMac ? 28 : 16)
         .padding(.top, 8)
-        .frame(maxWidth: HubDesk.isMac ? 430 : .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .confirmationDialog(
             store.mode == .paper
                 ? "Paper fill \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP") at \(Money.cents(store.tradeSide == .down ? quote?.noAsk : quote?.yesAsk))?"
@@ -210,7 +211,7 @@ struct GoldDesk: View {
                 quote: quote,
                 beat: store.beat,
                 clockNow: now,
-                chartHeight: 220,
+                chartHeight: chartHeight,
                 gold: true,
                 nextLine: "Next 15m \(theoryDown ? "DOWN" : theoryUp ? "UP" : "FLAT") vs this trend"
             )

@@ -27,11 +27,16 @@ struct DeskView: View {
                     .accessibilityHidden(true)
             }
         }
-        .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
+        .onReceive(Timer.publish(every: 0.20, on: .main, in: .common).autoconnect()) { _ in
             now = Date.nowMs
             store.pulse(now: now)
         }
-        .task { store.start() }
+        .task {
+            store.start()
+            HubDesk.pinMacTitlebar()
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            HubDesk.pinMacTitlebar()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 store.nudge()
@@ -42,18 +47,21 @@ struct DeskView: View {
         .sheet(isPresented: $showKeys) { CredsSheet().environmentObject(store) }
     }
 
-    /// Gold Grok Build first paint. Bots/QUEUE/SCOUT are not on this surface.
+    /// Gold Grok Build first paint. Fills the window — no 430pt postage stamp.
     private var goldColumn: some View {
-        ScrollView {
-            VStack(alignment: .center, spacing: 0) {
-                GoldDesk(now: now)
-                AlertBanner()
-                quietTools
-                dayFilter
-                restOfDay
+        GeometryReader { geo in
+            let chartH = max(220, geo.size.height - (HubDesk.isMac ? 390 : 430))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    GoldDesk(now: now, chartHeight: chartH)
+                    AlertBanner()
+                    quietTools
+                    dayFilter
+                    restOfDay
+                }
+                .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .top)
+                .padding(.bottom, 28)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.bottom, 28)
         }
     }
 

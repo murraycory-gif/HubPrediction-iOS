@@ -36,10 +36,10 @@ final class DeskStore: ObservableObject {
     @Published var queuedSide: DeskSide = .up
     @Published var queuedCount: Int = 1
 
-    static let quoteIntervalMs = 750.0
+    static let quoteIntervalMs = 200.0
     static let dashIntervalMs = 5_000.0
     static let boardIntervalMs = 10_000.0
-    static let inflightWatchMs = 3_000.0
+    static let inflightWatchMs = 1_400.0
 
     private var lastDashAt: Double = 0
     private var lastBoardAt: Double = 0
@@ -425,7 +425,7 @@ final class DeskStore: ObservableObject {
         let now = Date.nowMs
         do {
             async let statusP = KalshiClient.fetchStatus()
-            async let coinP = KalshiClient.fetchCoinbase(timeout: 1.5)
+            async let coinP = KalshiClient.fetchCoinbase(timeout: 0.7)
             async let marketP = fetchOpenMarket(now: now)
             let st = try? await statusP
             if let st {
