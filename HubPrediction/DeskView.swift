@@ -50,19 +50,28 @@ struct DeskView: View {
         }
     }
 
+    /// Signal chrome is pinned. Rest-of-day / elapsed tables (~96 slots) live
+    /// only in the ScrollView so they cannot crush first paint.
     private var wideDesk: some View {
+        VStack(spacing: 0) {
+            signalDesk
+                .layoutPriority(1)
+            ScrollView {
+                dayFilter
+                restOfDay
+                    .padding(.bottom, 28)
+            }
+        }
+    }
+
+    private var signalDesk: some View {
         VStack(spacing: 0) {
             callBar
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
             liveLine
+            tape
             HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 0) {
-                    tape
-                    roulette
-                    dayFilter
-                }
-                .frame(minWidth: 360, idealWidth: 420, maxWidth: 460, alignment: .top)
                 ChartCanvas(
                     live: store.quote?.live ?? 0,
                     closeAt: store.quote?.closeAt ?? 0,
@@ -72,9 +81,9 @@ struct DeskView: View {
                     chartHeight: HubDesk.macChartHeight
                 )
                 .frame(maxWidth: .infinity, alignment: .top)
+                roulette
+                    .frame(minWidth: 280, idealWidth: 320, maxWidth: 360, alignment: .top)
             }
-            restOfDay
-            Spacer(minLength: 8)
         }
     }
 
@@ -189,7 +198,7 @@ struct DeskView: View {
         let up = list.filter { $0.result == .up }.count
         let down = list.count - up
         let upPct = list.isEmpty ? 0 : Int((Double(up) / Double(list.count) * 100.0).rounded())
-        let cols = wide ? 12 : 8
+        let cols = 8
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("ROULETTE · LAST \(list.isEmpty ? "—" : "\(list.count)") SETTLED")
@@ -205,7 +214,7 @@ struct DeskView: View {
                 ForEach(list.isEmpty ? placeholders : list) { item in
                     RoundedRectangle(cornerRadius: 6)
                         .fill(item.ticker == "—" ? HubTheme.chip : item.result == .up ? HubTheme.up : HubTheme.down)
-                        .frame(height: 32)
+                        .frame(height: wide ? 22 : 32)
                         .shadow(color: item.ticker == "—" ? .clear : (item.result == .up ? HubTheme.up : HubTheme.down).opacity(0.4), radius: 6)
                 }
             }
@@ -218,7 +227,7 @@ struct DeskView: View {
     }
 
     private var placeholders: [Settled] {
-        (0..<(wide ? 12 : 8)).map { Settled(ticker: "—", closeAt: Double($0), result: .sit) }
+        (0..<8).map { Settled(ticker: "—", closeAt: Double($0), result: .sit) }
     }
 
     private var dayFilter: some View {

@@ -19,7 +19,7 @@ This product is **HubPrediction-iOS only** — view-only BTC15m desk (`KXBTC15M`
 | 9 | Network client entitlement | KEEP | Sandbox + `network.client` — required for Catalyst and iPhone. |
 | 10 | Export compliance | KEEP | `ITSAppUsesNonExemptEncryption` = false. |
 | 11 | iPhone kept | KEEP | `TARGETED_DEVICE_FAMILY = 1,2` (iPhone + iPad size class). iPhone orientations stay portrait. |
-| 12 | Mac destination is Catalyst, not stretched phone | KEEP | `SUPPORTS_MACCATALYST = YES`. `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO` so Xcode offers **My Mac (Mac Catalyst)**, not Designed-for-iPhone. Wide desk: call bar + two columns + full-width table. |
+| 12 | Mac destination is Catalyst, not stretched phone | KEEP | `SUPPORTS_MACCATALYST = YES`. Designed-for-iPhone off. |
 | 13 | Cold open starts the desk | KEEP | `HubPredictionApp` `.onAppear { store.start() }` on both destinations. |
 | 14 | TF archive script is iOS-only Hub | KEEP | `./push-hub-testflight.sh` uses `generic/platform=iOS`. Mac view is Xcode Run, not TestFlight. |
 | 15 | Docs / Fastlane point at this repo | KEEP | `~/Developer/HubPrediction-iOS`. Fastfile has no Heartbeat project/scheme. |
@@ -28,11 +28,12 @@ This product is **HubPrediction-iOS only** — view-only BTC15m desk (`KXBTC15M`
 | 18 | `xcodebuild` iOS archive / Mac Catalyst run | Soft KEEP | No Xcode in this Linux environment. Settings are ready for the Mac commands below. |
 | 19 | App Store Connect listing | Soft KEEP | First-time create steps in `HUB_TESTFLIGHT.md`. iOS only. |
 | 20 | TestFlight install on Cory’s iPhone | Soft KEEP | Internal group → TestFlight → **HUB Pred**. |
-| 21 | Live Mac window + live quotes | Soft KEEP | Human: Xcode → **My Mac (Mac Catalyst)** → Run. |
+| 21 | Live Mac window + live quotes | Soft KEEP | Human: Xcode → **My Mac (Mac Catalyst)** → Run. Pull this tip, then confirm call bar / tape / chart / roulette are visible without scrolling. |
+| 22 | Mac first-paint: signal desk above the fold | Soft FAIL → KEEP (structural) | **Soft FAIL** on Cory’s Run: first paint was only ELAPSED / rest-of-day tables (dashes). Cause: `wideDesk` put ~96 slot rows in an uncapped VStack, so tables ate the window. **Tip:** `signalDesk` (call bar `VIEW · KXBTC15M`, tape, chart, roulette) is now pinned; tables scroll underneath. Live window still Soft KEEP until Cory re-Runs. |
 
-## FAIL (none)
+## FAIL
 
-No FAIL items after the Catalyst + wide-desk change.
+**Soft FAIL — Mac first-paint (Cory’s last Run).** Only rest-of-day / ELAPSED tables were discoverable. Fixed in this tip; re-Run on **My Mac (Mac Catalyst)** to confirm. No trade UI added.
 
 ## How Cory runs it
 

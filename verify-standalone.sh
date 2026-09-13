@@ -100,6 +100,40 @@ else
   bad "cold open missing store.start"
 fi
 
+# Mac first-paint: signal chrome pinned; tables only inside a ScrollView
+if python3 - <<'PY'
+import pathlib, sys
+src = pathlib.Path("HubPrediction/DeskView.swift").read_text()
+for n in (
+    "DESK // SIGNAL · VIEW · KXBTC15M",
+    "private var signalDesk",
+    "private var wideDesk",
+):
+    if n not in src:
+        print("FAIL:", n)
+        sys.exit(2)
+wide = src.split("private var wideDesk", 1)[1].split("private var signalDesk", 1)[0]
+if "ScrollView" not in wide:
+    print("FAIL: wideDesk has no ScrollView")
+    sys.exit(2)
+before, after = wide.split("ScrollView", 1)
+if "restOfDay" in before:
+    print("FAIL: restOfDay appears before ScrollView in wideDesk")
+    sys.exit(2)
+if "restOfDay" not in after:
+    print("FAIL: restOfDay not inside ScrollView")
+    sys.exit(2)
+if "signalDesk" not in before:
+    print("FAIL: signal desk not pinned above ScrollView")
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "Mac first-paint pins signal desk above tables"
+else
+  bad "Mac first-paint layout"
+fi
+
 icon=HubPrediction/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 if [ -f "$icon" ]; then
   info=$(file "$icon")
