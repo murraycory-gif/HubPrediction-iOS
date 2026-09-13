@@ -66,7 +66,7 @@ struct BotLane: View {
                     .foregroundStyle(HubTheme.quiet)
                     .tracking(1.4)
                 Spacer()
-                Button(store.botsArmed ? "BOTS ON" : "BOTS OFF") {
+                Button(store.botsArmed ? "BOTS ON" : "ARM BOTS") {
                     store.setBotsArmed(!store.botsArmed)
                 }
                 .buttonStyle(.plain)

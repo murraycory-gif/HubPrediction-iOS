@@ -242,13 +242,19 @@ view = pathlib.Path("HubPrediction/DeskView.swift").read_text()
 if "safeAreaInset(edge: .top" not in view:
     print("FAIL: no top safeAreaInset")
     sys.exit(2)
-if "TradePanel(compact: !HubDesk.isMac)" not in view:
-    print("FAIL: Mac trade panel still compact")
+if "macOperator" not in view or "TradePanel(compact: false, now: now)" not in view:
+    print("FAIL: Mac operator desk / trade column missing")
+    sys.exit(2)
+if "WAIT · 6–4m WINDOW" in pathlib.Path("HubPrediction/TradePanel.swift").read_text():
+    print("FAIL: dead WAIT button still blocks the trade row")
+    sys.exit(2)
+if "disabled(store.tradeBusy || !store.windowOpen)" in pathlib.Path("HubPrediction/TradePanel.swift").read_text():
+    print("FAIL: trade row still disables all action outside the window")
     sys.exit(2)
 sys.exit(0)
 PY
 then
-  ok "Mac UX: titlebar inset + larger type (phone stays dense)"
+  ok "Mac operator desk + titlebar inset (phone stays dense)"
 else
   bad "Mac UX titlebar / type"
 fi
@@ -324,6 +330,35 @@ then
   ok "window-gated fills; bots execute paper + live"
 else
   bad "window gate / live bot execute"
+fi
+grep -q 'func nextAction' HubPrediction/BuyWindow.swift || bad "BuyWindow nextAction missing"
+grep -q 'func queueForWindow' HubPrediction/DeskStore.swift || bad "queueForWindow missing"
+grep -q 'func tickQueue' HubPrediction/DeskStore.swift || bad "tickQueue missing"
+grep -q 'tickQueue(now:' HubPrediction/DeskStore.swift || bad "pulse does not tick queued fills"
+grep -q 'QUEUE' HubPrediction/TradePanel.swift || bad "QUEUE CTA missing"
+grep -q 'ARM BOTS' HubPrediction/TradePanel.swift || bad "ARM BOTS CTA missing"
+grep -q 'struct WindowActions' HubPrediction/TradePanel.swift || bad "WindowActions missing"
+if python3 - <<'PY'
+import pathlib, sys
+src = pathlib.Path("HubPrediction/DeskStore.swift").read_text()
+pulse = src.split("func pulse(now", 1)[1].split("func nudge", 1)[0]
+if "tickQueue(now:" not in pulse:
+    print("FAIL: pulse does not tick the human queue")
+    sys.exit(2)
+q = src.split("func tickQueue", 1)[1].split("@discardableResult", 1)[0]
+if "confirmPlace" not in q:
+    print("FAIL: queued fill does not execute confirmPlace")
+    sys.exit(2)
+conf = src.split("func confirmPlace", 1)[1].split("private func attach", 1)[0]
+if "assertOpenWindow" not in conf:
+    print("FAIL: queued/human confirm lost the 6–4m gate")
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "waiting is actionable (ARM/QUEUE); fills still 6–4m gated"
+else
+  bad "queue / waiting CTA / window gate"
 fi
 grep -q 'BOTS // SCOUT' HubPrediction/DeskChrome.swift || bad "bot lane missing"
 grep -q '"SCOUT"' HubPrediction/DeskBots.swift || bad "SCOUT bot missing"

@@ -31,6 +31,9 @@ final class DeskStore: ObservableObject {
     @Published var lastQuoteAt: Double = 0
     @Published var beat: BeatPath = BeatPath()
     @Published var windowOpen: Bool = false
+    @Published var queued: Bool = false
+    @Published var queuedSide: DeskSide = .up
+    @Published var queuedCount: Int = 1
 
     static let quoteIntervalMs = 750.0
     static let dashIntervalMs = 5_000.0
@@ -93,6 +96,7 @@ final class DeskStore: ObservableObject {
         }
         applyLiveChrome(now: now)
         tickBots(now: now)
+        tickQueue(now: now)
         if now - lastQuoteAt >= Self.quoteIntervalMs {
             Task { await refreshQuote() }
         }
@@ -213,7 +217,44 @@ final class DeskStore: ObservableObject {
         DeskBots.armed = on
         botNote = on
             ? "Bots armed — execute ALL buys in the 6–4m window. Paper local · LIVE Kalshi (keys required)."
-            : "Bots off."
+            : "Bots off. ARM or QUEUE a fill — waiting is not a lockout."
+    }
+
+    func queueForWindow() {
+        if tradeSide == .sit { tradeSide = call.side == .down ? .down : .up }
+        queuedSide = tradeSide
+        queuedCount = min(SizeCash.maxContracts, max(1, tradeCount))
+        queued = true
+        tradeNote = "Queued \(queuedCount) \(queuedSide == .down ? "DOWN" : "UP") — fires in the 6–4m window. Paper local · LIVE needs Keys."
+    }
+
+    func clearQueue() {
+        queued = false
+        tradeNote = "Queue cleared. Arm bots or queue again."
+    }
+
+    func tickQueue(now: Double) {
+        guard queued, !tradeBusy else { return }
+        let phase = BuyWindow.phase(closeAt: quote?.closeAt ?? 0, now: now)
+        if phase == .late || phase == .settled {
+            queued = false
+            tradeNote = "Queue expired — window closed. Arm bots for the next 15m."
+            return
+        }
+        guard phase == .open else { return }
+        if mode == .live {
+            guard hasCreds else {
+                banner = DeskBanner(title: "Keys needed", detail: "Queued LIVE fill needs Keys. Switch to Paper or paste keys.", holdingLast: false)
+                return
+            }
+            if status?.tradingActive == false { return }
+        }
+        tradeSide = queuedSide
+        tradeCount = queuedCount
+        queued = false
+        confirmFromBot = false
+        tradeNote = "Queued fill — executing \(tradeCount) \(tradeSide == .down ? "DOWN" : "UP")."
+        Task { await confirmPlace(fromBot: false) }
     }
 
     func tickBots(now: Double) {

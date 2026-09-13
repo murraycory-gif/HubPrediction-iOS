@@ -66,4 +66,24 @@ enum BuyWindow {
             return "MARKET SETTLED"
         }
     }
+
+    /// What Cory can do right now — waiting must not be a brick wall.
+    static func nextAction(phase: BuyPhase, botsArmed: Bool, queued: Bool) -> String {
+        switch phase {
+        case .waiting:
+            if botsArmed { return "NEXT: bots execute when 6–4m opens. Size/side stay live." }
+            if queued { return "NEXT: queued fill fires when 6–4m opens. Cancel anytime." }
+            return "NEXT: ARM BOTS or QUEUE a fill — both fire in the 6–4m window."
+        case .open:
+            return "NEXT: window open — place now or let armed bots execute."
+        case .late:
+            return "NEXT: this window is closed. Arm bots for the next 15m."
+        case .settled:
+            return "NEXT: pick the next market or wait for the next 15m."
+        }
+    }
+
+    static func opensInMs(closeAt: Double, now: Double) -> Double {
+        max(0, remainingMs(closeAt: closeAt, now: now) - openUntilMin * HubMs.minute)
+    }
 }

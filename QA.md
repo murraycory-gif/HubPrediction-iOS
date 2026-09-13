@@ -24,10 +24,10 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 
 | Extra | Verdict | Notes |
 |-------|---------|-------|
-| TF HOLD | KEEP | Do not `./push-hub-testflight.sh` yet. |
-| Catalyst compile (`refreshBoard` await) | KEEP (structural) | `await fetchMarket` is no longer inside `if let … ??`. Linux has no `xcodebuild`; Cory Mac Run is the green compile. |
-| Mac UX (titlebar + readability) | KEEP (structural) | 38pt Catalyst top inset so BEAT/BUY/banner clear traffic lights. Mac-only type/spacing/contrast. iPhone stays dense. |
-| Device Run (window/bots/charts/fills) | Soft KEEP | Needs Cory Run on Mac + iPhone. Live needs PEM. |
+| TF HOLD | HOLD | Do not `./push-hub-testflight.sh`. |
+| Mac visual Soft KEEP PASS | **not claimed** | Cory Run is the only visual PASS. Linux cannot Run Catalyst. |
+| Waiting lockout (WAIT + bots OFF) | KEEP (source) | Dead `WAIT · 6–4m WINDOW` button is gone. ARM BOTS + QUEUE fire in 6–4m. Fills still gated. |
+| Device Run | Soft until Cory Run | Mac + iPhone. |
 
 ## FAIL
 

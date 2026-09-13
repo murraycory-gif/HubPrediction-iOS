@@ -3,6 +3,7 @@ import SwiftUI
 struct TradePanel: View {
     @EnvironmentObject private var store: DeskStore
     var compact: Bool
+    var now: Double = Date.nowMs
 
     var body: some View {
         VStack(alignment: .leading, spacing: HubDesk.isMac ? 14 : 10) {
@@ -59,24 +60,10 @@ struct TradePanel: View {
                     .foregroundStyle(HubTheme.quiet)
                 Spacer()
             }
-            Button {
-                store.requestPlace()
-            } label: {
-                Text(store.tradeBusy ? "PLACING…" : (store.windowOpen
-                     ? "\(store.mode == .paper ? "PAPER" : "LIVE") \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP")"
-                     : "WAIT · 6–4m WINDOW"))
-                    .font(HubDesk.font(14, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: compact ? 42 : 52)
-                    .background(store.windowOpen ? (store.tradeSide == .down ? HubTheme.down : HubTheme.up) : HubTheme.chip)
-                    .foregroundStyle(store.windowOpen ? Color(red: 0.02, green: 0.04, blue: 0.03) : HubTheme.quiet)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            }
-            .buttonStyle(.plain)
-            .disabled(store.tradeBusy || !store.windowOpen)
+            WindowActions(compact: compact, now: now)
             if let note = store.tradeNote {
                 Text(note)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(HubDesk.font(11))
                     .foregroundStyle(HubTheme.up)
             }
         }
@@ -126,6 +113,104 @@ struct TradePanel: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Waiting is not a lockout. Fills still only execute in the 6–4m window.
+struct WindowActions: View {
+    @EnvironmentObject private var store: DeskStore
+    var compact: Bool
+    var now: Double = Date.nowMs
+
+    private var phase: BuyPhase {
+        BuyWindow.phase(closeAt: store.quote?.closeAt ?? 0, now: now)
+    }
+
+    private var height: CGFloat { compact ? 42 : 52 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(BuyWindow.nextAction(phase: phase, botsArmed: store.botsArmed, queued: store.queued))
+                .font(HubDesk.font(12, weight: .semibold))
+                .foregroundStyle(HubTheme.copy)
+            switch phase {
+            case .waiting:
+                waitingRow
+            case .open:
+                placeBtn
+            case .late, .settled:
+                Text(phase == .settled ? "Settled. Browse the next 15m." : "Window closed. Arm bots for the next 15m.")
+                    .font(HubDesk.font(11))
+                    .foregroundStyle(HubTheme.quiet)
+                if !store.botsArmed {
+                    armBtn
+                }
+            }
+        }
+    }
+
+    private var waitingRow: some View {
+        HStack(spacing: 10) {
+            if store.botsArmed {
+                Text("BOTS ARMED · buy in \(BuyWindow.clock(BuyWindow.opensInMs(closeAt: store.quote?.closeAt ?? 0, now: now)))")
+                    .font(HubDesk.font(13, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: height)
+                    .background(HubTheme.up.opacity(0.22))
+                    .foregroundStyle(HubTheme.up)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                armBtn
+            }
+            if store.queued {
+                Button("CANCEL QUEUE") { store.clearQueue() }
+                    .buttonStyle(.plain)
+                    .font(HubDesk.font(13, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: height)
+                    .background(HubTheme.chip)
+                    .foregroundStyle(HubTheme.copy)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                Button("QUEUE \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP") FOR 6–4m") {
+                    store.queueForWindow()
+                }
+                .buttonStyle(.plain)
+                .font(HubDesk.font(13, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .frame(height: height)
+                .background(HubTheme.ink.opacity(0.12))
+                .foregroundStyle(HubTheme.copy)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private var armBtn: some View {
+        Button("ARM BOTS") { store.setBotsArmed(true) }
+            .buttonStyle(.plain)
+            .font(HubDesk.font(14, weight: .bold))
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .background(HubTheme.up)
+            .foregroundStyle(Color(red: 0.02, green: 0.04, blue: 0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var placeBtn: some View {
+        Button {
+            store.requestPlace()
+        } label: {
+            Text(store.tradeBusy ? "PLACING…" : "\(store.mode == .paper ? "PAPER" : "LIVE") \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP")")
+                .font(HubDesk.font(14, weight: .bold))
+                .frame(maxWidth: .infinity)
+                .frame(height: height)
+                .background(store.tradeSide == .down ? HubTheme.down : HubTheme.up)
+                .foregroundStyle(Color(red: 0.02, green: 0.04, blue: 0.03))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .disabled(store.tradeBusy)
     }
 }
 

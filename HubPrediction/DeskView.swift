@@ -51,7 +51,7 @@ struct DeskView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     CashStrip()
                     BotLane(now: now)
-                    TradePanel(compact: true)
+                    TradePanel(compact: true, now: now)
                     tape
                     liveLine
                     ChartCanvas(
@@ -95,16 +95,34 @@ struct DeskView: View {
     }
 
     private var signalDesk: some View {
-        VStack(spacing: HubDesk.isMac ? 4 : 0) {
+        Group {
+            if HubDesk.isMac {
+                macOperator
+            } else {
+                stackedSignal
+            }
+        }
+    }
+
+    /// Mac: operator columns — call + (cash/trade | asks/bots) + charts. Not a wall of chrome.
+    private var macOperator: some View {
+        VStack(spacing: 10) {
             callBar
                 .padding(.horizontal, HubDesk.sectionPad)
-                .padding(.top, HubDesk.isMac ? 8 : 12)
-            liveLine
-            CashStrip()
-            BotLane(now: now)
-            TradePanel(compact: !HubDesk.isMac)
-            tape
-            HStack(alignment: .top, spacing: HubDesk.isMac ? 16 : 8) {
+                .padding(.top, 8)
+            HStack(alignment: .top, spacing: 16) {
+                VStack(spacing: 0) {
+                    CashStrip()
+                    TradePanel(compact: false, now: now)
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+                VStack(spacing: 0) {
+                    tape
+                    BotLane(now: now)
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            HStack(alignment: .top, spacing: 16) {
                 VStack(spacing: 0) {
                     ChartCanvas(
                         live: store.quote?.live ?? 0,
@@ -125,7 +143,43 @@ struct DeskView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
                 roulette
-                    .frame(minWidth: HubDesk.isMac ? 260 : 240, idealWidth: HubDesk.isMac ? 300 : 280, maxWidth: HubDesk.isMac ? 360 : 320, alignment: .top)
+                    .frame(minWidth: 260, idealWidth: 300, maxWidth: 360, alignment: .top)
+            }
+        }
+    }
+
+    private var stackedSignal: some View {
+        VStack(spacing: 0) {
+            callBar
+                .padding(.horizontal, HubDesk.sectionPad)
+                .padding(.top, 12)
+            liveLine
+            CashStrip()
+            BotLane(now: now)
+            TradePanel(compact: true, now: now)
+            tape
+            HStack(alignment: .top, spacing: 8) {
+                VStack(spacing: 0) {
+                    ChartCanvas(
+                        live: store.quote?.live ?? 0,
+                        closeAt: store.quote?.closeAt ?? 0,
+                        points: store.quote?.points ?? [],
+                        prior: store.quote?.prior ?? [],
+                        lean: store.call.side,
+                        dash: store.dash,
+                        quote: store.quote,
+                        beat: store.beat,
+                        clockNow: now,
+                        chartHeight: HubDesk.macChartHeight
+                    )
+                    VarianceChart(
+                        rows: store.dash?.elapsed ?? [],
+                        chartHeight: HubDesk.macVarianceHeight
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+                roulette
+                    .frame(minWidth: 240, idealWidth: 280, maxWidth: 320, alignment: .top)
             }
         }
     }
@@ -171,6 +225,9 @@ struct DeskView: View {
             Text(BuyWindow.detail(phase: buyPhase, closeAt: store.quote?.closeAt ?? 0, now: now))
                 .font(HubDesk.font(11))
                 .opacity(0.88)
+            Text(BuyWindow.nextAction(phase: buyPhase, botsArmed: store.botsArmed, queued: store.queued))
+                .font(HubDesk.font(13, weight: .semibold))
+                .opacity(0.96)
             HStack {
                 Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted · live")
                     .font(HubDesk.font(12))
