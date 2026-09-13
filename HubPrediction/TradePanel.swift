@@ -12,9 +12,22 @@ struct TradePanel: View {
                     .foregroundStyle(HubTheme.mute)
                     .tracking(1.4)
                 Spacer()
-                Text(store.hasCreds ? (store.cash == nil ? "keys on" : "cash \(Money.dollarsExact(store.cash))") : "no keys")
+                modeBtn("PAPER", .paper)
+                modeBtn("LIVE", .live)
+            }
+            HStack {
+                Text(store.mode == .paper
+                     ? "Paper cash \(Money.dollarsExact(PaperBook.cash)) · local fills only"
+                     : (store.hasCreds ? (store.cash == nil ? "LIVE keys on" : "LIVE cash \(Money.dollarsExact(store.cash))") : "LIVE needs Keys"))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(HubTheme.mute)
+                Spacer()
+                if store.mode == .paper {
+                    Button("Reset paper") { store.resetPaper() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(HubTheme.mute)
+                }
             }
             HStack(spacing: 8) {
                 sideBtn("UP", side: .up)
@@ -41,7 +54,7 @@ struct TradePanel: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(HubTheme.up)
-                Text("limit ask · max \(SizeCash.maxContracts) · confirm")
+                Text(store.mode == .paper ? "paper fill · max \(SizeCash.maxContracts) · confirm" : "LIVE Kalshi · max \(SizeCash.maxContracts) · confirm")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(HubTheme.mute)
                 Spacer()
@@ -49,7 +62,7 @@ struct TradePanel: View {
             Button {
                 store.requestPlace()
             } label: {
-                Text(store.tradeBusy ? "PLACING…" : "PLACE \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP")")
+                Text(store.tradeBusy ? "PLACING…" : "\(store.mode == .paper ? "PAPER" : "LIVE") \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP")")
                     .font(.system(size: 14, weight: .bold, design: .monospaced))
                     .frame(maxWidth: .infinity)
                     .frame(height: compact ? 42 : 48)
@@ -72,13 +85,30 @@ struct TradePanel: View {
         .padding(.horizontal, 16)
         .padding(.top, 12)
         .confirmationDialog(
-            "Place \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP") on \(store.quote?.ticker ?? "—") at \(Money.cents(store.tradeSide == .down ? store.quote?.noAsk : store.quote?.yesAsk))?",
+            store.mode == .paper
+                ? "Paper fill \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP") on \(store.quote?.ticker ?? "—") at \(Money.cents(store.tradeSide == .down ? store.quote?.noAsk : store.quote?.yesAsk))? Stays on this device."
+                : "LIVE Kalshi: buy \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP") on \(store.quote?.ticker ?? "—") at \(Money.cents(store.tradeSide == .down ? store.quote?.noAsk : store.quote?.yesAsk))? Real money.",
             isPresented: $store.showConfirm,
             titleVisibility: .visible
         ) {
-            Button("Confirm buy") { Task { await store.confirmPlace() } }
+            Button(store.mode == .paper ? "Confirm paper" : "Confirm LIVE") { Task { await store.confirmPlace() } }
             Button("Cancel", role: .cancel) { store.showConfirm = false }
         }
+    }
+
+    private func modeBtn(_ title: String, _ mode: DeskMode) -> some View {
+        Button {
+            store.setMode(mode)
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .padding(.horizontal, 8)
+                .frame(height: 28)
+                .background(store.mode == mode ? (mode == .live ? HubTheme.down : HubTheme.up) : HubTheme.chip)
+                .foregroundStyle(store.mode == mode ? Color(red: 0.02, green: 0.04, blue: 0.03) : HubTheme.ink)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
     }
 
     private func sideBtn(_ title: String, side: DeskSide) -> some View {

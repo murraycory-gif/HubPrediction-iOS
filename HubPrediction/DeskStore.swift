@@ -22,6 +22,8 @@ final class DeskStore: ObservableObject {
     @Published var tradeBusy: Bool = false
     @Published var tradeNote: String?
     @Published var showConfirm: Bool = false
+    @Published var mode: DeskMode = PaperBook.mode
+    @Published var paperFills: [PaperFill] = PaperBook.fills
 
     private var quoteTimer: Timer?
     private var boardTimer: Timer?
@@ -33,22 +35,28 @@ final class DeskStore: ObservableObject {
     private var status: (exchangeActive: Bool, tradingActive: Bool)?
     private let thesisKey = "hub.thesis"
 
+    var workingCash: Double {
+        mode == .paper ? PaperBook.cash : (cash ?? 0)
+    }
+
     var isBTC: Bool {
         seriesTicker.uppercased().contains("BTC") || (pinnedTicker ?? quote?.ticker ?? "").uppercased().contains("BTC")
     }
 
     var suggestedCount: Int {
         let ask = tradeSide == .down ? (quote?.noAsk ?? 0) : (quote?.yesAsk ?? 0)
-        let n = SizeCash.contractsFromCash(cash: cash ?? 0, askCents: ask, pWin: call.pWin)
+        let n = SizeCash.contractsFromCash(cash: workingCash, askCents: ask, pWin: call.pWin)
         return min(SizeCash.maxContracts, max(1, n == 0 ? 1 : n))
     }
 
     func start() {
         guard quoteTimer == nil else { return }
         hasCreds = KalshiCreds.isPresent
+        mode = PaperBook.mode
+        paperFills = PaperBook.fills
         Task { await refreshAll() }
         Task { await searchMarkets(query: "") }
-        if hasCreds { Task { await refreshCash() } }
+        if mode == .live, hasCreds { Task { await refreshCash() } }
         quoteTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refreshQuote() }
         }
@@ -115,12 +123,27 @@ final class DeskStore: ObservableObject {
         }
     }
 
+    func setMode(_ next: DeskMode) {
+        mode = next
+        PaperBook.mode = next
+        tradeNote = next == .paper ? "Paper — fills stay on this device. No live orders." : "LIVE — Confirm sends a real Kalshi order."
+        if next == .live, hasCreds { Task { await refreshCash() } }
+    }
+
+    func resetPaper() {
+        PaperBook.reset()
+        paperFills = []
+        tradeNote = "Paper cash reset to \(Money.dollarsExact(PaperBook.startCash))."
+    }
+
     func credsDidChange() {
         hasCreds = KalshiCreds.isPresent
-        if hasCreds { Task { await refreshCash() } } else { cash = nil }
+        if mode == .live, hasCreds { Task { await refreshCash() } }
+        if mode == .live, !hasCreds { cash = nil }
     }
 
     func refreshCash() async {
+        guard mode == .live else { return }
         do {
             cash = try await KalshiTrade.fetchCash()
             tradeCount = suggestedCount
@@ -140,8 +163,8 @@ final class DeskStore: ObservableObject {
             banner = DeskBanner(title: "No market", detail: "Wait for a quote or pick a market, then retry.", holdingLast: false)
             return
         }
-        guard hasCreds else {
-            banner = DeskBanner(title: "Keys needed", detail: "Paste Kalshi API Key ID + PEM in Keys. Nothing is stored in git.", holdingLast: false)
+        if mode == .live, !hasCreds {
+            banner = DeskBanner(title: "Keys needed", detail: "Live needs Kalshi API Key ID + PEM in Keys. Switch to Paper to fill locally. Nothing is stored in git.", holdingLast: false)
             return
         }
         if tradeSide == .sit { tradeSide = call.side == .down ? .down : .up }
@@ -156,17 +179,29 @@ final class DeskStore: ObservableObject {
         tradeNote = nil
         defer { tradeBusy = false }
         do {
-            let id = try await KalshiTrade.place(
+            if mode == .paper {
+                let fill = try PaperBook.place(
+                    ticker: ticker,
+                    side: tradeSide,
+                    count: tradeCount,
+                    yesAsk: quote?.yesAsk ?? 0,
+                    noAsk: quote?.noAsk ?? 0
+                )
+                paperFills = PaperBook.fills
+                tradeNote = "PAPER \(fill.count) \(fill.side.uppercased()) · \(fill.ticker) · cash \(Money.dollarsExact(PaperBook.cash))"
+                return
+            }
+            let id = try await KalshiTrade.placeLive(
                 ticker: ticker,
                 side: tradeSide,
                 count: tradeCount,
                 yesAsk: quote?.yesAsk ?? 0,
                 noAsk: quote?.noAsk ?? 0
             )
-            tradeNote = "Placed \(tradeCount) \(tradeSide == .up ? "UP" : "DOWN") · \(id)"
+            tradeNote = "LIVE \(tradeCount) \(tradeSide == .up ? "UP" : "DOWN") · \(id)"
             await refreshCash()
         } catch {
-            banner = DeskBanner(title: "Order failed", detail: error.localizedDescription, holdingLast: false)
+            banner = DeskBanner(title: mode == .paper ? "Paper order failed" : "Live order failed", detail: error.localizedDescription, holdingLast: false)
         }
     }
 

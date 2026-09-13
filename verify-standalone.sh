@@ -63,7 +63,8 @@ for f in \
   KalshiTrade.swift \
   TradePanel.swift \
   MarketsSheet.swift \
-  CredsSheet.swift
+  CredsSheet.swift \
+  PaperBook.swift
 do
   [ -f "HubPrediction/$f" ] || bad "missing HubPrediction/$f"
   grep -q "$f" "$pbx" || bad "$f not in pbxproj"
@@ -92,7 +93,29 @@ grep -q 'TF HOLD' HUB_TESTFLIGHT.md QA.md README.md || bad "TF HOLD missing from
 ok "TF HOLD documented"
 
 grep -q 'searchMarkets' HubPrediction/KalshiClient.swift || bad "markets search missing"
-grep -q 'func place' HubPrediction/KalshiTrade.swift || bad "trade place missing"
+grep -q 'func placeLive' HubPrediction/KalshiTrade.swift || bad "live place missing"
+grep -q 'PaperBook.place' HubPrediction/DeskStore.swift || bad "paper place missing"
+grep -q 'func setMode' HubPrediction/DeskStore.swift || bad "mode toggle missing"
+grep -q 'modeBtn("PAPER"' HubPrediction/TradePanel.swift || bad "PAPER toggle missing"
+grep -q 'modeBtn("LIVE"' HubPrediction/TradePanel.swift || bad "LIVE toggle missing"
+if grep -n 'portfolio/orders' HubPrediction/PaperBook.swift >/dev/null 2>&1; then
+  bad "PaperBook must not call live order endpoints"
+fi
+if python3 - <<'PY'
+import pathlib, sys
+src = pathlib.Path("HubPrediction/DeskStore.swift").read_text()
+fn = src.split("func confirmPlace", 1)[1].split("private func attach", 1)[0]
+paper = fn.find("if mode == .paper")
+live = fn.find("placeLive")
+if paper < 0 or live < 0 or paper > live:
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "paper fills local; live confirm is placeLive"
+else
+  bad "paper/live confirm order"
+fi
 grep -q 'confirmationDialog' HubPrediction/TradePanel.swift || bad "trade confirm missing"
 grep -q 'func retry' HubPrediction/DeskStore.swift || bad "retry missing"
 grep -q 'phoneStat' HubPrediction/DeskView.swift || bad "phone stacked rest-of-day missing"

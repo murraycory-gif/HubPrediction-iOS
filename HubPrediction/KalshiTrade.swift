@@ -10,7 +10,8 @@ enum KalshiTrade {
         return SizeCash.cashFromBalance(json)
     }
 
-    static func place(ticker: String, side: DeskSide, count: Int, yesAsk: Double, noAsk: Double) async throws -> String {
+    /// Live Kalshi only. Paper must call `PaperBook.place` and never this method.
+    static func placeLive(ticker: String, side: DeskSide, count: Int, yesAsk: Double, noAsk: Double) async throws -> String {
         guard side == .up || side == .down else { throw KalshiAuthError.http(400, "Pick UP or DOWN.") }
         let n = min(SizeCash.maxContracts, max(1, count))
         let cents = side == .up ? yesAsk : noAsk

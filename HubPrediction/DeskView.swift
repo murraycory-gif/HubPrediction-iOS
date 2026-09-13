@@ -109,7 +109,7 @@ struct DeskView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("DESK // SIGNAL · \(store.seriesTicker)")
+                    Text("DESK // SIGNAL · \(store.mode == .paper ? "PAPER" : "LIVE") · \(store.seriesTicker)")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .tracking(2.2)
                         .opacity(0.72)
