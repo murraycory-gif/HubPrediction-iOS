@@ -16,18 +16,22 @@ struct DeskView: View {
     var body: some View {
         ZStack(alignment: .top) {
             GoldTone.bg.ignoresSafeArea(edges: HubDesk.isMac ? [.horizontal, .bottom] : .all)
-            VStack(spacing: 0) {
-                GoldDesk(
-                    now: now,
-                    chartHeight: HubDesk.isMac ? HubDesk.macChartHeight : HubDesk.phoneChartHeight
+            GeometryReader { geo in
+                let chartH = max(
+                    HubDesk.isMac ? HubDesk.macChartHeight : HubDesk.phoneChartHeight,
+                    geo.size.height - 400
                 )
-                AlertBanner()
-                quietTools
-                ScrollView {
-                    dayFilter
-                    restOfDay
-                        .padding(.bottom, 28)
+                VStack(spacing: 0) {
+                    GoldDesk(now: now, chartHeight: chartH)
+                    AlertBanner()
+                    quietTools
+                    ScrollView {
+                        dayFilter
+                        restOfDay
+                            .padding(.bottom, 28)
+                    }
                 }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
         }
         .onReceive(Timer.publish(every: 0.20, on: .main, in: .common).autoconnect()) { _ in

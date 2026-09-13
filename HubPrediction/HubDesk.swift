@@ -16,11 +16,11 @@ enum HubDesk {
     static let macChartHeight: CGFloat = 260
     static let macVarianceHeight: CGFloat = 120
     static let macNowNextRows = 8
-    /// Window size ≈ gold desk. Do not launch a desktop-covering slab.
-    static let macMinWidth: CGFloat = 400
-    static let macMinHeight: CGFloat = 620
-    static let macDefaultWidth: CGFloat = 480
-    static let macDefaultHeight: CGFloat = 820
+    /// Fulfillment Heartbeat Mac Soft KEEP: default 1280×860, min ~1100×720.
+    static let macMinWidth: CGFloat = 1100
+    static let macMinHeight: CGFloat = 720
+    static let macDefaultWidth: CGFloat = 1280
+    static let macDefaultHeight: CGFloat = 860
     static let macMaxWidth: CGFloat = 20_000
     static let macMaxHeight: CGFloat = 20_000
 
@@ -43,17 +43,20 @@ enum HubDesk {
         .system(size: type(phone), weight: weight, design: .monospaced)
     }
 
-    /// Visible titlebar + resizable. Do not assign a desktop-covering CGRect
-    /// on the UIWindow — that launched a giant black slab.
+    /// Heartbeat Mac pattern: title + sizeRestrictions.minimumSize only via guard.
+    /// maximumSize stays large so zoom/expand can fill the screen. Never assign
+    /// a UIWindow CGRect — that launched the black slab.
     static func pinMacTitlebar() {
         #if targetEnvironment(macCatalyst)
         for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            scene.title = "HUB Pred"
             if let titlebar = scene.titlebar {
                 titlebar.titleVisibility = .visible
                 titlebar.toolbar = nil
             }
-            scene.sizeRestrictions?.minimumSize = CGSize(width: macMinWidth, height: macMinHeight)
-            scene.sizeRestrictions?.maximumSize = CGSize(width: macMaxWidth, height: macMaxHeight)
+            guard let size = scene.sizeRestrictions else { continue }
+            size.minimumSize = CGSize(width: macMinWidth, height: macMinHeight)
+            size.maximumSize = CGSize(width: macMaxWidth, height: macMaxHeight)
             for window in scene.windows {
                 window.backgroundColor = .black
                 window.rootViewController?.additionalSafeAreaInsets = .zero

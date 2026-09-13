@@ -245,6 +245,8 @@ grep -q 'HubDesk.font' HubPrediction/DeskChrome.swift || bad "Mac type scale not
 grep -q 'HubDesk.font' HubPrediction/TradePanel.swift || bad "Mac type scale not on trade"
 grep -q 'func pinMacTitlebar' HubPrediction/HubDesk.swift || bad "pinMacTitlebar missing"
 grep -q 'HubDesk.pinMacTitlebar' HubPrediction/HubPredictionApp.swift || bad "App does not pin Mac titlebar"
+grep -q 'defaultSize(width: 1280, height: 860)' HubPrediction/HubPredictionApp.swift || bad "Heartbeat defaultSize 1280×860 missing"
+grep -q 'minimumSize = CGSize(width: 1100, height: 720)' HubPrediction/HubPredictionApp.swift || bad "Heartbeat minimumSize 1100×720 missing"
 if python3 - <<'PY'
 import pathlib, sys
 desk = pathlib.Path("HubPrediction/HubDesk.swift").read_text()
@@ -254,13 +256,12 @@ if "isMac ? phone + 4" not in desk and "phone + 4" not in desk:
 if "UIWindowScene.GeometryPreferences" in desk or "prefs.systemFrame" in desk or "window.frame = frame" in desk:
     print("FAIL: desktop-fill still launches a black slab")
     sys.exit(2)
-if "macDefaultWidth: CGFloat = 480" not in desk and "macDefaultWidth: CGFloat = 500" not in desk:
-    # modest gold-desk window, not a 1440 desktop cover
-    import re
-    m = re.search(r"macDefaultWidth: CGFloat = (\d+)", desk)
-    if not m or int(m.group(1)) > 640:
-        print("FAIL: default window wider than the gold desk")
-        sys.exit(2)
+if "macDefaultWidth: CGFloat = 1280" not in desk:
+    print("FAIL: Heartbeat defaultSize 1280 missing")
+    sys.exit(2)
+if "macMinWidth: CGFloat = 1100" not in desk or "macMinHeight: CGFloat = 720" not in desk:
+    print("FAIL: Heartbeat minimumSize 1100×720 missing")
+    sys.exit(2)
 if "maximumSize" not in desk:
     print("FAIL: Catalyst window missing maximumSize (frozen at min)")
     sys.exit(2)
@@ -269,8 +270,8 @@ body = view.split("var body:", 1)[1].split("private var quietTools", 1)[0]
 if "GoldDesk(" not in body:
     print("FAIL: GoldDesk not on first paint")
     sys.exit(2)
-if "GeometryReader" in body:
-    print("FAIL: GeometryReader still wraps first paint (empty black)")
+if "GeometryReader" not in body:
+    print("FAIL: gold desk does not grow with the window")
     sys.exit(2)
 gold = pathlib.Path("HubPrediction/GoldDesk.swift").read_text()
 for n in ("Desk will buy", "to close", "THEORY CLOSE", "KALSHI POSTED", "THEORY AT CLOSE", "LIVE VS POSTED", "Theory finishes"):

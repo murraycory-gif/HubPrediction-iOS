@@ -19,12 +19,17 @@ struct HubPredictionApp: App {
                 .preferredColorScheme(.dark)
                 .onAppear {
                     store.start()
+                    #if targetEnvironment(macCatalyst)
+                    for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+                        scene.title = "HUB Pred"
+                        guard let size = scene.sizeRestrictions else { return }
+                        size.minimumSize = CGSize(width: 1100, height: 720)
+                        size.maximumSize = CGSize(width: HubDesk.macMaxWidth, height: HubDesk.macMaxHeight)
+                    }
+                    #endif
                     HubDesk.pinMacTitlebar()
                 }
-                #if targetEnvironment(macCatalyst)
-                .frame(minWidth: HubDesk.macMinWidth, minHeight: HubDesk.macMinHeight)
-                #endif
         }
-        .defaultSize(width: HubDesk.macDefaultWidth, height: HubDesk.macDefaultHeight)
+        .defaultSize(width: 1280, height: 860)
     }
 }
