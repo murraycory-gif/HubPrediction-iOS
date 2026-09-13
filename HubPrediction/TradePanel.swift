@@ -102,7 +102,7 @@ struct TradePanel: View {
 
     private func sideBtn(_ title: String, side: DeskSide) -> some View {
         Button {
-            store.tradeSide = side
+            store.pickSide(side)
         } label: {
             Text(title)
                 .font(HubDesk.font(14, weight: .semibold))

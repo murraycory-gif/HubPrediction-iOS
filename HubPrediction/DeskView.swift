@@ -43,7 +43,7 @@ struct DeskView: View {
 
     private var phoneDesk: some View {
         VStack(spacing: 0) {
-            callBar
+            heroCall
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             AlertBanner()
@@ -107,7 +107,7 @@ struct DeskView: View {
     /// Mac first paint: countdown + arm + theory now/next + charts. Full day stays in the scroll.
     private var macOperator: some View {
         VStack(spacing: 8) {
-            macHero
+            heroCall
                 .padding(.horizontal, HubDesk.sectionPad)
                 .padding(.top, 6)
             TradePanel(compact: true, now: now)
@@ -163,7 +163,7 @@ struct DeskView: View {
 
     private var stackedSignal: some View {
         VStack(spacing: 0) {
-            callBar
+            heroCall
                 .padding(.horizontal, HubDesk.sectionPad)
                 .padding(.top, 12)
             liveLine
@@ -213,102 +213,49 @@ struct DeskView: View {
         }
     }
 
-    private var macHero: some View {
-        let opens = BuyWindow.clock(BuyWindow.opensInMs(closeAt: store.quote?.closeAt ?? 0, now: now))
-        return HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("BUY WINDOW 6–4m · \(store.mode == .paper ? "PAPER" : "LIVE")")
-                    .font(HubDesk.font(11, weight: .medium))
-                    .foregroundStyle(HubTheme.quiet)
-                Text(windowLabel)
-                    .font(HubDesk.font(28, weight: .bold))
-                    .foregroundStyle(tone)
-                if buyPhase == .waiting {
-                    Text("OPENS IN \(opens) · SETTLE \(clockText)")
-                        .font(HubDesk.font(16, weight: .semibold))
-                        .foregroundStyle(HubTheme.copy)
-                } else {
-                    Text(BuyWindow.detail(phase: buyPhase, closeAt: store.quote?.closeAt ?? 0, now: now))
-                        .font(HubDesk.font(13, weight: .semibold))
-                        .foregroundStyle(HubTheme.copy)
-                }
-                Text(store.beat.chrome)
-                    .font(HubDesk.font(12, weight: .semibold))
-                    .foregroundStyle(HubTheme.copy)
-                Text(BuyWindow.nextAction(phase: buyPhase, botsArmed: store.botsArmed, queued: store.queued))
-                    .font(HubDesk.font(13, weight: .semibold))
-                    .foregroundStyle(store.botsArmed ? HubTheme.up : HubTheme.copy)
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 8) {
-                Text(clockText)
-                    .font(HubDesk.font(28, weight: .bold))
-                    .monospacedDigit()
-                    .foregroundStyle(HubTheme.copy)
-                Text("Live \(store.quote?.liveSource == "coinbase" ? "Coinbase" : "Kalshi") \(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) · tick \(tickAge)")
-                    .font(HubDesk.font(12))
-                    .foregroundStyle(HubTheme.quiet)
-                HStack(spacing: 10) {
-                    Button("Markets") { showMarkets = true }
-                        .buttonStyle(.plain)
-                        .font(HubDesk.font(13, weight: .bold))
-                    Button("Keys") { showKeys = true }
-                        .buttonStyle(.plain)
-                        .font(HubDesk.font(13, weight: .bold))
-                }
-                .foregroundStyle(HubTheme.up)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(HubTheme.panel)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(tone.opacity(0.4)))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var callBar: some View {
+    /// Always-on 6–4m call. BUY UP / BUY DOWN / SIT — pending countdown when waiting.
+    private var heroCall: some View {
         let up = windowLabel == "BUY UP"
         let down = windowLabel == "BUY DOWN"
-        return VStack(alignment: .leading, spacing: HubDesk.isMac ? 10 : 8) {
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: HubDesk.isMac ? 8 : 6) {
-                    Text("BUY WINDOW 6–4m · \(store.mode == .paper ? "PAPER" : "LIVE") · \(store.seriesTicker)")
-                        .font(HubDesk.font(10, weight: .medium))
-                        .tracking(2.2)
-                        .opacity(0.78)
-                    Text(windowLabel)
-                        .font(HubDesk.font(32, weight: .bold))
-                        .tracking(1.2)
-                }
-                Spacer()
-                Text(clockText)
-                    .font(HubDesk.font(30, weight: .bold))
-                    .monospacedDigit()
-            }
-            Text(store.beat.chrome)
-                .font(HubDesk.font(11, weight: .semibold))
-                .opacity(0.94)
-            Text(BuyWindow.detail(phase: buyPhase, closeAt: store.quote?.closeAt ?? 0, now: now))
-                .font(HubDesk.font(11))
-                .opacity(0.88)
-            Text(BuyWindow.nextAction(phase: buyPhase, botsArmed: store.botsArmed, queued: store.queued))
-                .font(HubDesk.font(13, weight: .semibold))
-                .opacity(0.96)
-            HStack {
-                Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted · live")
-                    .font(HubDesk.font(12))
-                    .opacity(0.84)
+        let ink = down ? Color(red: 0.10, green: 0.02, blue: 0.02) : up ? Color(red: 0.016, green: 0.078, blue: 0.047) : HubTheme.copy
+        return VStack(alignment: .leading, spacing: HubDesk.isMac ? 8 : 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("BUY WINDOW 6–4m · CALL · \(store.mode == .paper ? "PAPER" : "LIVE")")
+                    .font(HubDesk.font(11, weight: .medium))
+                    .tracking(1.6)
                 Spacer()
                 Button("Markets") { showMarkets = true }
                     .buttonStyle(.plain)
-                    .font(HubDesk.font(12, weight: .semibold))
+                    .font(HubDesk.font(13, weight: .bold))
                 Button("Keys") { showKeys = true }
                     .buttonStyle(.plain)
-                    .font(HubDesk.font(12, weight: .semibold))
+                    .font(HubDesk.font(13, weight: .bold))
             }
+            HStack(alignment: .bottom) {
+                Text(windowLabel)
+                    .font(HubDesk.font(52, weight: .bold))
+                    .tracking(1.0)
+                    .minimumScaleFactor(0.55)
+                    .lineLimit(1)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(heroClock.label)
+                        .font(HubDesk.font(11, weight: .medium))
+                        .tracking(1.4)
+                        .opacity(0.85)
+                    Text(heroClock.value)
+                        .font(HubDesk.font(36, weight: .bold))
+                        .monospacedDigit()
+                }
+            }
+            Text(BuyWindow.heroLine(phase: buyPhase, call: store.call, closeAt: store.quote?.closeAt ?? 0, now: now))
+                .font(HubDesk.font(16, weight: .semibold))
+            Text(BuyWindow.reasonLine(quote: store.quote, beat: store.beat, call: store.call))
+                .font(HubDesk.font(12))
+                .opacity(0.9)
         }
-        .foregroundStyle(down ? Color(red: 0.10, green: 0.02, blue: 0.02) : up ? Color(red: 0.016, green: 0.078, blue: 0.047) : HubTheme.copy)
-        .padding(HubDesk.isMac ? 20 : 14)
+        .foregroundStyle(ink)
+        .padding(HubDesk.isMac ? 16 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
@@ -321,9 +268,9 @@ struct DeskView: View {
                 endPoint: .bottom
             )
         )
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(tone.opacity(0.35)))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(tone.opacity(0.4)))
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .shadow(color: (up ? HubTheme.up : down ? HubTheme.down : HubTheme.up).opacity(up || down ? 0.32 : 0.08), radius: 16)
+        .shadow(color: (up ? HubTheme.up : down ? HubTheme.down : HubTheme.up).opacity(up || down ? 0.28 : 0.08), radius: 14)
     }
 
     private var tickAge: String {
@@ -332,12 +279,8 @@ struct DeskView: View {
         return String(format: "%.1fs", sec)
     }
 
-    private var clockText: String {
-        guard let close = store.quote?.closeAt, close.isFinite else { return "--:--" }
-        let left = max(0.0, close - now)
-        let mm = Int(left / HubMs.minute)
-        let ss = Int(left.truncatingRemainder(dividingBy: HubMs.minute) / HubMs.second)
-        return String(format: "%02d:%02d", mm, ss)
+    private var heroClock: (label: String, value: String) {
+        BuyWindow.heroClock(phase: buyPhase, closeAt: store.quote?.closeAt ?? 0, now: now)
     }
 
     private var tape: some View {

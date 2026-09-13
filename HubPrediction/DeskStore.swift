@@ -31,6 +31,7 @@ final class DeskStore: ObservableObject {
     @Published var lastQuoteAt: Double = 0
     @Published var beat: BeatPath = BeatPath()
     @Published var windowOpen: Bool = false
+    @Published var sideOverride: Bool = false
     @Published var queued: Bool = false
     @Published var queuedSide: DeskSide = .up
     @Published var queuedCount: Int = 1
@@ -52,6 +53,7 @@ final class DeskStore: ObservableObject {
     private var past: [Settled] = []
     private var status: (exchangeActive: Bool, tradingActive: Bool)?
     private let thesisKey = "hub.thesis"
+    private var lastHeroTicker: String = ""
 
     var workingCash: Double {
         mode == .paper ? PaperBook.cash : (cash ?? 0)
@@ -150,6 +152,7 @@ final class DeskStore: ObservableObject {
         prior = []
         past = []
         quote = nil
+        sideOverride = false
         Task { await refreshAll() }
     }
 
@@ -388,6 +391,18 @@ final class DeskStore: ObservableObject {
         let raw = KalshiSignal.kalshiCall(used, beat: beat)
         call = KalshiSignal.holdThesis(quote: used, next: raw, peek: peekThesis, write: writeThesis)
         windowOpen = BuyWindow.phase(closeAt: used?.closeAt ?? 0, now: now) == .open
+        if let ticker = used?.ticker, !ticker.isEmpty, ticker != lastHeroTicker {
+            lastHeroTicker = ticker
+            sideOverride = false
+        }
+        if !sideOverride, call.side == .up || call.side == .down {
+            tradeSide = call.side
+        }
+    }
+
+    func pickSide(_ side: DeskSide) {
+        tradeSide = side
+        sideOverride = true
     }
 
     private func recomputeBeat(_ q: Quote?) {

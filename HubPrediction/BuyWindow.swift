@@ -27,19 +27,67 @@ enum BuyWindow {
         return .late
     }
 
-    /// Big call: WAIT / BUY UP / BUY DOWN / NO BUY / WINDOW CLOSED / SETTLED
+    /// Huge top word: the 6–4m call, including while waiting. Never just “WAIT”.
     static func headline(phase: BuyPhase, call: DeskCall) -> String {
         switch phase {
-        case .waiting:
-            return "WAIT"
-        case .open:
-            if call.willBuy, call.side == .up { return "BUY UP" }
-            if call.willBuy, call.side == .down { return "BUY DOWN" }
-            return "NO BUY"
-        case .late:
-            return "WINDOW CLOSED"
         case .settled:
             return "SETTLED"
+        case .late:
+            return callWord(call)
+        case .waiting, .open:
+            return callWord(call)
+        }
+    }
+
+    static func callWord(_ call: DeskCall) -> String {
+        if call.side == .up { return "BUY UP" }
+        if call.side == .down { return "BUY DOWN" }
+        return "SIT"
+    }
+
+    /// One line under the word — when to buy, never a scavenger hunt.
+    static func heroLine(phase: BuyPhase, call: DeskCall, closeAt: Double, now: Double) -> String {
+        let word = callWord(call)
+        switch phase {
+        case .waiting:
+            let opens = clock(opensInMs(closeAt: closeAt, now: now))
+            if call.side == .sit {
+                return "SIT · no edge yet · window opens in \(opens)"
+            }
+            return "\(word) when window opens · in \(opens)"
+        case .open:
+            let left = clock(max(0, remainingMs(closeAt: closeAt, now: now) - openFromMin * HubMs.minute))
+            if call.side == .sit { return "SIT · window open · closes in \(left)" }
+            return "\(word) NOW · 6–4m window · closes in \(left)"
+        case .late:
+            return "Window closed · \(word) was the call · next 15m"
+        case .settled:
+            return "Market settled · next 15m"
+        }
+    }
+
+    static func reasonLine(quote: Quote?, beat: BeatPath, call: DeskCall) -> String {
+        let live = Money.dollarsExact(quote?.live)
+        let strike = Money.dollarsExact(quote?.strike)
+        let vs = (quote?.live ?? 0) - (quote?.strike ?? 0)
+        let vsWord = vs > 1 ? "above" : vs < -1 ? "below" : "at"
+        let edge = call.willBuy ? "edge on" : "warming"
+        return "Live \(live) \(vsWord) posted \(strike) · \(beat.chrome) · \(edge)"
+    }
+
+    /// One glance clock: time to the 6–4m window, not settle, until the window is gone.
+    static func heroClock(phase: BuyPhase, closeAt: Double, now: Double) -> (label: String, value: String) {
+        guard closeAt.isFinite, closeAt > 0 else { return ("—", "--:--") }
+        switch phase {
+        case .waiting:
+            return ("OPENS IN", clock(opensInMs(closeAt: closeAt, now: now)))
+        case .open:
+            let left = max(0, remainingMs(closeAt: closeAt, now: now) - openFromMin * HubMs.minute)
+            return ("CLOSES IN", clock(left))
+        case .late:
+            return ("SETTLE", clock(remainingMs(closeAt: closeAt, now: now)))
+        case .settled:
+            return ("SETTLED", "--:--")
         }
     }
 

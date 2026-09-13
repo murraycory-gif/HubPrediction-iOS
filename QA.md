@@ -10,7 +10,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 
 | # | Check | Verdict | Notes |
 |---|--------|---------|-------|
-| 1 | Buy call in last 6–4 minutes before settle | KEEP (structural) | `BuyWindow`: WAIT / BUY UP / BUY DOWN / NO BUY / WINDOW CLOSED. Countdown on call bar. |
+| 1 | Buy call in last 6–4 minutes before settle | KEEP (structural) | Top hero always **BUY UP** / **BUY DOWN** / **SIT**. Waiting: `BUY UP when window opens · in mm:ss`. Same beat + live-vs-strike + theory call. |
 | 2 | AI bots execute ALL buying (live + paper) in 6–4m | KEEP (structural) | SCOUT/SIGNAL/RISK. Armed bots call `confirmPlace` for paper and LIVE (keys required). Humans also gated to `BuyPhase.open`. |
 | 3 | Show cash; size for profit | KEEP (structural) | `CashStrip` + quarter-Kelly `SizeCash` + expected profit EV. |
 | 4 | Beat-the-trend forecast; visible next-15m dash | KEEP (structural) | Mint DASH = beat path (gap/tape/bots/shape). Orange dotted = naive last-6m. Not a last-week replot. Call bar shows BEAT/FADE/WITH TREND. |
@@ -26,7 +26,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 |-------|---------|-------|
 | TF HOLD | HOLD | Do not `./push-hub-testflight.sh`. |
 | Mac visual Soft KEEP PASS | **not claimed** | Cory Run is the only visual PASS. Linux cannot Run Catalyst. |
-| Waiting lockout | KEEP (source) | Countdown OPENS IN. ARM/QUEUE live. Bots default ON (`UserDefaults` nil → armed). |
+| Top BUY call | KEEP (source) | Hero always BUY UP / BUY DOWN / SIT. Waiting: “BUY UP when window opens · in mm:ss”. Bots/QUEUE follow that side unless overridden. |
 | First-paint theory | KEEP (source) | Mac pins NOW+NEXT (8 slots, full Grok columns). Full day stays in the scroll. |
 | Device Run | Soft until Cory Run | Mac + iPhone. |
 

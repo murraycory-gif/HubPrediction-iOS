@@ -248,8 +248,9 @@ if "macOperator" not in view or "nowNextTheory" not in view:
 if "NOW + NEXT · THEORY" not in view:
     print("FAIL: Grok Build now+next table not on first paint")
     sys.exit(2)
-if "OPENS IN" not in view:
-    print("FAIL: Mac hero missing opens-in countdown")
+buy = pathlib.Path("HubPrediction/BuyWindow.swift").read_text()
+if "when window opens" not in buy or "OPENS IN" not in buy:
+    print("FAIL: hero missing pending BUY-when-window-opens countdown")
     sys.exit(2)
 if "WAIT · 6–4m WINDOW" in pathlib.Path("HubPrediction/TradePanel.swift").read_text():
     print("FAIL: dead WAIT button still blocks the trade row")
@@ -309,7 +310,7 @@ fi
 grep -q 'openUntilMin = 6' HubPrediction/BuyWindow.swift || bad "buy window 6m missing"
 grep -q 'openFromMin = 4' HubPrediction/BuyWindow.swift || bad "buy window 4m missing"
 grep -q 'BUY UP' HubPrediction/BuyWindow.swift || bad "buy headline missing"
-grep -q 'NO BUY' HubPrediction/BuyWindow.swift || bad "no-buy headline missing"
+grep -q 'SIT' HubPrediction/BuyWindow.swift || bad "sit / wait call word missing"
 grep -q 'func tickBots' HubPrediction/DeskStore.swift || bad "bot executor missing"
 grep -q 'func assertOpenWindow' HubPrediction/DeskStore.swift || bad "window gate missing"
 if python3 - <<'PY'
@@ -340,6 +341,36 @@ fi
 grep -q 'macNowNextRows' HubPrediction/HubDesk.swift || bad "macNowNextRows missing"
 grep -q 'object(forKey: armedKey) == nil' HubPrediction/DeskBots.swift || bad "bots default-on missing"
 grep -q 'ensureDefaultOn' HubPrediction/DeskStore.swift || bad "start does not default bots on"
+grep -q 'func heroLine' HubPrediction/BuyWindow.swift || bad "heroLine missing"
+grep -q 'func heroClock' HubPrediction/BuyWindow.swift || bad "heroClock missing"
+grep -q 'when window opens' HubPrediction/BuyWindow.swift || bad "pending call line missing"
+grep -q 'private var heroCall' HubPrediction/DeskView.swift || bad "heroCall missing"
+if python3 - <<'PY'
+import pathlib, sys
+src = pathlib.Path("HubPrediction/BuyWindow.swift").read_text()
+fn = src.split("static func headline", 1)[1].split("static func callWord", 1)[0]
+if 'return "WAIT"' in fn:
+    print("FAIL: headline still shows WAIT instead of the pending BUY call")
+    sys.exit(2)
+if "callWord" not in src.split("static func headline", 1)[1][:800]:
+    print("FAIL: headline does not use callWord")
+    sys.exit(2)
+view = pathlib.Path("HubPrediction/DeskView.swift").read_text()
+if view.count("heroCall") < 3:
+    print("FAIL: heroCall not on Mac + iPhone first paint")
+    sys.exit(2)
+store = pathlib.Path("HubPrediction/DeskStore.swift").read_text()
+chrome = store.split("func applyLiveChrome", 1)[1].split("func recomputeBeat", 1)[0]
+if "tradeSide = call.side" not in chrome:
+    print("FAIL: live call does not drive trade/QUEUE side")
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "hero BUY UP/DOWN call always on (pending countdown outside window)"
+else
+  bad "hero BUY call"
+fi
 grep -q 'func nextAction' HubPrediction/BuyWindow.swift || bad "BuyWindow nextAction missing"
 grep -q 'func queueForWindow' HubPrediction/DeskStore.swift || bad "queueForWindow missing"
 grep -q 'func tickQueue' HubPrediction/DeskStore.swift || bad "tickQueue missing"
@@ -376,7 +407,7 @@ grep -q '"RISK"' HubPrediction/DeskBots.swift || bad "RISK bot missing"
 grep -q 'STRIKE' HubPrediction/DeskBots.swift || bad "Strike alias missing"
 grep -q 'func evaluate' HubPrediction/BeatTrend.swift || bad "BeatTrend missing"
 grep -q 'BEAT TREND' HubPrediction/BeatTrend.swift || bad "beat chrome missing"
-grep -q 'store.beat.chrome' HubPrediction/DeskView.swift || bad "beat chrome not on call bar"
+grep -q 'beat.chrome' HubPrediction/BuyWindow.swift || bad "beat chrome not on hero reason line"
 grep -q 'pack.naive' HubPrediction/ChartCanvas.swift || bad "naive trend ray missing"
 grep -q 'pack.beat' HubPrediction/ChartCanvas.swift || bad "beat path missing"
 grep -q 'kalshiCall(used, beat:' HubPrediction/DeskStore.swift || bad "call does not use beat-trend"
