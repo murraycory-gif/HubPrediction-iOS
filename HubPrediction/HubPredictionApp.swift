@@ -23,7 +23,14 @@ struct HubPredictionApp: App {
                 }
                 .task { store.start() }
                 #if targetEnvironment(macCatalyst)
-                .frame(minWidth: HubDesk.macMinWidth, minHeight: HubDesk.macMinHeight)
+                .frame(
+                    minWidth: HubDesk.macMinWidth,
+                    idealWidth: HubDesk.macDefaultWidth,
+                    maxWidth: HubDesk.macMaxWidth,
+                    minHeight: HubDesk.macMinHeight,
+                    idealHeight: HubDesk.macDefaultHeight,
+                    maxHeight: HubDesk.macMaxHeight
+                )
                 #endif
         }
         .defaultSize(width: HubDesk.macDefaultWidth, height: HubDesk.macDefaultHeight)

@@ -18,13 +18,17 @@ enum HubDesk {
     static let macVarianceHeight: CGFloat = 120
     /// Now + next slots on first paint — not the full 96-row wall.
     static let macNowNextRows = 8
-    static let macMinWidth: CGFloat = 1100
-    static let macMinHeight: CGFloat = 860
-    static let macDefaultWidth: CGFloat = 1380
-    static let macDefaultHeight: CGFloat = 1020
+    /// Small enough to sit on a 13" laptop without eating the display.
+    static let macMinWidth: CGFloat = 880
+    static let macMinHeight: CGFloat = 620
+    static let macDefaultWidth: CGFloat = 1200
+    static let macDefaultHeight: CGFloat = 800
+    /// Catalyst treats a missing maximum as min==max (window frozen).
+    static let macMaxWidth: CGFloat = 10_000
+    static let macMaxHeight: CGFloat = 10_000
 
-    /// Catalyst titlebar / traffic lights overlay the content view (safe-area top is 0).
-    static let macTitlebarInset: CGFloat = 38
+    /// Clear, non-hit-testable strip so the system titlebar stays a real drag region.
+    static let macTitlebarInset: CGFloat = 28
     static var windowTopInset: CGFloat { isMac ? macTitlebarInset : 0 }
 
     static var sectionPad: CGFloat { isMac ? 22 : 16 }
@@ -43,19 +47,20 @@ enum HubDesk {
         .system(size: type(phone), weight: weight, design: .monospaced)
     }
 
-    /// Keep the traffic-light titlebar from eating the call bar. Safe-area top is 0 on Catalyst.
+    /// Visible system titlebar (drag + traffic lights) and a resizable window.
+    /// Omitting `maximumSize` freezes Catalyst at `minimumSize`.
     static func pinMacTitlebar() {
         #if targetEnvironment(macCatalyst)
         for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
-            scene.titlebar?.titleVisibility = .visible
+            if let titlebar = scene.titlebar {
+                titlebar.titleVisibility = .visible
+                titlebar.toolbar = nil
+            }
             scene.sizeRestrictions?.minimumSize = CGSize(width: macMinWidth, height: macMinHeight)
+            scene.sizeRestrictions?.maximumSize = CGSize(width: macMaxWidth, height: macMaxHeight)
             for window in scene.windows {
                 window.backgroundColor = UIColor(red: 0.027, green: 0.031, blue: 0.039, alpha: 1)
-                if let root = window.rootViewController {
-                    if root.additionalSafeAreaInsets.top < 8 {
-                        root.additionalSafeAreaInsets.top = 8
-                    }
-                }
+                window.rootViewController?.additionalSafeAreaInsets = .zero
             }
         }
         #endif

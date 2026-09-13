@@ -388,7 +388,7 @@ final class DeskStore: ObservableObject {
             now: now,
             closeAt: used?.closeAt ?? 0
         )
-        let raw = KalshiSignal.kalshiCall(used, beat: beat)
+        let raw = KalshiSignal.kalshiCall(used)
         call = KalshiSignal.holdThesis(quote: used, next: raw, peek: peekThesis, write: writeThesis)
         windowOpen = BuyWindow.phase(closeAt: used?.closeAt ?? 0, now: now) == .open
         if let ticker = used?.ticker, !ticker.isEmpty, ticker != lastHeroTicker {

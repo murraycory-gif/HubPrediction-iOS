@@ -50,5 +50,7 @@
 	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIRequiresFullScreen</key>
+	<false/>
 </dict>
 </plist>

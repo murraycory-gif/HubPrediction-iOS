@@ -15,17 +15,15 @@ struct DeskView: View {
 
     var body: some View {
         ZStack {
-            HubTheme.surface.ignoresSafeArea()
-            if wide {
-                wideDesk
-            } else {
-                phoneDesk
-            }
+            HubTheme.surface.ignoresSafeArea(edges: HubDesk.isMac ? [.horizontal, .bottom] : .all)
+            grokDesk
         }
+        /// Clear, non-hit-testable strip — a filled bar here ate the titlebar drag on Catalyst.
         .safeAreaInset(edge: .top, spacing: 0) {
             if HubDesk.isMac {
-                HubTheme.surface
+                Color.clear
                     .frame(height: HubDesk.macTitlebarInset)
+                    .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
         }
@@ -35,23 +33,25 @@ struct DeskView: View {
         }
         .task { store.start() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { store.nudge() }
+            if phase == .active {
+                store.nudge()
+                HubDesk.pinMacTitlebar()
+            }
         }
         .sheet(isPresented: $showMarkets) { MarketsSheet().environmentObject(store) }
         .sheet(isPresented: $showKeys) { CredsSheet().environmentObject(store) }
     }
 
-    private var phoneDesk: some View {
+    /// Grok Build first paint: sticky call-bar, then tape / live / chart / roulette / theory.
+    /// Bots and QUEUE stay below — they never replace the call-bar.
+    private var grokDesk: some View {
         VStack(spacing: 0) {
-            heroCall
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+            callBar
+                .padding(.horizontal, HubDesk.sectionPad)
+                .padding(.top, HubDesk.isMac ? 4 : 8)
             AlertBanner()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    CashStrip()
-                    BotLane(now: now)
-                    TradePanel(compact: true, now: now)
                     tape
                     liveLine
                     ChartCanvas(
@@ -64,13 +64,12 @@ struct DeskView: View {
                         quote: store.quote,
                         beat: store.beat,
                         clockNow: now,
-                        chartHeight: HubDesk.phoneChartHeight
-                    )
-                    VarianceChart(
-                        rows: store.dash?.elapsed ?? [],
-                        chartHeight: HubDesk.phoneVarianceHeight
+                        chartHeight: HubDesk.isMac ? HubDesk.macChartHeight : HubDesk.phoneChartHeight
                     )
                     roulette
+                    CashStrip()
+                    TradePanel(compact: true, now: now)
+                    BotLane(now: now)
                     dayFilter
                     restOfDay
                 }
@@ -79,214 +78,85 @@ struct DeskView: View {
         }
     }
 
-    /// Signal chrome is pinned. Rest-of-day / elapsed tables (~96 slots) live
-    /// only in the ScrollView so they cannot crush first paint.
-    private var wideDesk: some View {
-        VStack(spacing: 0) {
-            signalDesk
-                .layoutPriority(1)
-            AlertBanner()
-            ScrollView {
-                dayFilter
-                restOfDay
-                    .padding(.bottom, 28)
-            }
-        }
-    }
+    private var callLabel: String { store.call.label }
 
-    private var signalDesk: some View {
-        Group {
-            if HubDesk.isMac {
-                macOperator
-            } else {
-                stackedSignal
-            }
-        }
-    }
-
-    /// Mac first paint: countdown + arm + theory now/next + charts. Full day stays in the scroll.
-    private var macOperator: some View {
-        VStack(spacing: 8) {
-            heroCall
-                .padding(.horizontal, HubDesk.sectionPad)
-                .padding(.top, 6)
-            TradePanel(compact: true, now: now)
-            HStack(alignment: .top, spacing: 12) {
-                CashStrip()
-                tape
-            }
-            nowNextTheory
-            HStack(alignment: .top, spacing: 12) {
-                VStack(spacing: 0) {
-                    ChartCanvas(
-                        live: store.quote?.live ?? 0,
-                        closeAt: store.quote?.closeAt ?? 0,
-                        points: store.quote?.points ?? [],
-                        prior: store.quote?.prior ?? [],
-                        lean: store.call.side,
-                        dash: store.dash,
-                        quote: store.quote,
-                        beat: store.beat,
-                        clockNow: now,
-                        chartHeight: HubDesk.macChartHeight
-                    )
-                    VarianceChart(
-                        rows: store.dash?.elapsed ?? [],
-                        chartHeight: HubDesk.macVarianceHeight
-                    )
+    /// Port of hub-prediction `dashboard.tsx` call-bar + `styles.css` .call-up / .call-down / .call-sit.
+    private var callBar: some View {
+        let up = callLabel == "BUY UP"
+        let down = callLabel == "BUY DOWN"
+        let ink = down
+            ? Color(red: 0.102, green: 0.020, blue: 0.020)
+            : up
+                ? Color(red: 0.016, green: 0.078, blue: 0.047)
+                : Color(red: 0.843, green: 1.0, blue: 0.941)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .bottom, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Desk // signal")
+                            .font(HubDesk.font(10, weight: .medium))
+                            .tracking(2.2)
+                            .textCase(.uppercase)
+                            .opacity(0.72)
+                        Spacer()
+                        Button("Markets") { showMarkets = true }
+                            .buttonStyle(.plain)
+                            .font(HubDesk.font(11, weight: .semibold))
+                            .opacity(0.72)
+                        Button("Keys") { showKeys = true }
+                            .buttonStyle(.plain)
+                            .font(HubDesk.font(11, weight: .semibold))
+                            .opacity(0.72)
+                    }
+                    Text(callLabel)
+                        .font(HubDesk.font(30, weight: .bold))
+                        .tracking(0.8)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
-                .frame(maxWidth: .infinity, alignment: .top)
-                VStack(spacing: 0) {
-                    BotLane(now: now)
-                    roulette
-                }
-                .frame(minWidth: 260, idealWidth: 300, maxWidth: 360, alignment: .top)
+                Spacer(minLength: 8)
+                Text(closeClock)
+                    .font(HubDesk.font(30, weight: .bold))
+                    .tracking(1.2)
+                    .monospacedDigit()
             }
-        }
-    }
-
-    private var nowNextTheory: some View {
-        let rows = Array((store.dash?.upcoming ?? []).prefix(HubDesk.macNowNextRows))
-        return VStack(alignment: .leading, spacing: 6) {
-            Text("NOW + NEXT · THEORY")
-                .font(HubDesk.font(10, weight: .medium))
-                .foregroundStyle(HubTheme.quiet)
-                .tracking(1.4)
-            Text("Grok Build path · Clock / Theory / Actual / Preview / Variance / Last week / Vs open / High / Low")
-                .font(HubDesk.font(11))
-                .foregroundStyle(HubTheme.quiet)
-            slotTable(rows, empty: "Waiting on rest-of-day slots")
-        }
-        .padding(.horizontal, HubDesk.sectionPad)
-        .padding(.top, 4)
-    }
-
-    private var stackedSignal: some View {
-        VStack(spacing: 0) {
-            heroCall
-                .padding(.horizontal, HubDesk.sectionPad)
-                .padding(.top, 12)
-            liveLine
-            CashStrip()
-            BotLane(now: now)
-            TradePanel(compact: true, now: now)
-            tape
-            HStack(alignment: .top, spacing: 8) {
-                VStack(spacing: 0) {
-                    ChartCanvas(
-                        live: store.quote?.live ?? 0,
-                        closeAt: store.quote?.closeAt ?? 0,
-                        points: store.quote?.points ?? [],
-                        prior: store.quote?.prior ?? [],
-                        lean: store.call.side,
-                        dash: store.dash,
-                        quote: store.quote,
-                        beat: store.beat,
-                        clockNow: now,
-                        chartHeight: HubDesk.macChartHeight
-                    )
-                    VarianceChart(
-                        rows: store.dash?.elapsed ?? [],
-                        chartHeight: HubDesk.macVarianceHeight
-                    )
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
-                roulette
-                    .frame(minWidth: 240, idealWidth: 280, maxWidth: 320, alignment: .top)
-            }
-        }
-    }
-
-    private var buyPhase: BuyPhase {
-        BuyWindow.phase(closeAt: store.quote?.closeAt ?? 0, now: now)
-    }
-
-    private var windowLabel: String {
-        BuyWindow.headline(phase: buyPhase, call: store.call)
-    }
-
-    private var tone: Color {
-        switch windowLabel {
-        case "BUY UP": return HubTheme.up
-        case "BUY DOWN": return HubTheme.down
-        default: return HubTheme.ink
-        }
-    }
-
-    /// Always-on 6–4m call. BUY UP / BUY DOWN / SIT — pending countdown when waiting.
-    private var heroCall: some View {
-        let up = windowLabel == "BUY UP"
-        let down = windowLabel == "BUY DOWN"
-        let ink = down ? Color(red: 0.10, green: 0.02, blue: 0.02) : up ? Color(red: 0.016, green: 0.078, blue: 0.047) : HubTheme.copy
-        return VStack(alignment: .leading, spacing: HubDesk.isMac ? 8 : 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("BUY WINDOW 6–4m · CALL · \(store.mode == .paper ? "PAPER" : "LIVE")")
-                    .font(HubDesk.font(11, weight: .medium))
-                    .tracking(1.6)
-                Spacer()
-                Button("Markets") { showMarkets = true }
-                    .buttonStyle(.plain)
-                    .font(HubDesk.font(13, weight: .bold))
-                Button("Keys") { showKeys = true }
-                    .buttonStyle(.plain)
-                    .font(HubDesk.font(13, weight: .bold))
-            }
-            HStack(alignment: .bottom) {
-                Text(windowLabel)
-                    .font(HubDesk.font(52, weight: .bold))
-                    .tracking(1.0)
-                    .minimumScaleFactor(0.55)
-                    .lineLimit(1)
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(heroClock.label)
-                        .font(HubDesk.font(11, weight: .medium))
-                        .tracking(1.4)
-                        .opacity(0.85)
-                    Text(heroClock.value)
-                        .font(HubDesk.font(36, weight: .bold))
-                        .monospacedDigit()
-                }
-            }
-            Text(BuyWindow.heroLine(phase: buyPhase, call: store.call, closeAt: store.quote?.closeAt ?? 0, now: now))
-                .font(HubDesk.font(16, weight: .semibold))
-            Text(BuyWindow.reasonLine(quote: store.quote, beat: store.beat, call: store.call))
+            Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted\(store.call.locked ? " · LOCK" : "")")
                 .font(HubDesk.font(12))
-                .opacity(0.9)
+                .opacity(0.80)
         }
         .foregroundStyle(ink)
-        .padding(HubDesk.isMac ? 16 : 14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
                 colors: up
-                    ? [Color(red: 0.0, green: 1.0, blue: 0.53), Color(red: 0.0, green: 0.79, blue: 0.40)]
+                    ? [Color(red: 0.0, green: 1.0, blue: 0.533), Color(red: 0.0, green: 0.788, blue: 0.400)]
                     : down
-                        ? [Color(red: 1.0, green: 0.43, blue: 0.43), Color(red: 0.89, green: 0.24, blue: 0.24)]
+                        ? [Color(red: 1.0, green: 0.427, blue: 0.427), Color(red: 0.886, green: 0.239, blue: 0.239)]
                         : [Color(red: 0.063, green: 0.086, blue: 0.078), Color(red: 0.043, green: 0.059, blue: 0.051)],
                 startPoint: .top,
                 endPoint: .bottom
             )
         )
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(tone.opacity(0.4)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(up ? Color(red: 0.490, green: 1.0, blue: 0.749) : down ? Color(red: 1.0, green: 0.604, blue: 0.604) : HubTheme.up.opacity(0.28))
+        )
         .clipShape(RoundedRectangle(cornerRadius: 18))
-        .shadow(color: (up ? HubTheme.up : down ? HubTheme.down : HubTheme.up).opacity(up || down ? 0.28 : 0.08), radius: 14)
+        .shadow(color: (up ? HubTheme.up : down ? HubTheme.down : HubTheme.up).opacity(up || down ? 0.32 : 0.12), radius: up || down ? 16 : 10)
     }
 
-    private var tickAge: String {
-        guard store.lastQuoteAt > 0 else { return "—" }
-        let sec = max(0, (now - store.lastQuoteAt) / HubMs.second)
-        return String(format: "%.1fs", sec)
-    }
-
-    private var heroClock: (label: String, value: String) {
-        BuyWindow.heroClock(phase: buyPhase, closeAt: store.quote?.closeAt ?? 0, now: now)
+    /// CloseClock — mm:ss to settle, same as hub-prediction `close-clock.tsx`.
+    private var closeClock: String {
+        guard let close = store.quote?.closeAt, close.isFinite else { return "--:--" }
+        return BuyWindow.clock(max(0, close - now))
     }
 
     private var tape: some View {
         HStack(spacing: 8) {
-            tapeCard(label: "UP ASK", value: Money.cents(store.quote?.yesAsk), up: true)
-            tapeCard(label: "DOWN ASK", value: Money.cents(store.quote?.noAsk), up: false)
+            tapeCard(label: "UP ask", value: Money.cents(store.quote?.yesAsk), up: true)
+            tapeCard(label: "DOWN ask", value: Money.cents(store.quote?.noAsk), up: false)
         }
         .padding(.horizontal, HubDesk.sectionPad)
         .padding(.top, HubDesk.sectionGap)
@@ -318,7 +188,7 @@ struct DeskView: View {
                 .fill(HubTheme.up)
                 .frame(width: 7, height: 7)
                 .shadow(color: HubTheme.up, radius: 4)
-            Text("Live \(store.quote?.liveSource == "coinbase" ? "Coinbase" : "Kalshi") \(Money.dollarsExact(store.quote?.live)) vs posted \(Money.dollarsExact(store.quote?.strike)) · tick \(tickAge)")
+            Text("Live \(store.quote?.liveSource == "brti" ? "BRTI" : "Coinbase") \(Money.dollarsExact(store.quote?.live)) vs posted \(Money.dollarsExact(store.quote?.strike))")
                 .font(HubDesk.font(11))
                 .foregroundStyle(HubTheme.quiet)
             if store.holdingLast {
