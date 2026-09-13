@@ -216,6 +216,43 @@ grep -q 'clockNow' HubPrediction/ChartCanvas.swift || bad "ChartCanvas missing c
 grep -q 'waitsForConnectivity = false' HubPrediction/KalshiClient.swift || bad "session may stall on Catalyst"
 ok "live pulse 750ms quote / 5s dash / 10s board on Combine .common"
 
+# Mac UX: titlebar inset + type scale (Catalyst traffic lights must not cover the call)
+grep -q 'macTitlebarInset' HubPrediction/HubDesk.swift || bad "macTitlebarInset missing"
+grep -q 'safeAreaInset(edge: .top' HubPrediction/DeskView.swift || bad "DeskView missing Catalyst top safe-area inset"
+grep -q 'HubDesk.font' HubPrediction/DeskView.swift || bad "Mac type scale not on DeskView"
+grep -q 'HubDesk.font' HubPrediction/DeskChrome.swift || bad "Mac type scale not on cash/bots"
+grep -q 'HubDesk.font' HubPrediction/TradePanel.swift || bad "Mac type scale not on trade"
+grep -q 'func pinMacTitlebar' HubPrediction/HubDesk.swift || bad "pinMacTitlebar missing"
+grep -q 'HubDesk.pinMacTitlebar' HubPrediction/HubPredictionApp.swift || bad "App does not pin Mac titlebar"
+if python3 - <<'PY'
+import pathlib, sys
+desk = pathlib.Path("HubPrediction/HubDesk.swift").read_text()
+# inset must clear traffic lights (~28pt titlebar)
+if "macTitlebarInset: CGFloat = 38" not in desk and "macTitlebarInset: CGFloat = 36" not in desk:
+    # accept any inset >= 28
+    import re
+    m = re.search(r"macTitlebarInset: CGFloat = (\d+)", desk)
+    if not m or int(m.group(1)) < 28:
+        print("FAIL: macTitlebarInset too small")
+        sys.exit(2)
+if "isMac ? phone + 4" not in desk and "phone + 4" not in desk:
+    print("FAIL: Mac type bump missing")
+    sys.exit(2)
+view = pathlib.Path("HubPrediction/DeskView.swift").read_text()
+if "safeAreaInset(edge: .top" not in view:
+    print("FAIL: no top safeAreaInset")
+    sys.exit(2)
+if "TradePanel(compact: !HubDesk.isMac)" not in view:
+    print("FAIL: Mac trade panel still compact")
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "Mac UX: titlebar inset + larger type (phone stays dense)"
+else
+  bad "Mac UX titlebar / type"
+fi
+
 # Mac first-paint: signal chrome pinned; tables only inside a ScrollView
 if python3 - <<'PY'
 import pathlib, sys

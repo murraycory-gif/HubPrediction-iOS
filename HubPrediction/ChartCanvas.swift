@@ -44,8 +44,8 @@ struct ChartCanvas: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("TREND // PATH")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(10, weight: .medium))
+                    .foregroundStyle(HubTheme.quiet)
                     .tracking(1.6)
                 Spacer()
                 HStack(spacing: 4) {
@@ -137,18 +137,18 @@ struct ChartCanvas: View {
                 .frame(height: chartHeight)
             }
             Text("GREEN actual · BLUE theory · ORANGE preview/naive · GRAY last week + high/low · MINT DASH beat 15m")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(HubTheme.mute)
+                .font(HubDesk.font(10))
+                .foregroundStyle(HubTheme.quiet)
                 .tracking(0.8)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.horizontal, HubDesk.sectionPad)
+        .padding(.top, HubDesk.sectionGap)
     }
 
     private func zoomBtn(_ title: String, on: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, design: .monospaced))
+                .font(HubDesk.font(12))
                 .frame(minWidth: 36, minHeight: 36)
                 .background(on ? HubTheme.up : HubTheme.chip)
                 .foregroundStyle(on ? Color(red: 0.016, green: 0.078, blue: 0.047) : HubTheme.ink)

@@ -4,51 +4,51 @@ struct CashStrip: View {
     @EnvironmentObject private var store: DeskStore
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: HubDesk.isMac ? 20 : 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("CASH")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(10, weight: .medium))
+                    .foregroundStyle(HubTheme.quiet)
                     .tracking(1.4)
                 Text(store.mode == .paper
                      ? Money.dollarsExact(PaperBook.cash)
                      : (store.hasCreds ? Money.dollarsExact(store.cash) : "—"))
-                    .font(.system(size: 22, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(HubTheme.ink)
+                    .font(HubDesk.font(22, weight: .semibold))
+                    .foregroundStyle(HubTheme.copy)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(store.mode == .paper ? "PAPER P/L" : "LIVE EDGE")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(10, weight: .medium))
+                    .foregroundStyle(HubTheme.quiet)
                     .tracking(1.4)
                 Text(store.mode == .paper ? Money.signed(store.paperPnL) : Money.signed(store.expectedProfit))
-                    .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                    .font(HubDesk.font(22, weight: .semibold))
                     .foregroundStyle((store.mode == .paper ? store.paperPnL : store.expectedProfit) >= 0 ? HubTheme.up : HubTheme.down)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("SIZE → PROFIT")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(10, weight: .medium))
+                    .foregroundStyle(HubTheme.quiet)
                     .tracking(1.4)
                 Text("\(store.tradeCount) · EV \(Money.signed(store.expectedProfit))")
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(HubTheme.ink)
+                    .font(HubDesk.font(16, weight: .semibold))
+                    .foregroundStyle(HubTheme.copy)
             }
             Spacer()
             if store.mode == .paper {
                 Button("Reset paper") { store.resetPaper() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(11))
+                    .foregroundStyle(HubTheme.quiet)
             }
         }
-        .padding(12)
+        .padding(HubDesk.cardPad)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(HubTheme.panel)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(HubTheme.up.opacity(0.18)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(HubTheme.up.opacity(0.22)))
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, HubDesk.sectionPad)
+        .padding(.top, HubDesk.sectionGap)
     }
 }
 
@@ -59,58 +59,58 @@ struct BotLane: View {
     var body: some View {
         let phase = BuyWindow.phase(closeAt: store.quote?.closeAt ?? 0, now: now)
         let bots = DeskBots.analysts(quote: store.quote, beat: store.beat)
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: HubDesk.isMac ? 12 : 8) {
             HStack {
                 Text("BOTS // SCOUT · SIGNAL · RISK")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(10, weight: .medium))
+                    .foregroundStyle(HubTheme.quiet)
                     .tracking(1.4)
                 Spacer()
                 Button(store.botsArmed ? "BOTS ON" : "BOTS OFF") {
                     store.setBotsArmed(!store.botsArmed)
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .padding(.horizontal, 10)
-                .frame(height: 28)
+                .font(HubDesk.font(11, weight: .bold))
+                .padding(.horizontal, HubDesk.isMac ? 14 : 10)
+                .frame(height: HubDesk.isMac ? 34 : 28)
                 .background(store.botsArmed ? HubTheme.up : HubTheme.chip)
-                .foregroundStyle(store.botsArmed ? Color(red: 0.02, green: 0.04, blue: 0.03) : HubTheme.ink)
+                .foregroundStyle(store.botsArmed ? Color(red: 0.02, green: 0.04, blue: 0.03) : HubTheme.copy)
                 .clipShape(RoundedRectangle(cornerRadius: 7))
             }
-            HStack(spacing: 8) {
+            HStack(spacing: HubDesk.isMac ? 12 : 8) {
                 ForEach(bots) { bot in
                     VStack(alignment: .leading, spacing: 4) {
                         Text("\(bot.name) · \(bot.aka)")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(HubTheme.mute)
+                            .font(HubDesk.font(9, weight: .medium))
+                            .foregroundStyle(HubTheme.quiet)
                         Text(bot.side == .up ? "UP" : bot.side == .down ? "DOWN" : "SIT")
-                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                            .foregroundStyle(bot.side == .up ? HubTheme.up : bot.side == .down ? HubTheme.down : HubTheme.ink)
+                            .font(HubDesk.font(14, weight: .bold))
+                            .foregroundStyle(bot.side == .up ? HubTheme.up : bot.side == .down ? HubTheme.down : HubTheme.copy)
                         Text(bot.note)
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(HubTheme.mute)
+                            .font(HubDesk.font(9))
+                            .foregroundStyle(HubTheme.quiet)
                     }
-                    .padding(8)
+                    .padding(HubDesk.isMac ? 12 : 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(HubTheme.chip)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
             }
             Text(botStatus(phase: phase))
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(HubTheme.mute)
+                .font(HubDesk.font(11))
+                .foregroundStyle(HubTheme.quiet)
             if let note = store.botNote {
                 Text(note)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(HubDesk.font(11))
                     .foregroundStyle(HubTheme.up)
             }
         }
-        .padding(12)
+        .padding(HubDesk.cardPad)
         .background(HubTheme.panel)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(HubTheme.up.opacity(0.18)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(HubTheme.up.opacity(0.22)))
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, HubDesk.sectionPad)
+        .padding(.top, HubDesk.sectionGap)
     }
 
     private func botStatus(phase: BuyPhase) -> String {

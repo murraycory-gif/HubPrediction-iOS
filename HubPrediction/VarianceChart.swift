@@ -13,13 +13,13 @@ struct VarianceChart: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("VARIANCE // THEORY vs ACTUAL")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(10, weight: .medium))
+                    .foregroundStyle(HubTheme.quiet)
                     .tracking(1.6)
                 Spacer()
                 Text(pts.isEmpty ? "warming" : "now \(Money.signed(nowRow?.variance ?? pts.last?.px))")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(11))
+                    .foregroundStyle(HubTheme.quiet)
             }
             ZStack {
                 RoundedRectangle(cornerRadius: 16)
@@ -76,16 +76,16 @@ struct VarianceChart: View {
                 .frame(height: chartHeight)
                 if pts.isEmpty {
                     Text("Waiting on elapsed actual vs theory")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(HubTheme.mute)
+                        .font(HubDesk.font(12))
+                        .foregroundStyle(HubTheme.quiet)
                 }
             }
             Text("Difference path · actual − theory · same day window as TREND")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(HubTheme.mute)
+                .font(HubDesk.font(10))
+                .foregroundStyle(HubTheme.quiet)
                 .tracking(0.8)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.horizontal, HubDesk.sectionPad)
+        .padding(.top, HubDesk.sectionGap)
     }
 }

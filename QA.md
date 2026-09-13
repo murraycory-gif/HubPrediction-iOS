@@ -26,6 +26,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 |-------|---------|-------|
 | TF HOLD | KEEP | Do not `./push-hub-testflight.sh` yet. |
 | Catalyst compile (`refreshBoard` await) | KEEP (structural) | `await fetchMarket` is no longer inside `if let … ??`. Linux has no `xcodebuild`; Cory Mac Run is the green compile. |
+| Mac UX (titlebar + readability) | KEEP (structural) | 38pt Catalyst top inset so BEAT/BUY/banner clear traffic lights. Mac-only type/spacing/contrast. iPhone stays dense. |
 | Device Run (window/bots/charts/fills) | Soft KEEP | Needs Cory Run on Mac + iPhone. Live needs PEM. |
 
 ## FAIL

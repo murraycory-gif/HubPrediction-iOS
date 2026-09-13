@@ -22,6 +22,13 @@ struct DeskView: View {
                 phoneDesk
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if HubDesk.isMac {
+                HubTheme.surface
+                    .frame(height: HubDesk.macTitlebarInset)
+                    .accessibilityHidden(true)
+            }
+        }
         .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
             now = Date.nowMs
             store.pulse(now: now)
@@ -88,16 +95,16 @@ struct DeskView: View {
     }
 
     private var signalDesk: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: HubDesk.isMac ? 4 : 0) {
             callBar
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
+                .padding(.horizontal, HubDesk.sectionPad)
+                .padding(.top, HubDesk.isMac ? 8 : 12)
             liveLine
             CashStrip()
             BotLane(now: now)
-            TradePanel(compact: true)
+            TradePanel(compact: !HubDesk.isMac)
             tape
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: HubDesk.isMac ? 16 : 8) {
                 VStack(spacing: 0) {
                     ChartCanvas(
                         live: store.quote?.live ?? 0,
@@ -118,7 +125,7 @@ struct DeskView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
                 roulette
-                    .frame(minWidth: 240, idealWidth: 280, maxWidth: 320, alignment: .top)
+                    .frame(minWidth: HubDesk.isMac ? 260 : 240, idealWidth: HubDesk.isMac ? 300 : 280, maxWidth: HubDesk.isMac ? 360 : 320, alignment: .top)
             }
         }
     }
@@ -142,43 +149,43 @@ struct DeskView: View {
     private var callBar: some View {
         let up = windowLabel == "BUY UP"
         let down = windowLabel == "BUY DOWN"
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: HubDesk.isMac ? 10 : 8) {
             HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: HubDesk.isMac ? 8 : 6) {
                     Text("BUY WINDOW 6–4m · \(store.mode == .paper ? "PAPER" : "LIVE") · \(store.seriesTicker)")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(HubDesk.font(10, weight: .medium))
                         .tracking(2.2)
-                        .opacity(0.72)
+                        .opacity(0.78)
                     Text(windowLabel)
-                        .font(.system(size: 32, weight: .bold, design: .monospaced))
+                        .font(HubDesk.font(32, weight: .bold))
                         .tracking(1.2)
                 }
                 Spacer()
                 Text(clockText)
-                    .font(.system(size: 30, weight: .bold, design: .monospaced))
+                    .font(HubDesk.font(30, weight: .bold))
                     .monospacedDigit()
             }
             Text(store.beat.chrome)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .opacity(0.92)
+                .font(HubDesk.font(11, weight: .semibold))
+                .opacity(0.94)
             Text(BuyWindow.detail(phase: buyPhase, closeAt: store.quote?.closeAt ?? 0, now: now))
-                .font(.system(size: 11, design: .monospaced))
-                .opacity(0.85)
+                .font(HubDesk.font(11))
+                .opacity(0.88)
             HStack {
                 Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted · live")
-                    .font(.system(size: 12, design: .monospaced))
-                    .opacity(0.8)
+                    .font(HubDesk.font(12))
+                    .opacity(0.84)
                 Spacer()
                 Button("Markets") { showMarkets = true }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(HubDesk.font(12, weight: .semibold))
                 Button("Keys") { showKeys = true }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(HubDesk.font(12, weight: .semibold))
             }
         }
-        .foregroundStyle(down ? Color(red: 0.10, green: 0.02, blue: 0.02) : up ? Color(red: 0.016, green: 0.078, blue: 0.047) : HubTheme.ink)
-        .padding(14)
+        .foregroundStyle(down ? Color(red: 0.10, green: 0.02, blue: 0.02) : up ? Color(red: 0.016, green: 0.078, blue: 0.047) : HubTheme.copy)
+        .padding(HubDesk.isMac ? 20 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
@@ -215,21 +222,21 @@ struct DeskView: View {
             tapeCard(label: "UP ASK", value: Money.cents(store.quote?.yesAsk), up: true)
             tapeCard(label: "DOWN ASK", value: Money.cents(store.quote?.noAsk), up: false)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.horizontal, HubDesk.sectionPad)
+        .padding(.top, HubDesk.sectionGap)
     }
 
     private func tapeCard(label: String, value: String, up: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: HubDesk.isMac ? 8 : 6) {
             Text(label)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(HubTheme.mute)
+                .font(HubDesk.font(10, weight: .medium))
+                .foregroundStyle(HubTheme.quiet)
                 .tracking(1.6)
             Text(value)
-                .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                .font(HubDesk.font(30, weight: .semibold))
                 .foregroundStyle(up ? HubTheme.up : HubTheme.down)
         }
-        .padding(12)
+        .padding(HubDesk.cardPad)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(HubTheme.panel)
         .overlay(
@@ -246,16 +253,16 @@ struct DeskView: View {
                 .frame(width: 7, height: 7)
                 .shadow(color: HubTheme.up, radius: 4)
             Text("Live \(store.quote?.liveSource == "coinbase" ? "Coinbase" : "Kalshi") \(Money.dollarsExact(store.quote?.live)) vs posted \(Money.dollarsExact(store.quote?.strike)) · tick \(tickAge)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(HubTheme.mute)
+                .font(HubDesk.font(11))
+                .foregroundStyle(HubTheme.quiet)
             if store.holdingLast {
                 Text("· last ¢ held — see banner + Retry")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(11))
+                    .foregroundStyle(HubTheme.quiet)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.horizontal, HubDesk.sectionPad)
+        .padding(.top, HubDesk.sectionGap)
     }
 
     private var roulette: some View {
@@ -264,16 +271,16 @@ struct DeskView: View {
         let down = list.count - up
         let upPct = list.isEmpty ? 0 : Int((Double(up) / Double(list.count) * 100.0).rounded())
         let cols = 8
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: HubDesk.isMac ? 10 : 8) {
             HStack {
                 Text("ROULETTE · LAST \(list.isEmpty ? "—" : "\(list.count)") SETTLED")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(10, weight: .medium))
+                    .foregroundStyle(HubTheme.quiet)
                     .tracking(1.4)
                 Spacer()
                 Text(list.isEmpty ? "warming" : "\(upPct)% UP · \(100 - upPct)% DOWN")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(11))
+                    .foregroundStyle(HubTheme.quiet)
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: cols), spacing: 6) {
                 ForEach(list.isEmpty ? placeholders : list) { item in
@@ -284,11 +291,11 @@ struct DeskView: View {
                 }
             }
             Text("\(up) UP / \(down) DOWN · newest first")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(HubTheme.mute)
+                .font(HubDesk.font(10))
+                .foregroundStyle(HubTheme.quiet)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
+        .padding(.horizontal, HubDesk.sectionPad)
+        .padding(.top, HubDesk.isMac ? 18 : 16)
     }
 
     private var placeholders: [Settled] {
@@ -298,8 +305,8 @@ struct DeskView: View {
     private var dayFilter: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("DAY")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(HubTheme.mute)
+                .font(HubDesk.font(10, weight: .medium))
+                .foregroundStyle(HubTheme.quiet)
                 .tracking(1.8)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -308,9 +315,9 @@ struct DeskView: View {
                             store.setDay(d.key)
                         } label: {
                             Text(d.label)
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(HubDesk.font(12))
                                 .padding(.horizontal, 12)
-                                .frame(height: 40)
+                                .frame(height: HubDesk.isMac ? 44 : 40)
                                 .background(d.key == store.day ? HubTheme.up : HubTheme.chip)
                                 .foregroundStyle(d.key == store.day ? Color(red: 0.016, green: 0.078, blue: 0.047) : HubTheme.ink)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -320,7 +327,7 @@ struct DeskView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, HubDesk.sectionPad)
         .padding(.top, 20)
     }
 
@@ -329,23 +336,23 @@ struct DeskView: View {
         let elapsed = Array((store.dash?.elapsed ?? []).reversed())
         return VStack(alignment: .leading, spacing: 12) {
             Text("NOW + REST OF DAY · 15 MIN")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(HubTheme.mute)
+                .font(HubDesk.font(10, weight: .medium))
+                .foregroundStyle(HubTheme.quiet)
                 .tracking(1.4)
             Text("Current clock and upcoming theory. Swipe sideways for last week.")
-                .font(.system(size: 12))
-                .foregroundStyle(HubTheme.mute)
+                .font(HubDesk.font(12))
+                .foregroundStyle(HubTheme.quiet)
             slotTable(upcoming, empty: "Waiting on rest-of-day slots")
             if !elapsed.isEmpty {
                 Text("ELAPSED · ACTUAL VS THEORY")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(HubTheme.mute)
+                    .font(HubDesk.font(10, weight: .medium))
+                    .foregroundStyle(HubTheme.quiet)
                     .tracking(1.4)
                     .padding(.top, 8)
                 slotTable(elapsed, empty: "")
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, HubDesk.sectionPad)
         .padding(.top, 20)
     }
 
@@ -454,18 +461,18 @@ struct DeskView: View {
 
     private func flexHead(_ t: String) -> some View {
         Text(t)
-            .font(.system(size: 10, design: .monospaced))
-            .foregroundStyle(HubTheme.mute)
+            .font(HubDesk.font(10, weight: .medium))
+            .foregroundStyle(HubTheme.quiet)
             .tracking(1.0)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
+            .padding(.vertical, HubDesk.isMac ? 10 : 8)
     }
 
     private func flexCell(_ t: String, now: Bool) -> some View {
         Text(t)
-            .font(.system(size: 13, design: .monospaced))
-            .foregroundStyle(now ? HubTheme.up : HubTheme.ink)
+            .font(HubDesk.font(13))
+            .foregroundStyle(now ? HubTheme.up : HubTheme.copy)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
+            .padding(.vertical, HubDesk.isMac ? 10 : 8)
     }
 }
