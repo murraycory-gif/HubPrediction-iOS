@@ -14,8 +14,10 @@ enum HubDesk {
     static let phoneChartHeight: CGFloat = 200
     static let phoneVarianceHeight: CGFloat = 160
     /// Trend + variance sit in the pinned signal stack. Tables never share it.
-    static let macChartHeight: CGFloat = 228
-    static let macVarianceHeight: CGFloat = 156
+    static let macChartHeight: CGFloat = 200
+    static let macVarianceHeight: CGFloat = 120
+    /// Now + next slots on first paint — not the full 96-row wall.
+    static let macNowNextRows = 8
     static let macMinWidth: CGFloat = 1100
     static let macMinHeight: CGFloat = 860
     static let macDefaultWidth: CGFloat = 1380

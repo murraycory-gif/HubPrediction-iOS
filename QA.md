@@ -26,7 +26,8 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 |-------|---------|-------|
 | TF HOLD | HOLD | Do not `./push-hub-testflight.sh`. |
 | Mac visual Soft KEEP PASS | **not claimed** | Cory Run is the only visual PASS. Linux cannot Run Catalyst. |
-| Waiting lockout (WAIT + bots OFF) | KEEP (source) | Dead `WAIT · 6–4m WINDOW` button is gone. ARM BOTS + QUEUE fire in 6–4m. Fills still gated. |
+| Waiting lockout | KEEP (source) | Countdown OPENS IN. ARM/QUEUE live. Bots default ON (`UserDefaults` nil → armed). |
+| First-paint theory | KEEP (source) | Mac pins NOW+NEXT (8 slots, full Grok columns). Full day stays in the scroll. |
 | Device Run | Soft until Cory Run | Mac + iPhone. |
 
 ## FAIL

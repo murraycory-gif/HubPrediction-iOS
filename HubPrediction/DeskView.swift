@@ -104,25 +104,19 @@ struct DeskView: View {
         }
     }
 
-    /// Mac: operator columns — call + (cash/trade | asks/bots) + charts. Not a wall of chrome.
+    /// Mac first paint: countdown + arm + theory now/next + charts. Full day stays in the scroll.
     private var macOperator: some View {
-        VStack(spacing: 10) {
-            callBar
+        VStack(spacing: 8) {
+            macHero
                 .padding(.horizontal, HubDesk.sectionPad)
-                .padding(.top, 8)
-            HStack(alignment: .top, spacing: 16) {
-                VStack(spacing: 0) {
-                    CashStrip()
-                    TradePanel(compact: false, now: now)
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
-                VStack(spacing: 0) {
-                    tape
-                    BotLane(now: now)
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
+                .padding(.top, 6)
+            TradePanel(compact: true, now: now)
+            HStack(alignment: .top, spacing: 12) {
+                CashStrip()
+                tape
             }
-            HStack(alignment: .top, spacing: 16) {
+            nowNextTheory
+            HStack(alignment: .top, spacing: 12) {
                 VStack(spacing: 0) {
                     ChartCanvas(
                         live: store.quote?.live ?? 0,
@@ -142,10 +136,29 @@ struct DeskView: View {
                     )
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
-                roulette
-                    .frame(minWidth: 260, idealWidth: 300, maxWidth: 360, alignment: .top)
+                VStack(spacing: 0) {
+                    BotLane(now: now)
+                    roulette
+                }
+                .frame(minWidth: 260, idealWidth: 300, maxWidth: 360, alignment: .top)
             }
         }
+    }
+
+    private var nowNextTheory: some View {
+        let rows = Array((store.dash?.upcoming ?? []).prefix(HubDesk.macNowNextRows))
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("NOW + NEXT · THEORY")
+                .font(HubDesk.font(10, weight: .medium))
+                .foregroundStyle(HubTheme.quiet)
+                .tracking(1.4)
+            Text("Grok Build path · Clock / Theory / Actual / Preview / Variance / Last week / Vs open / High / Low")
+                .font(HubDesk.font(11))
+                .foregroundStyle(HubTheme.quiet)
+            slotTable(rows, empty: "Waiting on rest-of-day slots")
+        }
+        .padding(.horizontal, HubDesk.sectionPad)
+        .padding(.top, 4)
     }
 
     private var stackedSignal: some View {
@@ -198,6 +211,59 @@ struct DeskView: View {
         case "BUY DOWN": return HubTheme.down
         default: return HubTheme.ink
         }
+    }
+
+    private var macHero: some View {
+        let opens = BuyWindow.clock(BuyWindow.opensInMs(closeAt: store.quote?.closeAt ?? 0, now: now))
+        return HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("BUY WINDOW 6–4m · \(store.mode == .paper ? "PAPER" : "LIVE")")
+                    .font(HubDesk.font(11, weight: .medium))
+                    .foregroundStyle(HubTheme.quiet)
+                Text(windowLabel)
+                    .font(HubDesk.font(28, weight: .bold))
+                    .foregroundStyle(tone)
+                if buyPhase == .waiting {
+                    Text("OPENS IN \(opens) · SETTLE \(clockText)")
+                        .font(HubDesk.font(16, weight: .semibold))
+                        .foregroundStyle(HubTheme.copy)
+                } else {
+                    Text(BuyWindow.detail(phase: buyPhase, closeAt: store.quote?.closeAt ?? 0, now: now))
+                        .font(HubDesk.font(13, weight: .semibold))
+                        .foregroundStyle(HubTheme.copy)
+                }
+                Text(store.beat.chrome)
+                    .font(HubDesk.font(12, weight: .semibold))
+                    .foregroundStyle(HubTheme.copy)
+                Text(BuyWindow.nextAction(phase: buyPhase, botsArmed: store.botsArmed, queued: store.queued))
+                    .font(HubDesk.font(13, weight: .semibold))
+                    .foregroundStyle(store.botsArmed ? HubTheme.up : HubTheme.copy)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 8) {
+                Text(clockText)
+                    .font(HubDesk.font(28, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(HubTheme.copy)
+                Text("Live \(store.quote?.liveSource == "coinbase" ? "Coinbase" : "Kalshi") \(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) · tick \(tickAge)")
+                    .font(HubDesk.font(12))
+                    .foregroundStyle(HubTheme.quiet)
+                HStack(spacing: 10) {
+                    Button("Markets") { showMarkets = true }
+                        .buttonStyle(.plain)
+                        .font(HubDesk.font(13, weight: .bold))
+                    Button("Keys") { showKeys = true }
+                        .buttonStyle(.plain)
+                        .font(HubDesk.font(13, weight: .bold))
+                }
+                .foregroundStyle(HubTheme.up)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(HubTheme.panel)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(tone.opacity(0.4)))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private var callBar: some View {

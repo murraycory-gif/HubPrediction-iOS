@@ -12,9 +12,19 @@ struct BotLean: Identifiable, Equatable {
 enum DeskBots {
     private static let armedKey = "hub.bots.armed"
 
+    /// Bots do the buying. Missing key means ON — `bool(forKey:)` is false and was Soft FAIL.
     static var armed: Bool {
-        get { UserDefaults.standard.bool(forKey: armedKey) }
+        get {
+            if UserDefaults.standard.object(forKey: armedKey) == nil { return true }
+            return UserDefaults.standard.bool(forKey: armedKey)
+        }
         set { UserDefaults.standard.set(newValue, forKey: armedKey) }
+    }
+
+    static func ensureDefaultOn() {
+        if UserDefaults.standard.object(forKey: armedKey) == nil {
+            UserDefaults.standard.set(true, forKey: armedKey)
+        }
     }
 
     static func analysts(quote: Quote?, beat: BeatPath) -> [BotLean] {

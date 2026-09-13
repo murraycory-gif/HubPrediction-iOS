@@ -242,8 +242,14 @@ view = pathlib.Path("HubPrediction/DeskView.swift").read_text()
 if "safeAreaInset(edge: .top" not in view:
     print("FAIL: no top safeAreaInset")
     sys.exit(2)
-if "macOperator" not in view or "TradePanel(compact: false, now: now)" not in view:
-    print("FAIL: Mac operator desk / trade column missing")
+if "macOperator" not in view or "nowNextTheory" not in view:
+    print("FAIL: Mac first-paint operator / theory strip missing")
+    sys.exit(2)
+if "NOW + NEXT · THEORY" not in view:
+    print("FAIL: Grok Build now+next table not on first paint")
+    sys.exit(2)
+if "OPENS IN" not in view:
+    print("FAIL: Mac hero missing opens-in countdown")
     sys.exit(2)
 if "WAIT · 6–4m WINDOW" in pathlib.Path("HubPrediction/TradePanel.swift").read_text():
     print("FAIL: dead WAIT button still blocks the trade row")
@@ -331,6 +337,9 @@ then
 else
   bad "window gate / live bot execute"
 fi
+grep -q 'macNowNextRows' HubPrediction/HubDesk.swift || bad "macNowNextRows missing"
+grep -q 'object(forKey: armedKey) == nil' HubPrediction/DeskBots.swift || bad "bots default-on missing"
+grep -q 'ensureDefaultOn' HubPrediction/DeskStore.swift || bad "start does not default bots on"
 grep -q 'func nextAction' HubPrediction/BuyWindow.swift || bad "BuyWindow nextAction missing"
 grep -q 'func queueForWindow' HubPrediction/DeskStore.swift || bad "queueForWindow missing"
 grep -q 'func tickQueue' HubPrediction/DeskStore.swift || bad "tickQueue missing"

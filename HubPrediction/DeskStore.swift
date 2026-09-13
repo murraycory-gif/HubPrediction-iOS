@@ -84,7 +84,11 @@ final class DeskStore: ObservableObject {
         hasCreds = KalshiCreds.isPresent
         mode = PaperBook.mode
         paperFills = PaperBook.fills
+        DeskBots.ensureDefaultOn()
         botsArmed = DeskBots.armed
+        if botsArmed {
+            botNote = "Bots armed — they execute ALL buys when 6–4m opens. Paper local · LIVE needs Keys."
+        }
         Task { await refreshAll() }
         Task { await searchMarkets(query: "") }
         if mode == .live, hasCreds { Task { await refreshCash() } }
