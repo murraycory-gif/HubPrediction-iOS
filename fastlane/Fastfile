@@ -1,0 +1,92 @@
+# HUB Prediction Fastlane
+# Run from repo root on your Mac (not Linux CI without Xcode).
+#
+#   bundle install
+#   bundle exec fastlane build
+#   bundle exec fastlane hub_beta
+#
+# This file does not reference Fulfillment Heartbeat.
+
+default_platform(:ios)
+
+PROJECT = "HubPrediction.xcodeproj"
+SCHEME  = "HubPrediction"
+BUNDLE  = "com.corymurray.HubPrediction"
+
+platform :ios do
+  desc "Compile HUB Prediction for iOS Simulator (smoke build)"
+  lane :build do
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Debug",
+      destination: "generic/platform=iOS Simulator",
+      skip_package_ipa: true,
+      skip_archive: true,
+      skip_codesigning: true,
+      derived_data_path: "build/DerivedData",
+      buildlog_path: "build/logs",
+      silent: false,
+      clean: false
+    )
+    UI.success("✅ Simulator build succeeded")
+  end
+
+  desc "Clean + compile for Simulator"
+  lane :build_clean do
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Debug",
+      destination: "generic/platform=iOS Simulator",
+      skip_package_ipa: true,
+      skip_archive: true,
+      skip_codesigning: true,
+      derived_data_path: "build/DerivedData",
+      clean: true
+    )
+    UI.success("✅ Clean simulator build succeeded")
+  end
+
+  desc "Archive and upload HUB Prediction to TestFlight"
+  lane :hub_beta do
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "build/hub-ipa",
+      derived_data_path: "build/HubPredictionDerived"
+    )
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,
+      app_identifier: BUNDLE
+    )
+    UI.success("✅ HUB Prediction uploaded to TestFlight")
+  end
+
+  desc "Same as hub_beta — this repo is only HUB Prediction"
+  lane :beta do
+    hub_beta
+  end
+
+  desc "Compile Mac Catalyst (My Mac). Local desk only — not TestFlight."
+  lane :mac_build do
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: "Debug",
+      destination: "generic/platform=macOS,variant=Mac Catalyst",
+      skip_package_ipa: true,
+      skip_archive: true,
+      derived_data_path: "build/MacCatalystDerived",
+      buildlog_path: "build/logs"
+    )
+    UI.success("✅ Mac Catalyst build succeeded")
+  end
+
+  desc "List available simulators"
+  lane :sims do
+    sh("xcrun simctl list devices available")
+  end
+end
