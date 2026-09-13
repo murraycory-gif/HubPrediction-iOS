@@ -10,7 +10,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 
 | # | Check | Verdict | Notes |
 |---|--------|---------|-------|
-| 1 | Buy call in last 6–4 minutes before settle | KEEP (structural) | Grok Build call-bar: `Desk // signal` + **BUY UP** / **BUY DOWN** / **SIT** + CloseClock. Fills still 6–4m gated. |
+| 1 | Buy call in last 6–4 minutes before settle | KEEP (structural) | Gold desk hero: **BUY UP** / **BUY DOWN** / **SIT** + `Desk will buy` + `to close`. Fills still 6–4m gated. |
 | 2 | AI bots execute ALL buying (live + paper) in 6–4m | KEEP (structural) | SCOUT/SIGNAL/RISK. Armed bots call `confirmPlace` for paper and LIVE (keys required). Humans also gated to `BuyPhase.open`. |
 | 3 | Show cash; size for profit | KEEP (structural) | `CashStrip` + quarter-Kelly `SizeCash` + expected profit EV. |
 | 4 | Beat-the-trend forecast; visible next-15m dash | KEEP (structural) | Mint DASH = beat path (gap/tape/bots/shape). Orange dotted = naive last-6m. Not a last-week replot. Call bar shows BEAT/FADE/WITH TREND. |
@@ -26,9 +26,9 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 |-------|---------|-------|
 | TF HOLD | HOLD | Do not `./push-hub-testflight.sh`. |
 | Mac visual Soft KEEP PASS | **not claimed** | Cory Run is the only visual PASS. Linux cannot Run Catalyst. |
-| Top BUY call | KEEP (source) | Sticky `Desk // signal` call-bar. Label from `kalshiCall` + `holdThesis`. Bots/QUEUE secondary. |
+| Top BUY call | KEEP (source) | Gold hero pill + POSTED / THEORY CLOSE / LIVE VS POSTED + KALSHI POSTED / THEORY AT CLOSE + huge UP/DOWN ¢ + Trend. `kalshiCall` + `holdThesis`. |
 | Mac window | KEEP (source) | Titlebar drag strip clear. Catalyst `maximumSize` set so the window is not frozen. |
-| First-paint theory | KEEP (source) | After tape / live / chart / roulette: Now + rest of day 9-col table in the scroll. |
+| First-paint theory | KEEP (source) | Gold Trend card first; rest-of-day 9-col table stays in the scroll below. |
 | Device Run | Soft until Cory Run | Mac + iPhone. |
 
 ## FAIL

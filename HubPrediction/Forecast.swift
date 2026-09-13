@@ -11,6 +11,19 @@ enum Forecast {
         min(hi, max(lo, n))
     }
 
+    /// Theory print at settle — last-6m slope × 90m fade, same Grok Build path.
+    static func theoryAtClose(live: Double, closeAt: Double, now: Double, points: [Point], dash: Dash?) -> Double? {
+        if let row = dash?.upcoming.first(where: \.isNow) ?? dash?.upcoming.first, let t = row.theory, t.isFinite {
+            return t
+        }
+        guard live.isFinite else { return nil }
+        let slope = slopeFromPoints(points, now: now)
+        let close = closeAt.isFinite && closeAt > now ? closeAt : now + 15 * HubMs.minute
+        let mins = max(0, (close - now) / HubMs.minute)
+        let fade = max(0.0, 1.0 - mins / theoryFadeMins)
+        return live + clamp(slope, -maxSlope, maxSlope) * mins * fade
+    }
+
     static func slopeFromPoints(_ points: [Point]?, now: Double) -> Double {
         let list = points ?? []
         let from = now - 6.0 * HubMs.minute

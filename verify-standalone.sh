@@ -69,7 +69,8 @@ for f in \
   DeskBots.swift \
   DeskChrome.swift \
   VarianceChart.swift \
-  BeatTrend.swift
+  BeatTrend.swift \
+  GoldDesk.swift
 do
   [ -f "HubPrediction/$f" ] || bad "missing HubPrediction/$f"
   grep -q "$f" "$pbx" || bad "$f not in pbxproj"
@@ -122,7 +123,7 @@ then
 else
   bad "paper/live confirm order"
 fi
-grep -q 'confirmationDialog' HubPrediction/TradePanel.swift || bad "trade confirm missing"
+grep -q 'confirmationDialog' HubPrediction/GoldDesk.swift || bad "gold trade confirm missing"
 grep -q 'func retry' HubPrediction/DeskStore.swift || bad "retry missing"
 grep -q 'phoneStat' HubPrediction/DeskView.swift || bad "phone stacked rest-of-day missing"
 ok "browse + trade path + retry + phone cards"
@@ -232,7 +233,7 @@ else
 fi
 grep -q 'store.pulse(now:' HubPrediction/DeskView.swift || bad "DeskView does not pulse store"
 grep -q 'in: .common' HubPrediction/DeskView.swift || bad "Combine timer must use .common"
-grep -q 'clockNow: now' HubPrediction/DeskView.swift || bad "chart not wired to wall-clock now"
+grep -q 'clockNow: now' HubPrediction/GoldDesk.swift || bad "chart not wired to wall-clock now"
 grep -q 'clockNow' HubPrediction/ChartCanvas.swift || bad "ChartCanvas missing clockNow"
 grep -q 'waitsForConnectivity = false' HubPrediction/KalshiClient.swift || bad "session may stall on Catalyst"
 ok "live pulse 750ms quote / 5s dash / 10s board on Combine .common"
@@ -263,12 +264,17 @@ view = pathlib.Path("HubPrediction/DeskView.swift").read_text()
 if "safeAreaInset(edge: .top" not in view:
     print("FAIL: no top safeAreaInset")
     sys.exit(2)
-if "Desk // signal" not in view:
-    print("FAIL: Grok Build call-bar kicker missing")
+if "GoldDesk" not in view:
+    print("FAIL: GoldDesk not on first paint")
     sys.exit(2)
-if "private var callBar" not in view and "private var callBar:" not in view:
-    print("FAIL: callBar missing")
-    sys.exit(2)
+gold = pathlib.Path("HubPrediction/GoldDesk.swift").read_text()
+for n in ("Desk will buy", "to close", "THEORY CLOSE", "KALSHI POSTED", "THEORY AT CLOSE", "LIVE VS POSTED", "Theory finishes"):
+    if n not in gold:
+        print("FAIL: gold desk missing", n)
+        sys.exit(2)
+if '"BOTS ARMED"' in gold or '"QUEUE' in gold or '"SCOUT"' in gold:
+        print("FAIL: bots/QUEUE/SCOUT still on the gold desk")
+        sys.exit(2)
 if "allowsHitTesting(false)" not in view:
     print("FAIL: titlebar spacer still steals drag hits")
     sys.exit(2)
@@ -290,46 +296,31 @@ else
   bad "Mac UX titlebar / type"
 fi
 
-# Grok Build first-paint: sticky call-bar; tape / live / chart / roulette / theory in scroll.
-# Bots/QUEUE must not sit above the call-bar.
+# Gold Grok Build first-paint. Bots/QUEUE must not be the hero.
 if python3 - <<'PY'
 import pathlib, sys
 src = pathlib.Path("HubPrediction/DeskView.swift").read_text()
-for n in (
-    "Desk // signal",
-    "private var grokDesk",
-    "private var callBar",
-    "NOW + REST OF DAY",
-):
-    if n not in src:
-        print("FAIL:", n)
+gold = pathlib.Path("HubPrediction/GoldDesk.swift").read_text()
+if "GoldDesk(" not in src:
+    print("FAIL: DeskView does not mount GoldDesk")
+    sys.exit(2)
+if "BotLane" in src.split("private var goldColumn", 1)[1].split("private var quietTools", 1)[0]:
+    print("FAIL: BotLane still on first paint")
+    sys.exit(2)
+for n in ("hero", "postedRow", "kalshiCards", "askPills", "trendCard", "Desk will buy", "to close"):
+    if n not in gold:
+        print("FAIL: gold layout missing", n)
         sys.exit(2)
-desk = src.split("private var grokDesk", 1)[1].split("private var callLabel", 1)[0]
-if "ScrollView" not in desk:
-    print("FAIL: grokDesk has no ScrollView")
-    sys.exit(2)
-before, after = desk.split("ScrollView", 1)
-if "callBar" not in before:
-    print("FAIL: call-bar not sticky above ScrollView")
-    sys.exit(2)
-if "BotLane" in before or "TradePanel" in before or "QUEUE" in before:
-    print("FAIL: bots/QUEUE still replace the call-bar on first paint")
-    sys.exit(2)
-if "restOfDay" in before:
-    print("FAIL: restOfDay appears before ScrollView")
-    sys.exit(2)
-order = ["tape", "liveLine", "ChartCanvas(", "roulette", "TradePanel", "BotLane", "restOfDay"]
-pos = [after.find(n) for n in order]
+order = ["hero", "postedRow", "kalshiCards", "askPills", "trendCard"]
+body = gold.split("var body:", 1)[1].split("private var hero", 1)[0]
+pos = [body.find(n) for n in order]
 if any(p < 0 for p in pos) or pos != sorted(pos):
-    print("FAIL: Grok Build scroll order is not tape → live → chart → roulette → trade/bots → theory")
-    sys.exit(2)
-if " · LOCK" not in src:
-    print("FAIL: call-bar missing LOCK subline")
+    print("FAIL: gold first-paint order is not hero → posted → cards → pills → trend")
     sys.exit(2)
 sys.exit(0)
 PY
 then
-  ok "Grok Build first-paint: sticky call-bar; bots/QUEUE secondary"
+  ok "Gold Grok Build first-paint; bots/QUEUE not primary"
 else
   bad "Mac first-paint layout"
 fi
@@ -371,31 +362,30 @@ grep -q 'maximumSize' HubPrediction/HubDesk.swift || bad "Catalyst maximumSize m
 grep -q 'allowsHitTesting(false)' HubPrediction/DeskView.swift || bad "titlebar spacer still hit-tests"
 grep -q 'object(forKey: armedKey) == nil' HubPrediction/DeskBots.swift || bad "bots default-on missing"
 grep -q 'ensureDefaultOn' HubPrediction/DeskStore.swift || bad "start does not default bots on"
-grep -q 'Desk // signal' HubPrediction/DeskView.swift || bad "Grok Build kicker missing"
-grep -q 'private var callBar' HubPrediction/DeskView.swift || bad "callBar missing"
-grep -q 'private var closeClock' HubPrediction/DeskView.swift || bad "CloseClock missing"
+grep -q 'Desk will buy' HubPrediction/GoldDesk.swift || bad "gold hero sub missing"
+grep -q 'to close' HubPrediction/GoldDesk.swift || bad "gold CloseClock missing"
+grep -q 'struct GoldDesk' HubPrediction/GoldDesk.swift || bad "GoldDesk missing"
 if python3 - <<'PY'
 import pathlib, sys
-view = pathlib.Path("HubPrediction/DeskView.swift").read_text()
-bar = view.split("private var callBar", 1)[1].split("private var closeClock", 1)[0]
-if "store.call.label" not in bar and "callLabel" not in bar:
-    print("FAIL: call-bar does not show kalshiCall label")
+gold = pathlib.Path("HubPrediction/GoldDesk.swift").read_text()
+if "call.label" not in gold:
+    print("FAIL: gold hero does not show kalshiCall label")
     sys.exit(2)
-if "BOTS ARMED" in bar or "QUEUE" in bar:
-    print("FAIL: bots/QUEUE still on the call-bar")
+if '"BOTS ARMED"' in gold or '"QUEUE' in gold or '"SCOUT"' in gold:
+    print("FAIL: bots/QUEUE still on the gold desk")
     sys.exit(2)
-if "posted" not in bar or "LOCK" not in bar:
-    print("FAIL: call-bar missing live vs strike / LOCK subline")
+if "THEORY AT CLOSE" not in gold or "KALSHI POSTED" not in gold:
+    print("FAIL: gold cards missing")
     sys.exit(2)
 store = pathlib.Path("HubPrediction/DeskStore.swift").read_text()
 chrome = store.split("func applyLiveChrome", 1)[1].split("func recomputeBeat", 1)[0]
 if "tradeSide = call.side" not in chrome:
-    print("FAIL: live call does not drive trade/QUEUE side")
+    print("FAIL: live call does not drive trade side")
     sys.exit(2)
 sys.exit(0)
 PY
 then
-  ok "Grok Build call-bar: Desk // signal + BUY UP/DOWN/SIT + CloseClock"
+  ok "Gold desk: BUY UP/DOWN/SIT + to close + theory cards"
 else
   bad "hero BUY call"
 fi

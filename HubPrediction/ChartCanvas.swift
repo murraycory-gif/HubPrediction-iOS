@@ -11,6 +11,8 @@ struct ChartCanvas: View {
     var beat: BeatPath = BeatPath()
     var clockNow: Double = Date.nowMs
     var chartHeight: CGFloat = HubDesk.phoneChartHeight
+    var gold: Bool = false
+    var nextLine: String = ""
 
     @State private var zoom: Double = 60
     @State private var pan: Double = 0
@@ -43,12 +45,12 @@ struct ChartCanvas: View {
 
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("TREND // PATH")
-                    .font(HubDesk.font(10, weight: .medium))
-                    .foregroundStyle(HubTheme.quiet)
-                    .tracking(1.6)
+                Text(gold ? "Trend" : "TREND // PATH")
+                    .font(gold ? GoldTone.display(16, weight: .semibold) : HubDesk.font(10, weight: .medium))
+                    .foregroundStyle(gold ? .white : HubTheme.quiet)
+                    .tracking(gold ? 0 : 1.6)
                 Spacer()
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     zoomBtn("<") { pan -= zoom * 30.0 * HubMs.second }
                     ForEach([60.0, 30.0, 15.0], id: \.self) { z in
                         zoomBtn("\(Int(z))m", on: zoom == z) {
@@ -59,13 +61,22 @@ struct ChartCanvas: View {
                     zoomBtn(">") { pan += zoom * 30.0 * HubMs.second }
                 }
             }
+            if gold, !nextLine.isEmpty {
+                Text(nextLine)
+                    .font(GoldTone.display(14, weight: .medium))
+                    .foregroundStyle(nextLine.contains("DOWN") ? GoldTone.downText : nextLine.contains("UP") ? GoldTone.upText : GoldTone.mute)
+            }
             .onAppear { ema = slope }
             .onChange(of: raw) { _, _ in ema = slope }
 
             ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(HubTheme.panel)
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(HubTheme.up.opacity(0.16)))
+                RoundedRectangle(cornerRadius: gold ? 22 : 16, style: .continuous)
+                    .fill(gold ? GoldTone.card : HubTheme.panel)
+                    .overlay {
+                        if !gold {
+                            RoundedRectangle(cornerRadius: 16).stroke(HubTheme.up.opacity(0.16))
+                        }
+                    }
                 Canvas { ctx, size in
                     let left: CGFloat = 44
                     let top: CGFloat = 8
@@ -136,23 +147,25 @@ struct ChartCanvas: View {
                 }
                 .frame(height: chartHeight)
             }
-            Text("GREEN actual · BLUE theory · ORANGE preview/naive · GRAY last week + high/low · MINT DASH beat 15m")
-                .font(HubDesk.font(10))
-                .foregroundStyle(HubTheme.quiet)
-                .tracking(0.8)
+            if !gold {
+                Text("GREEN actual · BLUE theory · ORANGE preview/naive · GRAY last week + high/low · MINT DASH beat 15m")
+                    .font(HubDesk.font(10))
+                    .foregroundStyle(HubTheme.quiet)
+                    .tracking(0.8)
+            }
         }
-        .padding(.horizontal, HubDesk.sectionPad)
-        .padding(.top, HubDesk.sectionGap)
+        .padding(.horizontal, gold ? 0 : HubDesk.sectionPad)
+        .padding(.top, gold ? 0 : HubDesk.sectionGap)
     }
 
     private func zoomBtn(_ title: String, on: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(HubDesk.font(12))
-                .frame(minWidth: 36, minHeight: 36)
-                .background(on ? HubTheme.up : HubTheme.chip)
-                .foregroundStyle(on ? Color(red: 0.016, green: 0.078, blue: 0.047) : HubTheme.ink)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .font(gold ? GoldTone.display(13, weight: .semibold) : HubDesk.font(12))
+                .frame(minWidth: gold ? 44 : 36, minHeight: gold ? 32 : 36)
+                .background(on ? (gold ? GoldTone.upPill : HubTheme.up) : (gold ? Color(red: 0.16, green: 0.16, blue: 0.17) : HubTheme.chip))
+                .foregroundStyle(on ? Color.black : (gold ? Color.white : HubTheme.ink))
+                .clipShape(Capsule())
         }
         .buttonStyle(.plain)
     }

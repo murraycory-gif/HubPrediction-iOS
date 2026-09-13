@@ -15,8 +15,8 @@ struct DeskView: View {
 
     var body: some View {
         ZStack {
-            HubTheme.surface.ignoresSafeArea(edges: HubDesk.isMac ? [.horizontal, .bottom] : .all)
-            grokDesk
+            GoldTone.bg.ignoresSafeArea(edges: HubDesk.isMac ? [.horizontal, .bottom] : .all)
+            goldColumn
         }
         /// Clear, non-hit-testable strip — a filled bar here ate the titlebar drag on Catalyst.
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -42,200 +42,33 @@ struct DeskView: View {
         .sheet(isPresented: $showKeys) { CredsSheet().environmentObject(store) }
     }
 
-    /// Grok Build first paint: sticky call-bar, then tape / live / chart / roulette / theory.
-    /// Bots and QUEUE stay below — they never replace the call-bar.
-    private var grokDesk: some View {
-        VStack(spacing: 0) {
-            callBar
-                .padding(.horizontal, HubDesk.sectionPad)
-                .padding(.top, HubDesk.isMac ? 4 : 8)
-            AlertBanner()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    tape
-                    liveLine
-                    ChartCanvas(
-                        live: store.quote?.live ?? 0,
-                        closeAt: store.quote?.closeAt ?? 0,
-                        points: store.quote?.points ?? [],
-                        prior: store.quote?.prior ?? [],
-                        lean: store.call.side,
-                        dash: store.dash,
-                        quote: store.quote,
-                        beat: store.beat,
-                        clockNow: now,
-                        chartHeight: HubDesk.isMac ? HubDesk.macChartHeight : HubDesk.phoneChartHeight
-                    )
-                    roulette
-                    CashStrip()
-                    TradePanel(compact: true, now: now)
-                    BotLane(now: now)
-                    dayFilter
-                    restOfDay
-                }
-                .padding(.bottom, 28)
+    /// Gold Grok Build first paint. Bots/QUEUE/SCOUT are not on this surface.
+    private var goldColumn: some View {
+        ScrollView {
+            VStack(alignment: .center, spacing: 0) {
+                GoldDesk(now: now)
+                AlertBanner()
+                quietTools
+                dayFilter
+                restOfDay
             }
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 28)
         }
     }
 
-    private var callLabel: String { store.call.label }
-
-    /// Port of hub-prediction `dashboard.tsx` call-bar + `styles.css` .call-up / .call-down / .call-sit.
-    private var callBar: some View {
-        let up = callLabel == "BUY UP"
-        let down = callLabel == "BUY DOWN"
-        let ink = down
-            ? Color(red: 0.102, green: 0.020, blue: 0.020)
-            : up
-                ? Color(red: 0.016, green: 0.078, blue: 0.047)
-                : Color(red: 0.843, green: 1.0, blue: 0.941)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .bottom, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Desk // signal")
-                            .font(HubDesk.font(10, weight: .medium))
-                            .tracking(2.2)
-                            .textCase(.uppercase)
-                            .opacity(0.72)
-                        Spacer()
-                        Button("Markets") { showMarkets = true }
-                            .buttonStyle(.plain)
-                            .font(HubDesk.font(11, weight: .semibold))
-                            .opacity(0.72)
-                        Button("Keys") { showKeys = true }
-                            .buttonStyle(.plain)
-                            .font(HubDesk.font(11, weight: .semibold))
-                            .opacity(0.72)
-                    }
-                    Text(callLabel)
-                        .font(HubDesk.font(30, weight: .bold))
-                        .tracking(0.8)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                Spacer(minLength: 8)
-                Text(closeClock)
-                    .font(HubDesk.font(30, weight: .bold))
-                    .tracking(1.2)
-                    .monospacedDigit()
+    private var quietTools: some View {
+        HStack(spacing: 16) {
+            Button(store.mode == .paper ? "Paper" : "Live") {
+                store.setMode(store.mode == .paper ? .live : .paper)
             }
-            Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted\(store.call.locked ? " · LOCK" : "")")
-                .font(HubDesk.font(12))
-                .opacity(0.80)
+            Button("Markets") { showMarkets = true }
+            Button("Keys") { showKeys = true }
         }
-        .foregroundStyle(ink)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: up
-                    ? [Color(red: 0.0, green: 1.0, blue: 0.533), Color(red: 0.0, green: 0.788, blue: 0.400)]
-                    : down
-                        ? [Color(red: 1.0, green: 0.427, blue: 0.427), Color(red: 0.886, green: 0.239, blue: 0.239)]
-                        : [Color(red: 0.063, green: 0.086, blue: 0.078), Color(red: 0.043, green: 0.059, blue: 0.051)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(up ? Color(red: 0.490, green: 1.0, blue: 0.749) : down ? Color(red: 1.0, green: 0.604, blue: 0.604) : HubTheme.up.opacity(0.28))
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .shadow(color: (up ? HubTheme.up : down ? HubTheme.down : HubTheme.up).opacity(up || down ? 0.32 : 0.12), radius: up || down ? 16 : 10)
-    }
-
-    /// CloseClock — mm:ss to settle, same as hub-prediction `close-clock.tsx`.
-    private var closeClock: String {
-        guard let close = store.quote?.closeAt, close.isFinite else { return "--:--" }
-        return BuyWindow.clock(max(0, close - now))
-    }
-
-    private var tape: some View {
-        HStack(spacing: 8) {
-            tapeCard(label: "UP ask", value: Money.cents(store.quote?.yesAsk), up: true)
-            tapeCard(label: "DOWN ask", value: Money.cents(store.quote?.noAsk), up: false)
-        }
-        .padding(.horizontal, HubDesk.sectionPad)
-        .padding(.top, HubDesk.sectionGap)
-    }
-
-    private func tapeCard(label: String, value: String, up: Bool) -> some View {
-        VStack(alignment: .leading, spacing: HubDesk.isMac ? 8 : 6) {
-            Text(label)
-                .font(HubDesk.font(10, weight: .medium))
-                .foregroundStyle(HubTheme.quiet)
-                .tracking(1.6)
-            Text(value)
-                .font(HubDesk.font(30, weight: .semibold))
-                .foregroundStyle(up ? HubTheme.up : HubTheme.down)
-        }
-        .padding(HubDesk.cardPad)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(HubTheme.panel)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke((up ? HubTheme.up : HubTheme.down).opacity(0.4))
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var liveLine: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(HubTheme.up)
-                .frame(width: 7, height: 7)
-                .shadow(color: HubTheme.up, radius: 4)
-            Text("Live \(store.quote?.liveSource == "brti" ? "BRTI" : "Coinbase") \(Money.dollarsExact(store.quote?.live)) vs posted \(Money.dollarsExact(store.quote?.strike))")
-                .font(HubDesk.font(11))
-                .foregroundStyle(HubTheme.quiet)
-            if store.holdingLast {
-                Text("· last ¢ held — see banner + Retry")
-                    .font(HubDesk.font(11))
-                    .foregroundStyle(HubTheme.quiet)
-            }
-        }
-        .padding(.horizontal, HubDesk.sectionPad)
-        .padding(.top, HubDesk.sectionGap)
-    }
-
-    private var roulette: some View {
-        let list = Array((store.quote?.past ?? []).prefix(24))
-        let up = list.filter { $0.result == .up }.count
-        let down = list.count - up
-        let upPct = list.isEmpty ? 0 : Int((Double(up) / Double(list.count) * 100.0).rounded())
-        let cols = 8
-        return VStack(alignment: .leading, spacing: HubDesk.isMac ? 10 : 8) {
-            HStack {
-                Text("ROULETTE · LAST \(list.isEmpty ? "—" : "\(list.count)") SETTLED")
-                    .font(HubDesk.font(10, weight: .medium))
-                    .foregroundStyle(HubTheme.quiet)
-                    .tracking(1.4)
-                Spacer()
-                Text(list.isEmpty ? "warming" : "\(upPct)% UP · \(100 - upPct)% DOWN")
-                    .font(HubDesk.font(11))
-                    .foregroundStyle(HubTheme.quiet)
-            }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: cols), spacing: 6) {
-                ForEach(list.isEmpty ? placeholders : list) { item in
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(item.ticker == "—" ? HubTheme.chip : item.result == .up ? HubTheme.up : HubTheme.down)
-                        .frame(height: wide ? 22 : 32)
-                        .shadow(color: item.ticker == "—" ? .clear : (item.result == .up ? HubTheme.up : HubTheme.down).opacity(0.4), radius: 6)
-                }
-            }
-            Text("\(up) UP / \(down) DOWN · newest first")
-                .font(HubDesk.font(10))
-                .foregroundStyle(HubTheme.quiet)
-        }
-        .padding(.horizontal, HubDesk.sectionPad)
-        .padding(.top, HubDesk.isMac ? 18 : 16)
-    }
-
-    private var placeholders: [Settled] {
-        (0..<8).map { Settled(ticker: "—", closeAt: Double($0), result: .sit) }
+        .buttonStyle(.plain)
+        .font(GoldTone.display(13, weight: .medium))
+        .foregroundStyle(GoldTone.mute)
+        .padding(.top, 18)
     }
 
     private var dayFilter: some View {

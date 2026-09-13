@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum HubTheme {
-    static let surface = Color(red: 0.027, green: 0.031, blue: 0.039)
+    static let surface = Color.black
     static let ink = Color(red: 0.843, green: 1.0, blue: 0.941)
     static let mute = Color(red: 0.435, green: 0.541, blue: 0.490)
     /// Brighter mute on Mac so labels do not vanish into the panel.
