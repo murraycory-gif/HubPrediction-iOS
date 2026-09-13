@@ -1,0 +1,4 @@
+# HUB Prediction — standalone. Not Heartbeat.
+app_identifier("com.corymurray.HubPrediction")
+team_id("M7FL68Q43A")
+# apple_id("you@example.com")

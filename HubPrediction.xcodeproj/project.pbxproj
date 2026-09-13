@@ -1,0 +1,284 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		HP0100000000000000000A01 /* HubPredictionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B01 /* HubPredictionApp.swift */; };
+		HP0100000000000000000A02 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B02 /* Theme.swift */; };
+		HP0100000000000000000A03 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B03 /* Models.swift */; };
+		HP0100000000000000000A04 /* ChicagoTime.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B04 /* ChicagoTime.swift */; };
+		HP0100000000000000000A05 /* Forecast.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B05 /* Forecast.swift */; };
+		HP0100000000000000000A06 /* KalshiSignal.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B06 /* KalshiSignal.swift */; };
+		HP0100000000000000000A07 /* KalshiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B07 /* KalshiClient.swift */; };
+		HP0100000000000000000A08 /* DeskStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B08 /* DeskStore.swift */; };
+		HP0100000000000000000A09 /* DeskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B09 /* DeskView.swift */; };
+		HP0100000000000000000A10 /* ChartCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B10 /* ChartCanvas.swift */; };
+		HP0100000000000000000A90 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B90 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		HP0100000000000000000B01 /* HubPredictionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubPredictionApp.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B02 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B03 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B04 /* ChicagoTime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChicagoTime.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B05 /* Forecast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Forecast.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B06 /* KalshiSignal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KalshiSignal.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B07 /* KalshiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KalshiClient.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B08 /* DeskStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskStore.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B09 /* DeskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskView.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B10 /* ChartCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCanvas.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B90 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		HP0100000000000000000B93 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		HP0100000000000000000B94 /* HubPrediction.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HubPrediction.entitlements; sourceTree = "<group>"; };
+		HP0100000000000000000B95 /* HubPrediction.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HubPrediction.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		HP0100000000000000000C01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		HP0100000000000000000D01 = {
+			isa = PBXGroup;
+			children = (
+				HP0100000000000000000D02 /* HubPrediction */,
+				HP0100000000000000000D03 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		HP0100000000000000000D02 /* HubPrediction */ = {
+			isa = PBXGroup;
+			children = (
+				HP0100000000000000000B01 /* HubPredictionApp.swift */,
+				HP0100000000000000000B02 /* Theme.swift */,
+				HP0100000000000000000B03 /* Models.swift */,
+				HP0100000000000000000B04 /* ChicagoTime.swift */,
+				HP0100000000000000000B05 /* Forecast.swift */,
+				HP0100000000000000000B06 /* KalshiSignal.swift */,
+				HP0100000000000000000B07 /* KalshiClient.swift */,
+				HP0100000000000000000B08 /* DeskStore.swift */,
+				HP0100000000000000000B09 /* DeskView.swift */,
+				HP0100000000000000000B10 /* ChartCanvas.swift */,
+				HP0100000000000000000B90 /* Assets.xcassets */,
+				HP0100000000000000000B93 /* Info.plist */,
+				HP0100000000000000000B94 /* HubPrediction.entitlements */,
+			);
+			path = HubPrediction;
+			sourceTree = "<group>";
+		};
+		HP0100000000000000000D03 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				HP0100000000000000000B95 /* HubPrediction.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		HP0100000000000000000E01 /* HubPrediction */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = HP0100000000000000001202 /* Build configuration list for PBXNativeTarget "HubPrediction" */;
+			buildPhases = (
+				HP0100000000000000000C02 /* Sources */,
+				HP0100000000000000000C01 /* Frameworks */,
+				HP0100000000000000000C03 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HubPrediction;
+			productName = HubPrediction;
+			productReference = HP0100000000000000000B95 /* HubPrediction.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		HP0100000000000000000F01 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = HP0100000000000000001201 /* Build configuration list for PBXProject "HubPrediction" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = HP0100000000000000000D01;
+			productRefGroup = HP0100000000000000000D03 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				HP0100000000000000000E01 /* HubPrediction */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		HP0100000000000000000C03 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				HP0100000000000000000A90 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		HP0100000000000000000C02 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				HP0100000000000000000A01 /* HubPredictionApp.swift in Sources */,
+				HP0100000000000000000A02 /* Theme.swift in Sources */,
+				HP0100000000000000000A03 /* Models.swift in Sources */,
+				HP0100000000000000000A04 /* ChicagoTime.swift in Sources */,
+				HP0100000000000000000A05 /* Forecast.swift in Sources */,
+				HP0100000000000000000A06 /* KalshiSignal.swift in Sources */,
+				HP0100000000000000000A07 /* KalshiClient.swift in Sources */,
+				HP0100000000000000000A08 /* DeskStore.swift in Sources */,
+				HP0100000000000000000A09 /* DeskView.swift in Sources */,
+				HP0100000000000000000A10 /* ChartCanvas.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		HP0100000000000000001101 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		HP0100000000000000001102 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		HP0100000000000000001103 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HubPrediction/HubPrediction.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M7FL68Q43A;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = HubPrediction/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.corymurray.HubPrediction;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		HP0100000000000000001104 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HubPrediction/HubPrediction.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M7FL68Q43A;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = HubPrediction/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.corymurray.HubPrediction;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		HP0100000000000000001201 /* Build configuration list for PBXProject "HubPrediction" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				HP0100000000000000001101 /* Debug */,
+				HP0100000000000000001102 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		HP0100000000000000001202 /* Build configuration list for PBXNativeTarget "HubPrediction" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				HP0100000000000000001103 /* Debug */,
+				HP0100000000000000001104 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = HP0100000000000000000F01 /* Project object */;
+}
