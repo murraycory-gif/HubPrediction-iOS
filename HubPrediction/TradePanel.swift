@@ -54,7 +54,7 @@ struct TradePanel: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(HubTheme.up)
-                Text(store.mode == .paper ? "paper fill · max \(SizeCash.maxContracts) · confirm" : "LIVE Kalshi · max \(SizeCash.maxContracts) · confirm")
+                Text("EV \(Money.signed(store.expectedProfit)) · \(store.mode == .paper ? "paper" : "LIVE") · max \(SizeCash.maxContracts)")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(HubTheme.mute)
                 Spacer()
@@ -86,8 +86,8 @@ struct TradePanel: View {
         .padding(.top, 12)
         .confirmationDialog(
             store.mode == .paper
-                ? "Paper fill \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP") on \(store.quote?.ticker ?? "—") at \(Money.cents(store.tradeSide == .down ? store.quote?.noAsk : store.quote?.yesAsk))? Stays on this device."
-                : "LIVE Kalshi: buy \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP") on \(store.quote?.ticker ?? "—") at \(Money.cents(store.tradeSide == .down ? store.quote?.noAsk : store.quote?.yesAsk))? Real money.",
+                ? "\(store.confirmFromBot ? "BOT " : "")Paper fill \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP") on \(store.quote?.ticker ?? "—") at \(Money.cents(store.tradeSide == .down ? store.quote?.noAsk : store.quote?.yesAsk))? EV \(Money.signed(store.expectedProfit)). Stays on this device."
+                : "\(store.confirmFromBot ? "BOT " : "")LIVE Kalshi: buy \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP") on \(store.quote?.ticker ?? "—") at \(Money.cents(store.tradeSide == .down ? store.quote?.noAsk : store.quote?.yesAsk))? EV \(Money.signed(store.expectedProfit)). Real money.",
             isPresented: $store.showConfirm,
             titleVisibility: .visible
         ) {

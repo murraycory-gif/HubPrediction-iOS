@@ -1,6 +1,6 @@
 # HUB Prediction — TestFlight (iPhone)
 
-**TF HOLD.** Do not archive or upload until Soft KEEP on the full-desk bar (browse + trade path + errors) on Mac and iPhone. See `QA.md`.
+**TF HOLD.** Do not archive or upload until Soft KEEP on the full product bar (buy window, bots, cash/profit, both charts, browse + trade) on Mac and iPhone. See `QA.md`.
 
 This is its own iPhone app in **HubPrediction-iOS**. It is not Fulfillment Heartbeat. It does not share Heartbeat screens, facts, or the Heartbeat TestFlight build.
 

@@ -24,6 +24,14 @@ enum SizeCash {
         return min(maxContracts, max(0, n))
     }
 
+    /// Expected dollars if we buy `count` at ask with win probability pWin.
+    static func expectedProfit(count: Int, askCents: Double, pWin: Double) -> Double {
+        let ask = askCents / 100.0
+        guard count > 0, ask.isFinite, pWin.isFinite, ask > 0.01, ask < 0.99 else { return 0 }
+        let ev = pWin * (1 - ask) - (1 - pWin) * ask
+        return Double(count) * ev
+    }
+
     static func cashFromBalance(_ raw: Any?) -> Double {
         guard let o = raw as? [String: Any] else { return 0 }
         if let n = KalshiClient.num(o["balance_dollars"] ?? o["cash_dollars"] ?? o["available_balance_dollars"]) {

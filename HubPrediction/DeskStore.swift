@@ -24,6 +24,10 @@ final class DeskStore: ObservableObject {
     @Published var showConfirm: Bool = false
     @Published var mode: DeskMode = PaperBook.mode
     @Published var paperFills: [PaperFill] = PaperBook.fills
+    @Published var botsArmed: Bool = DeskBots.armed
+    @Published var botNote: String?
+    @Published var botFiredTicker: String?
+    @Published var confirmFromBot: Bool = false
 
     private var quoteTimer: Timer?
     private var boardTimer: Timer?
@@ -49,11 +53,21 @@ final class DeskStore: ObservableObject {
         return min(SizeCash.maxContracts, max(1, n == 0 ? 1 : n))
     }
 
+    var expectedProfit: Double {
+        let ask = tradeSide == .down ? (quote?.noAsk ?? 0) : (quote?.yesAsk ?? 0)
+        return SizeCash.expectedProfit(count: tradeCount, askCents: ask, pWin: call.pWin)
+    }
+
+    var paperPnL: Double {
+        PaperBook.cash - PaperBook.startCash
+    }
+
     func start() {
         guard quoteTimer == nil else { return }
         hasCreds = KalshiCreds.isPresent
         mode = PaperBook.mode
         paperFills = PaperBook.fills
+        botsArmed = DeskBots.armed
         Task { await refreshAll() }
         Task { await searchMarkets(query: "") }
         if mode == .live, hasCreds { Task { await refreshCash() } }
@@ -63,7 +77,7 @@ final class DeskStore: ObservableObject {
         boardTimer = Timer.scheduledTimer(withTimeInterval: 12, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refreshBoard() }
         }
-        dashTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        dashTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refreshDash() }
         }
     }
@@ -158,7 +172,37 @@ final class DeskStore: ObservableObject {
         if call.side == .up || call.side == .down { tradeSide = call.side }
     }
 
-    func requestPlace() {
+    func setBotsArmed(_ on: Bool) {
+        botsArmed = on
+        DeskBots.armed = on
+        botNote = on
+            ? "Bots armed — paper auto in the 6–4m window; LIVE still Confirm."
+            : "Bots off."
+    }
+
+    func tickBots(now: Double) {
+        guard botsArmed, !tradeBusy, !showConfirm else { return }
+        let ask = (call.side == .down ? quote?.noAsk : quote?.yesAsk) ?? 0
+        let n = SizeCash.contractsFromCash(cash: workingCash, askCents: ask, pWin: call.pWin)
+        guard n >= 1 else { return }
+        tradeCount = n
+        if call.side == .up || call.side == .down { tradeSide = call.side }
+        let phase = BuyWindow.phase(closeAt: quote?.closeAt ?? 0, now: now)
+        guard DeskBots.shouldExecute(phase: phase, call: call, count: n) else { return }
+        guard let ticker = quote?.ticker, !ticker.isEmpty, botFiredTicker != ticker else { return }
+        tradeSide = call.side
+        confirmFromBot = true
+        if mode == .paper {
+            botNote = "BOT paper \(tradeCount) \(call.side == .down ? "DOWN" : "UP") · \(ticker)"
+            Task { await confirmPlace(fromBot: true) }
+        } else {
+            botFiredTicker = ticker
+            botNote = "BOT live \(tradeCount) \(call.side == .down ? "DOWN" : "UP") — Confirm LIVE"
+            requestPlace(fromBot: true)
+        }
+    }
+
+    func requestPlace(fromBot: Bool = false) {
         guard quote?.ticker.isEmpty == false else {
             banner = DeskBanner(title: "No market", detail: "Wait for a quote or pick a market, then retry.", holdingLast: false)
             return
@@ -169,10 +213,11 @@ final class DeskStore: ObservableObject {
         }
         if tradeSide == .sit { tradeSide = call.side == .down ? .down : .up }
         tradeCount = min(SizeCash.maxContracts, max(1, tradeCount))
+        confirmFromBot = fromBot
         showConfirm = true
     }
 
-    func confirmPlace() async {
+    func confirmPlace(fromBot: Bool = false) async {
         showConfirm = false
         guard let ticker = quote?.ticker, !ticker.isEmpty else { return }
         tradeBusy = true
@@ -188,7 +233,9 @@ final class DeskStore: ObservableObject {
                     noAsk: quote?.noAsk ?? 0
                 )
                 paperFills = PaperBook.fills
-                tradeNote = "PAPER \(fill.count) \(fill.side.uppercased()) · \(fill.ticker) · cash \(Money.dollarsExact(PaperBook.cash))"
+                if fromBot || confirmFromBot { botFiredTicker = ticker }
+                tradeNote = "\(fromBot || confirmFromBot ? "BOT " : "")PAPER \(fill.count) \(fill.side.uppercased()) · \(fill.ticker) · cash \(Money.dollarsExact(PaperBook.cash)) · EV \(Money.signed(expectedProfit))"
+                confirmFromBot = false
                 return
             }
             let id = try await KalshiTrade.placeLive(
@@ -198,9 +245,13 @@ final class DeskStore: ObservableObject {
                 yesAsk: quote?.yesAsk ?? 0,
                 noAsk: quote?.noAsk ?? 0
             )
-            tradeNote = "LIVE \(tradeCount) \(tradeSide == .up ? "UP" : "DOWN") · \(id)"
+            if fromBot || confirmFromBot { botFiredTicker = ticker }
+            tradeNote = "\(fromBot || confirmFromBot ? "BOT " : "")LIVE \(tradeCount) \(tradeSide == .up ? "UP" : "DOWN") · \(id)"
+            confirmFromBot = false
             await refreshCash()
         } catch {
+            if fromBot || confirmFromBot { botFiredTicker = nil }
+            confirmFromBot = false
             banner = DeskBanner(title: mode == .paper ? "Paper order failed" : "Live order failed", detail: error.localizedDescription, holdingLast: false)
         }
     }

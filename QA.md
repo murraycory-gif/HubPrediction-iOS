@@ -1,38 +1,41 @@
-# HUB Prediction — Soft KEEP / FAIL (Live + Paper)
+# HUB Prediction — Soft KEEP / FAIL (full product)
 
-Locked product: **full desk in both modes**. Soft KEEP = path is wired in source. Linux cannot Run Catalyst or send a live Kalshi order, so device fills stay Soft until Cory’s Mac / iPhone Run.
+Locked product: **full desk**. Signal-only is Soft FAIL. Soft KEEP = every checklist item is wired in **native** HubPrediction SwiftUI (not web-only). Linux cannot Run Catalyst, so device fills stay Soft until Cory’s Mac / iPhone Run.
 
 **TestFlight HOLD** until this bar is Soft KEEP on Mac + iPhone.
 
 No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Paper**.
 
-## Soft KEEP bar
+## Checklist (ALL required)
 
 | # | Check | Verdict | Notes |
 |---|--------|---------|-------|
-| 1 | Mode toggle Live vs Paper; paper never hits live Kalshi order endpoints; live requires explicit Confirm | KEEP (structural) | Trade row **PAPER** \| **LIVE** (Mac + iPhone). Persisted. Default Paper. `confirmPlace` paper branch calls only `PaperBook.place` and returns. `placeLive` also refuses unless `PaperBook.mode == .live`. Live: `requestPlace` → dialog → **Confirm LIVE** → `placeLive`. |
-| 2 | Markets browse + search (not only KXBTC15M) | KEEP (structural) | **Markets** sheet: search ticker / series / title. Empty query lists open `KXBTC15M`. Default button resets to BTC15m. |
-| 3 | Trade place / confirm / size / side in both modes | KEEP (structural) | Same UP / DOWN, − / +, Suggest, confirm dialog. Paper fills local $10k book. Live uses Keychain keys. |
-| 4 | Empty / error + Retry | KEEP (structural) | Banner + **Retry**. Halt is an explicit last-¢ hold, not silent. Empty markets / no quote / keys needed all surface. |
-| 5 | Mac first-paint signal desk; phone no forced H-scroll on rest-of-day | KEEP (structural) | Mac: call / mode / trade / tape / chart / roulette pinned (`layoutPriority(1)`). Tables only in `ScrollView`. Phone: stacked rest-of-day cards (`phoneStat`). Day chips may H-scroll; rest-of-day does not. |
-| 6 | No secrets in git; live creds runtime-only | KEEP | `*.pem` / `*.p8` / `.env` gitignored. Keys sheet → Keychain `com.corymurray.HubPrediction.kalshi`. |
+| 1 | Buy call in last 6–4 minutes before settle | KEEP (structural) | `BuyWindow`: WAIT / BUY UP / BUY DOWN / NO BUY / WINDOW CLOSED. Countdown on call bar. |
+| 2 | AI bots execute all buying (live + paper) | KEEP (structural) | Visible **BOTS // EXECUTE** lane (Strike / Tape / Path). Paper auto in window. LIVE Confirm. |
+| 3 | Show cash; size for profit | KEEP (structural) | `CashStrip` + quarter-Kelly `SizeCash` + expected profit EV. |
+| 4 | Beat-the-trend forecast; visible next-15m dash | KEEP (structural) | `chartWindow` + mint dash past now. |
+| 5 | Live updating tick | KEEP (structural) | Quote timer 2s; dash 8s; 0.25s clock + bot tick. |
+| 6 | Main chart: last week + theory + actual + current/upcoming | KEEP (structural) | `ChartCanvas` draws gray last week, blue theory, green actual/live, upcoming dash. |
+| 7 | Second chart: theory vs actual difference | KEEP (structural) | `VarianceChart` under TREND on Mac + iPhone. |
+| 8 | Markets browse + trade place/confirm + error/retry | KEEP (structural) | Markets sheet, PAPER/LIVE trade, banner Retry. |
+| 9 | Mac Catalyst + iPhone | KEEP (structural) | Same target. Mac pins desk above tables. Phone stacked, no forced H-scroll on rest-of-day. |
+| 10 | No secrets in git; no Heartbeat | KEEP | Keychain-only creds. |
 
 | Extra | Verdict | Notes |
 |-------|---------|-------|
-| Next-15m DASH visible on TREND // PATH | KEEP (structural) | Window includes ≥16m future. `forwardRay` always spans past now. Mint dash + now dot. Device visual Soft KEEP until Cory Run. |
 | TF HOLD | KEEP | Do not `./push-hub-testflight.sh` yet. |
-| Live Mac + iPhone paper fill + live confirm | Soft KEEP | Needs Cory Run. Live also needs PEM. |
+| Device Run (window/bots/charts/fills) | Soft KEEP | Needs Cory Run on Mac + iPhone. Live needs PEM. |
 
 ## FAIL
 
-None in source. Prior Mac Soft FAIL (dash clipped off the right edge at `end == now`) is fixed in `Forecast.chartWindow` + `ChartCanvas`.
+None in source. Prior Soft FAILs (signal-only desk, clipped dash) are closed in this revision.
 
 ## How to switch Live / Paper
 
-Same control on Mac and iPhone: trade row **PAPER** | **LIVE**. Call bar also shows `DESK // SIGNAL · PAPER|LIVE · {series}`.
+Trade row **PAPER** | **LIVE**. Call bar: `BUY WINDOW 6–4m · PAPER|LIVE`.
 
-- **Paper** (default): Confirm paper writes a local fill and deducts paper cash. No Kalshi `/portfolio/orders` or `/portfolio/events/orders` POST. Reset paper returns cash to $10,000.
-- **Live**: Confirm LIVE sends a real Kalshi order. **Keys** sheet (API Key ID + PEM) required first. Cancel aborts.
+- **Paper** (default): Confirm paper or arm **BOTS ON** — bots fill locally in the 6–4m window. No Kalshi order POST.
+- **Live**: Confirm LIVE (including bot-driven). **Keys** required. Cancel aborts.
 
 ### Mac
 
@@ -42,11 +45,11 @@ git pull
 open HubPrediction.xcodeproj
 ```
 
-**My Mac (Mac Catalyst)** → **Run**. Tap **PAPER** or **LIVE** on the trade row.
+**My Mac (Mac Catalyst)** → **Run**.
 
 ### iPhone — TF HOLD
 
-Xcode → connected iPhone → **Run**. Same **PAPER** / **LIVE** toggle.
+Xcode → connected iPhone → **Run**. Same desk.
 
 Do **not** `./push-hub-testflight.sh` until this bar is Soft KEEP on Mac and iPhone.
 

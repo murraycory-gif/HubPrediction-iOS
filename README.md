@@ -1,8 +1,8 @@
 # HubPrediction-iOS
 
-Full Kalshi desk: **Paper** (local fills) and **Live** (confirmed Kalshi orders). Default series `KXBTC15M`. Display name **HUB Pred**. Bundle `com.corymurray.HubPrediction`. Team `M7FL68Q43A`.
+Full Kalshi desk: buy window (last **6–4 minutes**), **bots** that execute paper/live buys, cash + profit size, TREND + variance charts. **Paper** (local fills) and **Live** (confirmed Kalshi orders). Default series `KXBTC15M`. Display name **HUB Pred**. Bundle `com.corymurray.HubPrediction`. Team `M7FL68Q43A`.
 
-Switch mode on the trade row: **PAPER** | **LIVE** (same on Mac and iPhone). Paper never posts to Kalshi order endpoints. Live always asks Confirm.
+Switch mode on the trade row: **PAPER** | **LIVE**. Arm **BOTS ON** to let bots buy in the 6–4m window (paper auto; live Confirm). Paper never posts to Kalshi order endpoints.
 
 iPhone + Mac Catalyst. **Not Fulfillment Heartbeat.**
 

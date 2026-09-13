@@ -6,22 +6,30 @@ struct ChartCanvas: View {
     let points: [Point]
     let prior: [Point]
     let lean: DeskSide
+    var dash: Dash?
     var chartHeight: CGFloat = HubDesk.phoneChartHeight
 
     @State private var zoom: Double = 60
     @State private var pan: Double = 0
     @State private var ema: Double?
 
+    private let theoryColor = Color(red: 0.45, green: 0.72, blue: 1.0)
+
     var body: some View {
         let now = points.last?.t ?? Date.nowMs
         let raw = Forecast.slopeFromPoints(points, now: now)
         let slope = Forecast.emaSlope(prev: ema, raw: raw)
         let rebased = Forecast.rebasePrior(prior, live: live)
+        let lastWeek = dash?.lastWeekPath().isEmpty == false ? (dash?.lastWeekPath() ?? rebased) : rebased
+        let theory = dash?.theoryPath() ?? []
+        let actualSlots = dash?.actualPath() ?? []
+        let upcoming = dash?.upcomingTheory() ?? []
         let forecast = Forecast.forwardRay(now: now, closeAt: closeAt, live: live, slopePerMin: slope, lean: lean)
-        let window = Forecast.chartWindow(now: now, zoomMinutes: zoom, pan: pan, lastForecastT: forecast.last?.t)
+        let lastT = [forecast.last?.t, upcoming.last?.t, now + Forecast.futurePadMs].compactMap { $0 }.max()
+        let window = Forecast.chartWindow(now: now, zoomMinutes: zoom, pan: pan, lastForecastT: lastT)
         let start = window.start
         let end = window.end
-        let ys = points.map(\.px) + rebased.map(\.px) + forecast.map(\.px) + [live]
+        let ys = points.map(\.px) + lastWeek.map(\.px) + theory.map(\.px) + actualSlots.map(\.px) + forecast.map(\.px) + [live]
         let domain = Forecast.yDomain(live: live, values: ys)
 
         VStack(alignment: .leading, spacing: 8) {
@@ -81,8 +89,11 @@ struct ChartCanvas: View {
                         grid.addLine(to: CGPoint(x: left + w, y: top + h * frac))
                         ctx.stroke(grid, with: .color(HubTheme.line), lineWidth: 1)
                     }
-                    line(rebased, color: Color(red: 0.30, green: 0.36, blue: 0.33), width: 1.5, dash: false)
+                    line(lastWeek, color: Color(red: 0.30, green: 0.36, blue: 0.33), width: 1.5, dash: false)
+                    line(theory, color: theoryColor.opacity(0.85), width: 1.8, dash: false)
+                    line(actualSlots, color: HubTheme.up.opacity(0.55), width: 1.6, dash: false)
                     line(points, color: HubTheme.up, width: 2.2, dash: false)
+                    line(upcoming, color: theoryColor, width: 1.6, dash: true)
 
                     if now >= start && now <= end {
                         let origin = pt(Point(t: now, px: live))
@@ -112,7 +123,7 @@ struct ChartCanvas: View {
                 }
                 .frame(height: chartHeight)
             }
-            Text("GREEN this week · GRAY last week rebased · DASH next 15m")
+            Text("GREEN actual/live · BLUE theory · GRAY last week · DASH next 15m + upcoming")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(HubTheme.mute)
                 .tracking(0.8)

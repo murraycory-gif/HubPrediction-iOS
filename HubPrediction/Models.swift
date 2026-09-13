@@ -59,6 +59,28 @@ struct Dash: Equatable {
     var weekday: String
     var upcoming: [DashRow]
     var elapsed: [DashRow]
+
+    var allRows: [DashRow] { elapsed + upcoming }
+
+    func theoryPath() -> [Point] {
+        allRows.compactMap { r in r.theory.map { Point(t: r.t, px: $0) } }
+    }
+
+    func actualPath() -> [Point] {
+        elapsed.compactMap { r in r.actual.map { Point(t: r.t, px: $0) } }
+    }
+
+    func lastWeekPath() -> [Point] {
+        allRows.compactMap { r in r.lastWeek.map { Point(t: r.t, px: $0) } }
+    }
+
+    func upcomingTheory() -> [Point] {
+        upcoming.compactMap { r in r.theory.map { Point(t: r.t, px: $0) } }
+    }
+
+    func variancePath() -> [Point] {
+        elapsed.compactMap { r in r.variance.map { Point(t: r.t, px: $0) } }
+    }
 }
 
 struct MarketPick: Equatable, Identifiable {

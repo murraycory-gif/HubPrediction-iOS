@@ -64,7 +64,11 @@ for f in \
   TradePanel.swift \
   MarketsSheet.swift \
   CredsSheet.swift \
-  PaperBook.swift
+  PaperBook.swift \
+  BuyWindow.swift \
+  DeskBots.swift \
+  DeskChrome.swift \
+  VarianceChart.swift
 do
   [ -f "HubPrediction/$f" ] || bad "missing HubPrediction/$f"
   grep -q "$f" "$pbx" || bad "$f not in pbxproj"
@@ -151,7 +155,7 @@ if python3 - <<'PY'
 import pathlib, sys
 src = pathlib.Path("HubPrediction/DeskView.swift").read_text()
 for n in (
-    "DESK // SIGNAL ·",
+    "BUY WINDOW 6–4m",
     "private var signalDesk",
     "private var wideDesk",
 ):
@@ -172,12 +176,59 @@ if "restOfDay" not in after:
 if "signalDesk" not in before:
     print("FAIL: signal desk not pinned above ScrollView")
     sys.exit(2)
+sig = src.split("private var signalDesk", 1)[1]
+for n in ("CashStrip()", "BotLane(now:", "ChartCanvas(", "VarianceChart(", "dash: store.dash"):
+    if n not in sig:
+        print("FAIL: signalDesk missing", n)
+        sys.exit(2)
 sys.exit(0)
 PY
 then
-  ok "Mac first-paint pins signal desk above tables"
+  ok "Mac first-paint pins full desk (window/bots/cash/charts) above tables"
 else
   bad "Mac first-paint layout"
+fi
+
+# Product Soft KEEP 1–3: buy window, bots, cash/profit (native, not web-only)
+grep -q 'openUntilMin = 6' HubPrediction/BuyWindow.swift || bad "buy window 6m missing"
+grep -q 'openFromMin = 4' HubPrediction/BuyWindow.swift || bad "buy window 4m missing"
+grep -q 'BUY UP' HubPrediction/BuyWindow.swift || bad "buy headline missing"
+grep -q 'NO BUY' HubPrediction/BuyWindow.swift || bad "no-buy headline missing"
+grep -q 'func tickBots' HubPrediction/DeskStore.swift || bad "bot executor missing"
+grep -q 'BOTS // EXECUTE' HubPrediction/DeskChrome.swift || bad "bot lane missing"
+grep -q 'confirmFromBot' HubPrediction/DeskStore.swift || bad "live bot confirm missing"
+grep -q 'expectedProfit' HubPrediction/SizeCash.swift || bad "profit sizing missing"
+grep -q 'CASH' HubPrediction/DeskChrome.swift || bad "cash strip missing"
+if python3 - <<'PY'
+import pathlib, sys
+minute = 60_000.0
+now = 1_700_000_000_000.0
+def phase(close_at):
+    left = close_at - now
+    if left <= 0: return "settled"
+    mins = left / minute
+    if mins > 6: return "waiting"
+    if mins >= 4: return "open"
+    return "late"
+cases = (
+    (now + 8 * minute, "waiting"),
+    (now + 6 * minute, "open"),
+    (now + 5 * minute, "open"),
+    (now + 4 * minute, "open"),
+    (now + 3 * minute, "late"),
+    (now - 1, "settled"),
+)
+for close, want in cases:
+    got = phase(close)
+    if got != want:
+        print("FAIL: phase", close, "got", got, "want", want)
+        sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "buy window 6–4m phases + bots + cash/profit"
+else
+  bad "buy window phases"
 fi
 
 # Next-15m dash must sit in the future window, not clip off the right edge

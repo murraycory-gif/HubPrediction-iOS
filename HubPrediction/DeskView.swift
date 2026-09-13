@@ -23,6 +23,7 @@ struct DeskView: View {
         }
         .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
             now = Date.nowMs
+            store.tickBots(now: now)
         }
         .sheet(isPresented: $showMarkets) { MarketsSheet().environmentObject(store) }
         .sheet(isPresented: $showKeys) { CredsSheet().environmentObject(store) }
@@ -36,6 +37,8 @@ struct DeskView: View {
             AlertBanner()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    CashStrip()
+                    BotLane(now: now)
                     TradePanel(compact: true)
                     tape
                     liveLine
@@ -45,7 +48,12 @@ struct DeskView: View {
                         points: store.quote?.points ?? [],
                         prior: store.quote?.prior ?? [],
                         lean: store.call.side,
+                        dash: store.dash,
                         chartHeight: HubDesk.phoneChartHeight
+                    )
+                    VarianceChart(
+                        rows: store.dash?.elapsed ?? [],
+                        chartHeight: HubDesk.phoneVarianceHeight
                     )
                     roulette
                     dayFilter
@@ -77,26 +85,43 @@ struct DeskView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
             liveLine
+            CashStrip()
+            BotLane(now: now)
             TradePanel(compact: true)
             tape
             HStack(alignment: .top, spacing: 8) {
-                ChartCanvas(
-                    live: store.quote?.live ?? 0,
-                    closeAt: store.quote?.closeAt ?? 0,
-                    points: store.quote?.points ?? [],
-                    prior: store.quote?.prior ?? [],
-                    lean: store.call.side,
-                    chartHeight: HubDesk.macChartHeight
-                )
+                VStack(spacing: 0) {
+                    ChartCanvas(
+                        live: store.quote?.live ?? 0,
+                        closeAt: store.quote?.closeAt ?? 0,
+                        points: store.quote?.points ?? [],
+                        prior: store.quote?.prior ?? [],
+                        lean: store.call.side,
+                        dash: store.dash,
+                        chartHeight: HubDesk.macChartHeight
+                    )
+                    VarianceChart(
+                        rows: store.dash?.elapsed ?? [],
+                        chartHeight: HubDesk.macVarianceHeight
+                    )
+                }
                 .frame(maxWidth: .infinity, alignment: .top)
                 roulette
-                    .frame(minWidth: 280, idealWidth: 320, maxWidth: 360, alignment: .top)
+                    .frame(minWidth: 240, idealWidth: 280, maxWidth: 320, alignment: .top)
             }
         }
     }
 
+    private var buyPhase: BuyPhase {
+        BuyWindow.phase(closeAt: store.quote?.closeAt ?? 0, now: now)
+    }
+
+    private var windowLabel: String {
+        BuyWindow.headline(phase: buyPhase, call: store.call)
+    }
+
     private var tone: Color {
-        switch store.call.label {
+        switch windowLabel {
         case "BUY UP": return HubTheme.up
         case "BUY DOWN": return HubTheme.down
         default: return HubTheme.ink
@@ -104,16 +129,16 @@ struct DeskView: View {
     }
 
     private var callBar: some View {
-        let up = store.call.label == "BUY UP"
-        let down = store.call.label == "BUY DOWN"
+        let up = windowLabel == "BUY UP"
+        let down = windowLabel == "BUY DOWN"
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("DESK // SIGNAL · \(store.mode == .paper ? "PAPER" : "LIVE") · \(store.seriesTicker)")
+                    Text("BUY WINDOW 6–4m · \(store.mode == .paper ? "PAPER" : "LIVE") · \(store.seriesTicker)")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .tracking(2.2)
                         .opacity(0.72)
-                    Text(store.call.label)
+                    Text(windowLabel)
                         .font(.system(size: 32, weight: .bold, design: .monospaced))
                         .tracking(1.2)
                 }
@@ -122,6 +147,9 @@ struct DeskView: View {
                     .font(.system(size: 30, weight: .bold, design: .monospaced))
                     .monospacedDigit()
             }
+            Text(BuyWindow.detail(phase: buyPhase, closeAt: store.quote?.closeAt ?? 0, now: now))
+                .font(.system(size: 11, design: .monospaced))
+                .opacity(0.85)
             HStack {
                 Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted\(store.call.locked ? " · LOCK" : "")")
                     .font(.system(size: 12, design: .monospaced))
