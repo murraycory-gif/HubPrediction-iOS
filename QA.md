@@ -27,7 +27,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 | TF HOLD | HOLD | Do not `./push-hub-testflight.sh`. |
 | Mac visual Soft KEEP PASS | **not claimed** | Cory Run is the only visual PASS. Linux cannot Run Catalyst. |
 | Top BUY call | KEEP (source) | Gold hero pill + POSTED / THEORY CLOSE / LIVE VS POSTED + KALSHI POSTED / THEORY AT CLOSE + huge UP/DOWN ¢ + Trend. `kalshiCall` + `holdThesis`. |
-| Mac window | KEEP (source) | Launch fills usable desktop via `GeometryPreferences.Mac`. Still drag/resize. Gold desk stretches with the window. |
+| Mac window | KEEP (source) | Default window ≈ gold desk (480×820). No GeometryPreferences / window.frame fill. Still drag/resize. |
 | First-paint theory | KEEP (source) | Gold Trend card first; rest-of-day 9-col table stays in the scroll below. |
 | Device Run | Soft until Cory Run | Mac + iPhone. |
 

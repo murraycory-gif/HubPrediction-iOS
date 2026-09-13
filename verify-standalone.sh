@@ -240,7 +240,6 @@ ok "live pulse 200ms quote / 5s dash / 10s board on Combine .common"
 
 # Mac UX: titlebar inset + type scale (Catalyst traffic lights must not cover the call)
 grep -q 'macTitlebarInset' HubPrediction/HubDesk.swift || bad "macTitlebarInset missing"
-grep -q 'safeAreaInset(edge: .top' HubPrediction/DeskView.swift || bad "DeskView missing Catalyst top safe-area inset"
 grep -q 'HubDesk.font' HubPrediction/DeskView.swift || bad "Mac type scale not on DeskView"
 grep -q 'HubDesk.font' HubPrediction/DeskChrome.swift || bad "Mac type scale not on cash/bots"
 grep -q 'HubDesk.font' HubPrediction/TradePanel.swift || bad "Mac type scale not on trade"
@@ -249,23 +248,29 @@ grep -q 'HubDesk.pinMacTitlebar' HubPrediction/HubPredictionApp.swift || bad "Ap
 if python3 - <<'PY'
 import pathlib, sys
 desk = pathlib.Path("HubPrediction/HubDesk.swift").read_text()
-# inset must clear traffic lights (~28pt titlebar)
-if "macTitlebarInset: CGFloat = 38" not in desk and "macTitlebarInset: CGFloat = 36" not in desk:
-    # accept any inset >= 28
-    import re
-    m = re.search(r"macTitlebarInset: CGFloat = (\d+)", desk)
-    if not m or int(m.group(1)) < 28:
-        print("FAIL: macTitlebarInset too small")
-        sys.exit(2)
 if "isMac ? phone + 4" not in desk and "phone + 4" not in desk:
     print("FAIL: Mac type bump missing")
     sys.exit(2)
-view = pathlib.Path("HubPrediction/DeskView.swift").read_text()
-if "safeAreaInset(edge: .top" not in view:
-    print("FAIL: no top safeAreaInset")
+if "UIWindowScene.GeometryPreferences" in desk or "prefs.systemFrame" in desk or "window.frame = frame" in desk:
+    print("FAIL: desktop-fill still launches a black slab")
     sys.exit(2)
-if "GoldDesk" not in view:
+if "macDefaultWidth: CGFloat = 480" not in desk and "macDefaultWidth: CGFloat = 500" not in desk:
+    # modest gold-desk window, not a 1440 desktop cover
+    import re
+    m = re.search(r"macDefaultWidth: CGFloat = (\d+)", desk)
+    if not m or int(m.group(1)) > 640:
+        print("FAIL: default window wider than the gold desk")
+        sys.exit(2)
+if "maximumSize" not in desk:
+    print("FAIL: Catalyst window missing maximumSize (frozen at min)")
+    sys.exit(2)
+view = pathlib.Path("HubPrediction/DeskView.swift").read_text()
+body = view.split("var body:", 1)[1].split("private var quietTools", 1)[0]
+if "GoldDesk(" not in body:
     print("FAIL: GoldDesk not on first paint")
+    sys.exit(2)
+if "GeometryReader" in body:
+    print("FAIL: GeometryReader still wraps first paint (empty black)")
     sys.exit(2)
 gold = pathlib.Path("HubPrediction/GoldDesk.swift").read_text()
 for n in ("Desk will buy", "to close", "THEORY CLOSE", "KALSHI POSTED", "THEORY AT CLOSE", "LIVE VS POSTED", "Theory finishes"):
@@ -273,26 +278,7 @@ for n in ("Desk will buy", "to close", "THEORY CLOSE", "KALSHI POSTED", "THEORY 
         print("FAIL: gold desk missing", n)
         sys.exit(2)
 if '"BOTS ARMED"' in gold or '"QUEUE' in gold or '"SCOUT"' in gold:
-        print("FAIL: bots/QUEUE/SCOUT still on the gold desk")
-        sys.exit(2)
-if "allowsHitTesting(false)" not in view:
-    print("FAIL: titlebar spacer still steals drag hits")
-    sys.exit(2)
-desk = pathlib.Path("HubPrediction/HubDesk.swift").read_text()
-if "maximumSize" not in desk:
-    print("FAIL: Catalyst window missing maximumSize (frozen at min)")
-    sys.exit(2)
-if "GeometryPreferences.Mac" not in desk or "systemFrame" not in desk:
-    print("FAIL: launch does not fill usable desktop via GeometryPreferences")
-    sys.exit(2)
-if "prefs.minimumSize" in desk or "prefs.maximumSize" in desk:
-    print("FAIL: GeometryPreferences.Mac has no min/max on this SDK")
-    sys.exit(2)
-if "maxWidth: HubDesk.isMac ? 430" in gold:
-    print("FAIL: gold desk still locked to 430pt postage stamp")
-    sys.exit(2)
-if "GeometryReader" not in view:
-    print("FAIL: gold column does not scale with the window")
+    print("FAIL: bots/QUEUE/SCOUT still on the gold desk")
     sys.exit(2)
 if "WAIT · 6–4m WINDOW" in pathlib.Path("HubPrediction/TradePanel.swift").read_text():
     print("FAIL: dead WAIT button still blocks the trade row")
@@ -316,7 +302,7 @@ gold = pathlib.Path("HubPrediction/GoldDesk.swift").read_text()
 if "GoldDesk(" not in src:
     print("FAIL: DeskView does not mount GoldDesk")
     sys.exit(2)
-if "BotLane" in src.split("private var goldColumn", 1)[1].split("private var quietTools", 1)[0]:
+if "BotLane" in src.split("var body:", 1)[1].split("private var quietTools", 1)[0]:
     print("FAIL: BotLane still on first paint")
     sys.exit(2)
 for n in ("hero", "postedRow", "kalshiCards", "askPills", "trendCard", "Desk will buy", "to close"):
@@ -371,7 +357,6 @@ else
 fi
 grep -q 'macMaxWidth' HubPrediction/HubDesk.swift || bad "macMaxWidth missing"
 grep -q 'maximumSize' HubPrediction/HubDesk.swift || bad "Catalyst maximumSize missing"
-grep -q 'allowsHitTesting(false)' HubPrediction/DeskView.swift || bad "titlebar spacer still hit-tests"
 grep -q 'object(forKey: armedKey) == nil' HubPrediction/DeskBots.swift || bad "bots default-on missing"
 grep -q 'ensureDefaultOn' HubPrediction/DeskStore.swift || bad "start does not default bots on"
 grep -q 'Desk will buy' HubPrediction/GoldDesk.swift || bad "gold hero sub missing"

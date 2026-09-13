@@ -14,55 +14,33 @@ struct DeskView: View {
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             GoldTone.bg.ignoresSafeArea(edges: HubDesk.isMac ? [.horizontal, .bottom] : .all)
-            goldColumn
-        }
-        /// Clear, non-hit-testable strip — a filled bar here ate the titlebar drag on Catalyst.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if HubDesk.isMac {
-                Color.clear
-                    .frame(height: HubDesk.macTitlebarInset)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+            VStack(spacing: 0) {
+                GoldDesk(
+                    now: now,
+                    chartHeight: HubDesk.isMac ? HubDesk.macChartHeight : HubDesk.phoneChartHeight
+                )
+                AlertBanner()
+                quietTools
+                ScrollView {
+                    dayFilter
+                    restOfDay
+                        .padding(.bottom, 28)
+                }
             }
         }
         .onReceive(Timer.publish(every: 0.20, on: .main, in: .common).autoconnect()) { _ in
             now = Date.nowMs
             store.pulse(now: now)
         }
-        .task {
-            store.start()
-            HubDesk.pinMacTitlebar()
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            HubDesk.pinMacTitlebar()
-        }
+        .task { store.start() }
+        .onAppear { HubDesk.pinMacTitlebar() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                store.nudge()
-                HubDesk.pinMacTitlebar()
-            }
+            if phase == .active { store.nudge() }
         }
         .sheet(isPresented: $showMarkets) { MarketsSheet().environmentObject(store) }
         .sheet(isPresented: $showKeys) { CredsSheet().environmentObject(store) }
-    }
-
-    /// Gold Grok Build first paint. Fills the window — no 430pt postage stamp.
-    private var goldColumn: some View {
-        GeometryReader { geo in
-            let chartH = max(220, geo.size.height - (HubDesk.isMac ? 390 : 430))
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    GoldDesk(now: now, chartHeight: chartH)
-                    AlertBanner()
-                    quietTools
-                    dayFilter
-                    restOfDay
-                }
-                .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .top)
-                .padding(.bottom, 28)
-            }
-        }
     }
 
     private var quietTools: some View {
