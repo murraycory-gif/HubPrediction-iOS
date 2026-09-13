@@ -31,9 +31,10 @@ final class DeskStore: ObservableObject {
     @Published var lastQuoteAt: Double = 0
     @Published var beat: BeatPath = BeatPath()
 
-    static let quoteIntervalMs = 1_000.0
+    static let quoteIntervalMs = 750.0
     static let dashIntervalMs = 5_000.0
     static let boardIntervalMs = 10_000.0
+    static let inflightWatchMs = 3_000.0
 
     private var lastDashAt: Double = 0
     private var lastBoardAt: Double = 0
@@ -41,6 +42,7 @@ final class DeskStore: ObservableObject {
     private var quoteInFlight = false
     private var dashInFlight = false
     private var boardInFlight = false
+    private var quoteStartedAt: Double = 0
     private var points: [Point] = []
     private var prior: [Point] = []
     private var past: [Settled] = []
@@ -85,6 +87,10 @@ final class DeskStore: ObservableObject {
     }
 
     func pulse(now: Double) {
+        if quoteInFlight, quoteStartedAt > 0, now - quoteStartedAt > Self.inflightWatchMs {
+            quoteInFlight = false
+        }
+        applyLiveChrome(now: now)
         tickBots(now: now)
         if now - lastQuoteAt >= Self.quoteIntervalMs {
             Task { await refreshQuote() }
@@ -95,6 +101,14 @@ final class DeskStore: ObservableObject {
         if now - lastBoardAt >= Self.boardIntervalMs {
             Task { await refreshBoard() }
         }
+    }
+
+    func nudge() {
+        quoteInFlight = false
+        dashInFlight = false
+        boardInFlight = false
+        lastQuoteAt = 0
+        Task { await refreshQuote() }
     }
 
     func retry() {
@@ -290,10 +304,22 @@ final class DeskStore: ObservableObject {
     private func publish(_ q: Quote) {
         let attached = attach(q)
         quote = attached
-        recomputeBeat(attached)
-        let raw = KalshiSignal.kalshiCall(attached, beat: beat)
-        call = KalshiSignal.holdThesis(quote: attached, next: raw, peek: peekThesis, write: writeThesis)
+        applyLiveChrome(now: Date.nowMs, quote: attached)
         if tradeSide == .sit, call.side != .sit { tradeSide = call.side }
+    }
+
+    private func applyLiveChrome(now: Double, quote q: Quote? = nil) {
+        let used = q ?? quote
+        beat = BeatTrend.evaluate(
+            quote: used,
+            points: points.isEmpty ? (used?.points ?? []) : points,
+            prior: prior,
+            dash: dash,
+            now: now,
+            closeAt: used?.closeAt ?? 0
+        )
+        let raw = KalshiSignal.kalshiCall(used, beat: beat)
+        call = KalshiSignal.holdThesis(quote: used, next: raw, peek: peekThesis, write: writeThesis)
     }
 
     private func recomputeBeat(_ q: Quote?) {
@@ -311,9 +337,9 @@ final class DeskStore: ObservableObject {
     func refreshQuote() async {
         guard !quoteInFlight else { return }
         quoteInFlight = true
+        quoteStartedAt = Date.nowMs
         defer { quoteInFlight = false }
         let now = Date.nowMs
-        lastQuoteAt = now
         do {
             async let statusP = KalshiClient.fetchStatus()
             async let coinP = KalshiClient.fetchCoinbase(timeout: 1.5)
@@ -322,14 +348,15 @@ final class DeskStore: ObservableObject {
             if let st {
                 status = st
                 if st.tradingActive == false {
-                    holdingLast = true
-                    if let last = quote { publish(last) }
-                    banner = DeskBanner(
-                        title: "Kalshi halted",
-                        detail: "Last ¢ is held on purpose. Retry to refresh status, or wait for the exchange.",
-                        holdingLast: true
-                    )
-                    return
+                    if banner?.title != "Kalshi halt" {
+                        banner = DeskBanner(
+                            title: "Kalshi halt",
+                            detail: "Spot and asks still refresh. No new LIVE orders until Kalshi trading resumes.",
+                            holdingLast: false
+                        )
+                    }
+                } else if banner?.title == "Kalshi halt" || banner?.title == "Kalshi halted" {
+                    banner = nil
                 }
             }
             let market = try await marketP
@@ -349,6 +376,7 @@ final class DeskStore: ObservableObject {
             }
             q.points = points
             holdingLast = false
+            lastQuoteAt = now
             if banner?.holdingLast == true || banner?.title == "Quote failed" { banner = nil }
             publish(q)
         } catch {
@@ -408,13 +436,13 @@ final class DeskStore: ObservableObject {
     }
 
     private func publishFromMarket(_ market: [String: Any], now: Double) {
-        let live = quote?.live ?? points.last?.px ?? 0
-        var q = KalshiClient.marketToQuote(market, live: live, source: quote?.liveSource ?? "kalshi", now: now)
-        if let current = quote {
-            q.yesAsk = current.yesAsk != 0 ? current.yesAsk : q.yesAsk
-            q.noAsk = current.noAsk != 0 ? current.noAsk : q.noAsk
-            q.live = current.live != 0 ? current.live : q.live
+        if let current = quote, current.fetchedAt > now - 2_000 {
+            publish(current)
+            return
         }
+        let live = quote?.live ?? KalshiClient.num(market["last_price"]) ?? points.last?.px ?? 0
+        var q = KalshiClient.marketToQuote(market, live: live, source: quote?.liveSource ?? "kalshi", now: now)
+        q.points = points
         publish(q)
     }
 

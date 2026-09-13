@@ -14,7 +14,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 | 2 | AI bots (SCOUT/SIGNAL/RISK) visible and in the forecast | KEEP (structural) | Port of desk.ts Strike/Tape/Path. Votes feed `BeatTrend`. Paper auto in window. LIVE Confirm. |
 | 3 | Show cash; size for profit | KEEP (structural) | `CashStrip` + quarter-Kelly `SizeCash` + expected profit EV. |
 | 4 | Beat-the-trend forecast; visible next-15m dash | KEEP (structural) | Mint DASH = beat path (gap/tape/bots/shape). Orange dotted = naive last-6m. Not a last-week replot. Call bar shows BEAT/FADE/WITH TREND. |
-| 5 | Live updating tick | KEEP (structural) | Combine `.common` pulse (not `scheduledTimer`). Quote **1s**, dash **5s**, board **10s**. Chart uses wall-clock `clockNow`. |
+| 5 | Live spot-on refresh | KEEP (structural) | Combine `.common` pulse. Spot/asks **750ms** (Coinbase+Kalshi parallel). Call/bots/window recompute every **0.25s**. Dash **5s**, board **10s**. Halt does not freeze spot. No thesis LOCK. Board cannot clobber fresher asks. |
 | 6 | Main chart: last week + theory + actual + current/upcoming | KEEP (structural) | `ChartCanvas` draws gray last week, blue theory, green actual/live, upcoming dash. |
 | 7 | Second chart: theory vs actual difference | KEEP (structural) | `VarianceChart` under TREND on Mac + iPhone. |
 | 8 | Markets browse + trade place/confirm + error/retry | KEEP (structural) | Markets sheet, PAPER/LIVE trade, banner Retry. |

@@ -156,13 +156,35 @@ if grep -n 'Timer.scheduledTimer' HubPrediction/DeskStore.swift >/dev/null 2>&1;
   bad "DeskStore still uses scheduledTimer (Mac live tick FAIL)"
 fi
 grep -q 'func pulse(now' HubPrediction/DeskStore.swift || bad "pulse missing"
-grep -q 'quoteIntervalMs = 1_000' HubPrediction/DeskStore.swift || bad "1s quote interval missing"
+grep -q 'quoteIntervalMs = 750' HubPrediction/DeskStore.swift || bad "750ms quote interval missing"
+grep -q 'func nudge()' HubPrediction/DeskStore.swift || bad "nudge missing"
+grep -q 'applyLiveChrome' HubPrediction/DeskStore.swift || bad "live chrome pulse missing"
+if grep -n 'Last ¢ is held on purpose' HubPrediction/DeskStore.swift >/dev/null 2>&1; then
+  bad "halt still freezes spot (must keep Coinbase+Kalshi refreshing)"
+fi
+if python3 - <<'PY'
+import pathlib, sys
+src = pathlib.Path("HubPrediction/KalshiSignal.swift").read_text()
+if "locked: true" in src:
+    print("FAIL: thesis LOCK still freezes the call")
+    sys.exit(2)
+fn = pathlib.Path("HubPrediction/DeskStore.swift").read_text()
+if "q.yesAsk = current.yesAsk" in fn:
+    print("FAIL: board still clobbers live asks")
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "spot-on: no LOCK freeze, board does not clobber asks"
+else
+  bad "spot-on refresh"
+fi
 grep -q 'store.pulse(now:' HubPrediction/DeskView.swift || bad "DeskView does not pulse store"
 grep -q 'in: .common' HubPrediction/DeskView.swift || bad "Combine timer must use .common"
 grep -q 'clockNow: now' HubPrediction/DeskView.swift || bad "chart not wired to wall-clock now"
 grep -q 'clockNow' HubPrediction/ChartCanvas.swift || bad "ChartCanvas missing clockNow"
 grep -q 'waitsForConnectivity = false' HubPrediction/KalshiClient.swift || bad "session may stall on Catalyst"
-ok "live pulse 1s quote / 5s dash / 10s board on Combine .common"
+ok "live pulse 750ms quote / 5s dash / 10s board on Combine .common"
 
 # Mac first-paint: signal chrome pinned; tables only inside a ScrollView
 if python3 - <<'PY'
@@ -191,7 +213,8 @@ if "signalDesk" not in before:
     print("FAIL: signal desk not pinned above ScrollView")
     sys.exit(2)
 sig = src.split("private var signalDesk", 1)[1]
-for n in ("CashStrip()", "BotLane(now:", "ChartCanvas(", "VarianceChart(", "dash: store.dash"):
+need = ["CashStrip()", "BotLane(now:", "ChartCanvas(", "VarianceChart(", "dash: store.dash"]
+for n in need:
     if n not in sig:
         print("FAIL: signalDesk missing", n)
         sys.exit(2)
@@ -219,7 +242,7 @@ grep -q 'BEAT TREND' HubPrediction/BeatTrend.swift || bad "beat chrome missing"
 grep -q 'store.beat.chrome' HubPrediction/DeskView.swift || bad "beat chrome not on call bar"
 grep -q 'pack.naive' HubPrediction/ChartCanvas.swift || bad "naive trend ray missing"
 grep -q 'pack.beat' HubPrediction/ChartCanvas.swift || bad "beat path missing"
-grep -q 'kalshiCall(attached, beat:' HubPrediction/DeskStore.swift || bad "call does not use beat-trend"
+grep -q 'kalshiCall(used, beat:' HubPrediction/DeskStore.swift || bad "call does not use beat-trend"
 grep -q 'confirmFromBot' HubPrediction/DeskStore.swift || bad "live bot confirm missing"
 grep -q 'expectedProfit' HubPrediction/SizeCash.swift || bad "profit sizing missing"
 grep -q 'CASH' HubPrediction/DeskChrome.swift || bad "cash strip missing"

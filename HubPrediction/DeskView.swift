@@ -6,6 +6,7 @@ struct DeskView: View {
     @State private var now = Date.nowMs
     @State private var showMarkets = false
     @State private var showKeys = false
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Mac Catalyst or iPad regular width — not a stretched phone stack.
     private var wide: Bool {
@@ -26,6 +27,9 @@ struct DeskView: View {
             store.pulse(now: now)
         }
         .task { store.start() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { store.nudge() }
+        }
         .sheet(isPresented: $showMarkets) { MarketsSheet().environmentObject(store) }
         .sheet(isPresented: $showKeys) { CredsSheet().environmentObject(store) }
     }
@@ -161,7 +165,7 @@ struct DeskView: View {
                 .font(.system(size: 11, design: .monospaced))
                 .opacity(0.85)
             HStack {
-                Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted\(store.call.locked ? " · LOCK" : "")")
+                Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted · live")
                     .font(.system(size: 12, design: .monospaced))
                     .opacity(0.8)
                 Spacer()
