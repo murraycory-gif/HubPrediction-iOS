@@ -73,11 +73,9 @@ enum HubDesk {
             )
             let fill = !didFillDesktop && !scene.windows.isEmpty
             if fill { didFillDesktop = true }
-            if #available(macCatalyst 16.0, *) {
+            if #available(macCatalyst 16.0, *), fill {
                 let prefs = UIWindowScene.GeometryPreferences.Mac()
-                prefs.minimumSize = CGSize(width: macMinWidth, height: macMinHeight)
-                prefs.maximumSize = CGSize(width: macMaxWidth, height: macMaxHeight)
-                if fill { prefs.systemFrame = frame }
+                prefs.systemFrame = frame
                 scene.requestGeometryUpdate(prefs) { _ in }
             }
             for window in scene.windows {

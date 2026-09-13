@@ -285,6 +285,9 @@ if "maximumSize" not in desk:
 if "GeometryPreferences.Mac" not in desk or "systemFrame" not in desk:
     print("FAIL: launch does not fill usable desktop via GeometryPreferences")
     sys.exit(2)
+if "prefs.minimumSize" in desk or "prefs.maximumSize" in desk:
+    print("FAIL: GeometryPreferences.Mac has no min/max on this SDK")
+    sys.exit(2)
 if "maxWidth: HubDesk.isMac ? 430" in gold:
     print("FAIL: gold desk still locked to 430pt postage stamp")
     sys.exit(2)
