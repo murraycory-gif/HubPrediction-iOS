@@ -61,13 +61,13 @@ struct ChartCanvas: View {
                     zoomBtn(">") { pan += zoom * 30.0 * HubMs.second }
                 }
             }
+            .onAppear { ema = slope }
+            .onChange(of: raw) { _, _ in ema = slope }
             if gold, !nextLine.isEmpty {
                 Text(nextLine)
                     .font(GoldTone.display(14, weight: .medium))
                     .foregroundStyle(nextLine.contains("DOWN") ? GoldTone.downText : nextLine.contains("UP") ? GoldTone.upText : GoldTone.mute)
             }
-            .onAppear { ema = slope }
-            .onChange(of: raw) { _, _ in ema = slope }
 
             ZStack {
                 RoundedRectangle(cornerRadius: gold ? 22 : 16, style: .continuous)
