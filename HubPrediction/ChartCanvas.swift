@@ -6,6 +6,7 @@ struct ChartCanvas: View {
     let points: [Point]
     let prior: [Point]
     let lean: DeskSide
+    var chartHeight: CGFloat = HubDesk.phoneChartHeight
 
     @State private var zoom: Double = 60
     @State private var pan: Double = 0
@@ -94,7 +95,7 @@ struct ChartCanvas: View {
                     label("\(Int(live.rounded()))", y: size.height / 2 - 8, color: HubTheme.up)
                     label("\(Int(lo.rounded()))", y: size.height - 24, color: HubTheme.mute)
                 }
-                .frame(height: 220)
+                .frame(height: chartHeight)
             }
             Text("GREEN this week · GRAY last week rebased · DASH next 15m")
                 .font(.system(size: 10, design: .monospaced))

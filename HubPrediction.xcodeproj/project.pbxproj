@@ -17,6 +17,7 @@
 		HP0100000000000000000A08 /* DeskStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B08 /* DeskStore.swift */; };
 		HP0100000000000000000A09 /* DeskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B09 /* DeskView.swift */; };
 		HP0100000000000000000A10 /* ChartCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B10 /* ChartCanvas.swift */; };
+		HP0100000000000000000A11 /* HubDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B11 /* HubDesk.swift */; };
 		HP0100000000000000000A90 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B90 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -31,6 +32,7 @@
 		HP0100000000000000000B08 /* DeskStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskStore.swift; sourceTree = "<group>"; };
 		HP0100000000000000000B09 /* DeskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskView.swift; sourceTree = "<group>"; };
 		HP0100000000000000000B10 /* ChartCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCanvas.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B11 /* HubDesk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubDesk.swift; sourceTree = "<group>"; };
 		HP0100000000000000000B90 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		HP0100000000000000000B93 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		HP0100000000000000000B94 /* HubPrediction.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HubPrediction.entitlements; sourceTree = "<group>"; };
@@ -69,6 +71,7 @@
 				HP0100000000000000000B08 /* DeskStore.swift */,
 				HP0100000000000000000B09 /* DeskView.swift */,
 				HP0100000000000000000B10 /* ChartCanvas.swift */,
+				HP0100000000000000000B11 /* HubDesk.swift */,
 				HP0100000000000000000B90 /* Assets.xcassets */,
 				HP0100000000000000000B93 /* Info.plist */,
 				HP0100000000000000000B94 /* HubPrediction.entitlements */,
@@ -158,6 +161,7 @@
 				HP0100000000000000000A08 /* DeskStore.swift in Sources */,
 				HP0100000000000000000A09 /* DeskView.swift in Sources */,
 				HP0100000000000000000A10 /* ChartCanvas.swift in Sources */,
+				HP0100000000000000000A11 /* HubDesk.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -177,6 +181,7 @@
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -196,6 +201,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -211,6 +217,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = M7FL68Q43A;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HubPrediction/Info.plist;
@@ -222,11 +229,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.corymurray.HubPrediction;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -238,6 +245,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = M7FL68Q43A;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = HubPrediction/Info.plist;
@@ -249,11 +257,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.corymurray.HubPrediction;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};

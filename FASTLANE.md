@@ -23,9 +23,12 @@ bundle install
 |---------|----------------|
 | `bundle exec fastlane build` | Compile `HubPrediction` for iOS Simulator |
 | `bundle exec fastlane build_clean` | Clean + compile |
-| `bundle exec fastlane hub_beta` | Archive + upload to TestFlight (`com.corymurray.HubPrediction`) |
+| `bundle exec fastlane hub_beta` | Archive + upload **iOS** to TestFlight (`com.corymurray.HubPrediction`) |
 | `bundle exec fastlane beta` | Same as `hub_beta` |
+| `bundle exec fastlane mac_build` | Compile Mac Catalyst (local). Not TestFlight. |
 | `bundle exec fastlane sims` | List simulators |
+
+Mac daily use is still **Xcode → My Mac (Mac Catalyst) → Run**. `hub_beta` / `push-hub-testflight.sh` stay iOS.
 
 Prefer the archive script if you want Organizer instead of a silent upload:
 

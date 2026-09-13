@@ -2,36 +2,79 @@ import SwiftUI
 
 struct DeskView: View {
     @EnvironmentObject private var store: DeskStore
+    @Environment(\.horizontalSizeClass) private var hSize
     @State private var now = Date.nowMs
+
+    /// Mac Catalyst or iPad regular width — not a stretched phone stack.
+    private var wide: Bool {
+        HubDesk.isMac || hSize == .regular
+    }
 
     var body: some View {
         ZStack {
             HubTheme.surface.ignoresSafeArea()
-            VStack(spacing: 0) {
-                callBar
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        tape
-                        liveLine
-                        ChartCanvas(
-                            live: store.quote?.live ?? 0,
-                            closeAt: store.quote?.closeAt ?? 0,
-                            points: store.quote?.points ?? [],
-                            prior: store.quote?.prior ?? [],
-                            lean: store.call.side
-                        )
-                        roulette
-                        dayFilter
-                        restOfDay
-                    }
-                    .padding(.bottom, 28)
-                }
+            if wide {
+                wideDesk
+            } else {
+                phoneDesk
             }
         }
         .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
             now = Date.nowMs
+        }
+    }
+
+    private var phoneDesk: some View {
+        VStack(spacing: 0) {
+            callBar
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    tape
+                    liveLine
+                    ChartCanvas(
+                        live: store.quote?.live ?? 0,
+                        closeAt: store.quote?.closeAt ?? 0,
+                        points: store.quote?.points ?? [],
+                        prior: store.quote?.prior ?? [],
+                        lean: store.call.side,
+                        chartHeight: HubDesk.phoneChartHeight
+                    )
+                    roulette
+                    dayFilter
+                    restOfDay
+                }
+                .padding(.bottom, 28)
+            }
+        }
+    }
+
+    private var wideDesk: some View {
+        VStack(spacing: 0) {
+            callBar
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+            liveLine
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 0) {
+                    tape
+                    roulette
+                    dayFilter
+                }
+                .frame(minWidth: 360, idealWidth: 420, maxWidth: 460, alignment: .top)
+                ChartCanvas(
+                    live: store.quote?.live ?? 0,
+                    closeAt: store.quote?.closeAt ?? 0,
+                    points: store.quote?.points ?? [],
+                    prior: store.quote?.prior ?? [],
+                    lean: store.call.side,
+                    chartHeight: HubDesk.macChartHeight
+                )
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            restOfDay
+            Spacer(minLength: 8)
         }
     }
 
@@ -49,7 +92,7 @@ struct DeskView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("DESK // SIGNAL")
+                    Text("DESK // SIGNAL · VIEW · KXBTC15M")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .tracking(2.2)
                         .opacity(0.72)
@@ -146,6 +189,7 @@ struct DeskView: View {
         let up = list.filter { $0.result == .up }.count
         let down = list.count - up
         let upPct = list.isEmpty ? 0 : Int((Double(up) / Double(list.count) * 100.0).rounded())
+        let cols = wide ? 12 : 8
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("ROULETTE · LAST \(list.isEmpty ? "—" : "\(list.count)") SETTLED")
@@ -157,7 +201,7 @@ struct DeskView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(HubTheme.mute)
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 8), spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: cols), spacing: 6) {
                 ForEach(list.isEmpty ? placeholders : list) { item in
                     RoundedRectangle(cornerRadius: 6)
                         .fill(item.ticker == "—" ? HubTheme.chip : item.result == .up ? HubTheme.up : HubTheme.down)
@@ -174,7 +218,7 @@ struct DeskView: View {
     }
 
     private var placeholders: [Settled] {
-        (0..<8).map { Settled(ticker: "—", closeAt: Double($0), result: .sit) }
+        (0..<(wide ? 12 : 8)).map { Settled(ticker: "—", closeAt: Double($0), result: .sit) }
     }
 
     private var dayFilter: some View {
@@ -234,13 +278,25 @@ struct DeskView: View {
                 Text(empty)
                     .font(.system(size: 14))
                     .foregroundStyle(HubTheme.mute)
+            } else if wide {
+                VStack(alignment: .leading, spacing: 0) {
+                    wideHeader
+                    ForEach(rows) { row in
+                        wideRow(row)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(HubTheme.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(HubTheme.up.opacity(0.16)))
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         headerRow
                         ForEach(rows) { row in
                             HStack(spacing: 0) {
-                                cell(row.clock, width: 118, now: row.isNow, leading: true)
+                                cell(row.clock, width: 118, now: row.isNow)
                                 cell(Money.dollarsExact(row.theory), width: 88, now: row.isNow)
                                 cell(Money.dollarsExact(row.actual), width: 88, now: row.isNow)
                                 cell(Money.signed(row.variance), width: 88, now: row.isNow)
@@ -268,6 +324,27 @@ struct DeskView: View {
         }
     }
 
+    private var wideHeader: some View {
+        HStack(spacing: 0) {
+            flexHead("CLOCK")
+            flexHead("THEORY")
+            flexHead("ACTUAL")
+            flexHead("VARIANCE")
+            flexHead("LAST WEEK")
+        }
+    }
+
+    private func wideRow(_ row: DashRow) -> some View {
+        HStack(spacing: 0) {
+            flexCell(row.clock, now: row.isNow)
+            flexCell(Money.dollarsExact(row.theory), now: row.isNow)
+            flexCell(Money.dollarsExact(row.actual), now: row.isNow)
+            flexCell(Money.signed(row.variance), now: row.isNow)
+            flexCell(Money.dollarsExact(row.lastWeek), now: row.isNow)
+        }
+        .background(row.isNow ? HubTheme.up.opacity(0.08) : Color.clear)
+    }
+
     private func head(_ t: String, width: CGFloat) -> some View {
         Text(t)
             .font(.system(size: 10, design: .monospaced))
@@ -277,11 +354,28 @@ struct DeskView: View {
             .padding(.vertical, 8)
     }
 
-    private func cell(_ t: String, width: CGFloat, now: Bool, leading: Bool = false) -> some View {
+    private func cell(_ t: String, width: CGFloat, now: Bool) -> some View {
         Text(t)
             .font(.system(size: 13, design: .monospaced))
             .foregroundStyle(now ? HubTheme.up : HubTheme.ink)
             .frame(width: width, alignment: .leading)
+            .padding(.vertical, 8)
+    }
+
+    private func flexHead(_ t: String) -> some View {
+        Text(t)
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(HubTheme.mute)
+            .tracking(1.0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+    }
+
+    private func flexCell(_ t: String, now: Bool) -> some View {
+        Text(t)
+            .font(.system(size: 13, design: .monospaced))
+            .foregroundStyle(now ? HubTheme.up : HubTheme.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 8)
     }
 }

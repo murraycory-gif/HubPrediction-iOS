@@ -39,6 +39,12 @@ grep -q 'CODE_SIGN_ENTITLEMENTS = HubPrediction/HubPrediction.entitlements' "$pb
 grep -q FulfillmentHeartbeat "$pbx" && bad "Heartbeat string in pbxproj"
 ok "pbxproj bundle/team/paths"
 
+grep -q 'SUPPORTS_MACCATALYST = YES' "$pbx" || bad "Mac Catalyst not enabled"
+grep -q 'TARGETED_DEVICE_FAMILY = "1,2"' "$pbx" || bad "device family should keep iPhone and add iPad/Catalyst size class"
+grep -q 'SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO' "$pbx" || bad "Designed-for-iPhone Mac dest should be off"
+grep -q 'DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO' "$pbx" || bad "Catalyst must keep same bundle id"
+ok "Mac Catalyst + iPhone family"
+
 for f in \
   HubPredictionApp.swift \
   Theme.swift \
@@ -49,7 +55,8 @@ for f in \
   KalshiClient.swift \
   DeskStore.swift \
   DeskView.swift \
-  ChartCanvas.swift
+  ChartCanvas.swift \
+  HubDesk.swift
 do
   [ -f "HubPrediction/$f" ] || bad "missing HubPrediction/$f"
   grep -q "$f" "$pbx" || bad "$f not in pbxproj"
@@ -72,6 +79,25 @@ if grep -q 'FulfillmentHeartbeat-iOS' HUB_TESTFLIGHT.md TESTFLIGHT.md README.md 
   bad "docs still point at FulfillmentHeartbeat-iOS"
 else
   ok "docs point at HubPrediction-iOS"
+fi
+
+if grep -R -n -E 'api[_-]?key|sk-|Bearer |Authorization:|secret_token' HubPrediction --include='*.swift' >/dev/null 2>&1; then
+  bad "secret-like string in Swift"
+else
+  ok "no secrets in Swift"
+fi
+
+if grep -q 'external-api.kalshi.com' HubPrediction/KalshiClient.swift \
+  && grep -q 'api.coinbase.com' HubPrediction/KalshiClient.swift; then
+  ok "Kalshi + Coinbase paths"
+else
+  bad "missing Kalshi or Coinbase URL"
+fi
+
+if grep -q 'store.start()' HubPrediction/HubPredictionApp.swift; then
+  ok "cold open starts desk"
+else
+  bad "cold open missing store.start"
 fi
 
 icon=HubPrediction/Assets.xcassets/AppIcon.appiconset/AppIcon.png
