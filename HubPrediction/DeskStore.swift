@@ -447,8 +447,16 @@ final class DeskStore: ObservableObject {
                 if !lastWeek.isEmpty { prior = lastWeek.map { Point(t: $0.t + HubMs.week, px: $0.px) } }
             }
             past = KalshiClient.settledFromMarkets(settled)
-            if let pinned = pinnedTicker, let exact = open.first(where: { String(describing: $0["ticker"] ?? "") == pinned })
-                ?? (try? await KalshiClient.fetchMarket(ticker: pinned, timeout: 1.2)) {
+            // Await must sit in the async function body — not inside `if let … ?? await`
+            // (Swift treats that `??` as a non-async autoclosure; Catalyst then fails to compile).
+            var exact: [String: Any]?
+            if let pinned = pinnedTicker, !pinned.isEmpty {
+                exact = open.first(where: { String(describing: $0["ticker"] ?? "") == pinned })
+                if exact == nil {
+                    exact = try? await KalshiClient.fetchMarket(ticker: pinned, timeout: 1.2)
+                }
+            }
+            if let exact {
                 publishFromMarket(exact, now: now)
             } else if let market = KalshiClient.pickOpen(open, now: now) {
                 publishFromMarket(market, now: now)

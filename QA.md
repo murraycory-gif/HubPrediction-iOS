@@ -25,11 +25,12 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 | Extra | Verdict | Notes |
 |-------|---------|-------|
 | TF HOLD | KEEP | Do not `./push-hub-testflight.sh` yet. |
+| Catalyst compile (`refreshBoard` await) | KEEP (structural) | `await fetchMarket` is no longer inside `if let … ??`. Linux has no `xcodebuild`; Cory Mac Run is the green compile. |
 | Device Run (window/bots/charts/fills) | Soft KEEP | Needs Cory Run on Mac + iPhone. Live needs PEM. |
 
 ## FAIL
 
-None in source. Prior Soft FAILs (signal-only desk, clipped dash) are closed in this revision.
+None in source. Prior Soft FAILs (signal-only desk, clipped dash, Catalyst `if let ?? await`) are closed in this revision.
 
 ## How to switch Live / Paper
 

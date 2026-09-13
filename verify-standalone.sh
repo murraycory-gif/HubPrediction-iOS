@@ -151,6 +151,36 @@ else
   bad "cold open missing store.start"
 fi
 
+# Catalyst compile: never put await inside `if let … ?? await` (non-async autoclosure)
+if python3 - <<'PY'
+import pathlib, sys
+bad = []
+for p in pathlib.Path("HubPrediction").rglob("*.swift"):
+    text = p.read_text()
+    if "?? (try? await" in text or "?? try? await" in text:
+        bad.append(str(p))
+if bad:
+    print("FAIL: await coalesced with ?? (Catalyst compile):", ", ".join(bad))
+    sys.exit(2)
+src = pathlib.Path("HubPrediction/DeskStore.swift").read_text()
+fn = src.split("private func refreshBoard()", 1)[1].split("private func publishFromMarket", 1)[0]
+if "try? await KalshiClient.fetchMarket" not in fn:
+    print("FAIL: refreshBoard lost pinned fetchMarket")
+    sys.exit(2)
+if "if let exact" not in fn or "} catch {" not in fn:
+    print("FAIL: refreshBoard do/catch or exact publish missing")
+    sys.exit(2)
+if "if let pinned = pinnedTicker, let exact" in fn:
+    print("FAIL: refreshBoard still binds exact in the same if-let as await")
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "refreshBoard await is outside if-let ?? (Catalyst compile)"
+else
+  bad "refreshBoard concurrency / do-catch"
+fi
+
 # Live tick: Combine .common pulse, not Foundation scheduledTimer (dead on Catalyst)
 if grep -n 'Timer.scheduledTimer' HubPrediction/DeskStore.swift >/dev/null 2>&1; then
   bad "DeskStore still uses scheduledTimer (Mac live tick FAIL)"
