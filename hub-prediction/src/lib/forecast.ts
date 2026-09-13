@@ -41,12 +41,13 @@ export function forwardRay(opts: {
     slope += opts.lean === 'up' ? 0.12 : -0.12
   }
 
-  const closeAt = Number.isFinite(opts.closeAt) ? opts.closeAt : now + 15 * 60_000
-  const nextClose = closeAt + 15 * 60_000
+  const closeAt = Number.isFinite(opts.closeAt) && opts.closeAt > now ? opts.closeAt : now + 15 * 60_000
+  const lastT = Math.max(now + 16 * 60_000, closeAt + 15 * 60_000)
   const pxAt = (t: number) => live + slope * ((t - now) / 60_000)
-  const times = [now, Math.max(now, closeAt), Math.max(now, nextClose)]
-  const uniq = [...new Set(times.map((t) => Math.round(t)))].sort((a, b) => a - b)
-  return uniq.map((t) => ({ t, px: pxAt(t) }))
+  const times: number[] = []
+  for (let t = now; t < lastT - 1; t += 60_000) times.push(t)
+  times.push(lastT)
+  return times.map((t) => ({ t, px: pxAt(t) }))
 }
 
 export function rebasePrior(prior: Point[] | undefined, live: number): Point[] {

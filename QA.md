@@ -19,12 +19,13 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 
 | Extra | Verdict | Notes |
 |-------|---------|-------|
+| Next-15m DASH visible on TREND // PATH | KEEP (structural) | Window includes ≥16m future. `forwardRay` always spans past now. Mint dash + now dot. Device visual Soft KEEP until Cory Run. |
 | TF HOLD | KEEP | Do not `./push-hub-testflight.sh` yet. |
 | Live Mac + iPhone paper fill + live confirm | Soft KEEP | Needs Cory Run. Live also needs PEM. |
 
 ## FAIL
 
-None in source.
+None in source. Prior Mac Soft FAIL (dash clipped off the right edge at `end == now`) is fixed in `Forecast.chartWindow` + `ChartCanvas`.
 
 ## How to switch Live / Paper
 

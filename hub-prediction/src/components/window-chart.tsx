@@ -59,8 +59,10 @@ export function WindowChart(props: {
     lean: props.lean,
   })
 
-  const end = now + pan
-  const start = end - zoom * 60_000
+  const lastForecast = forecast[forecast.length - 1]?.t ?? now
+  const cursor = now + pan
+  const start = cursor - zoom * 60_000
+  const end = cursor + Math.max(16 * 60_000, lastForecast - now)
   const ys = [...actual.map((p) => p.px), ...prior.map((p) => p.px), ...forecast.map((p) => p.px), props.live]
   const [lo, hi] = yDomain(props.live, ys)
   const forecastPts = forecast.map((p) => p.px.toFixed(2)).join(',')
@@ -69,7 +71,7 @@ export function WindowChart(props: {
   const h = 168
   const actualD = useMemo(() => toPoints(actual, start, end, lo, hi, w, h), [actual, start, end, lo, hi])
   const priorD = useMemo(() => toPoints(prior, start, end, lo, hi, w, h), [prior, start, end, lo, hi])
-  const nextD = useMemo(() => toPoints(forecast, start, end + 16 * 60_000, lo, hi, w, h), [forecast, start, end, lo, hi])
+  const nextD = useMemo(() => toPoints(forecast, start, end, lo, hi, w, h), [forecast, start, end, lo, hi])
 
   const ticks = [start, start + (end - start) / 2, end]
 

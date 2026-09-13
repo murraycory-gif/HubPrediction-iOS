@@ -4,6 +4,8 @@ enum Forecast {
     static let maxSlope = 2.2
     static let emaKeep = 0.82
     static let emaNew = 0.18
+    /// Always reserve this much future so the next-15m dash sits in-frame.
+    static let futurePadMs = 16.0 * HubMs.minute
 
     static func clamp(_ n: Double, _ lo: Double, _ hi: Double) -> Double {
         min(hi, max(lo, n))
@@ -30,10 +32,24 @@ enum Forecast {
         if abs(slope) < 0.18 && lean != .sit {
             slope += lean == .up ? 0.12 : -0.12
         }
-        let close = closeAt.isFinite ? closeAt : now + 15.0 * HubMs.minute
-        let nextClose = close + 15.0 * HubMs.minute
-        let times = Array(Set([now, max(now, close), max(now, nextClose)].map { $0.rounded() })).sorted()
+        let close = (closeAt.isFinite && closeAt > now) ? closeAt : now + 15.0 * HubMs.minute
+        let lastT = max(now + futurePadMs, close + 15.0 * HubMs.minute)
+        var times: [Double] = []
+        var t = now
+        while t < lastT - 1 {
+            times.append(t)
+            t += HubMs.minute
+        }
+        times.append(lastT)
         return times.map { Point(t: $0, px: live + slope * (($0 - now) / HubMs.minute)) }
+    }
+
+    /// History on the left, at least 16m of future on the right so the dash is on-canvas.
+    static func chartWindow(now: Double, zoomMinutes: Double, pan: Double, lastForecastT: Double?) -> (start: Double, end: Double) {
+        let cursor = now + pan
+        let start = cursor - zoomMinutes * HubMs.minute
+        let pad = max(futurePadMs, (lastForecastT ?? now) - now)
+        return (start, cursor + pad)
     }
 
     static func rebasePrior(_ prior: [Point]?, live: Double) -> [Point] {

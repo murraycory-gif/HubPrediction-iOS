@@ -180,6 +180,48 @@ else
   bad "Mac first-paint layout"
 fi
 
+# Next-15m dash must sit in the future window, not clip off the right edge
+grep -q 'func chartWindow' HubPrediction/Forecast.swift || bad "chartWindow missing"
+grep -q 'futurePadMs' HubPrediction/Forecast.swift || bad "futurePadMs missing"
+grep -q 'Forecast.chartWindow' HubPrediction/ChartCanvas.swift || bad "ChartCanvas not using chartWindow"
+grep -q 'dash: true' HubPrediction/ChartCanvas.swift || bad "forecast dash stroke missing"
+if python3 - <<'PY'
+import pathlib, sys
+src = pathlib.Path("HubPrediction/Forecast.swift").read_text()
+if "closeAt.isFinite && closeAt > now" not in src:
+    print("FAIL: forwardRay must ignore stale/zero closeAt")
+    sys.exit(2)
+if "now + futurePadMs" not in src:
+    print("FAIL: forwardRay must span at least futurePadMs")
+    sys.exit(2)
+# Default 60m view: now is left of the right edge; last forecast x is on-canvas
+now = 1_700_000_000_000.0
+minute = 60_000.0
+zoom = 60.0
+pan = 0.0
+last_forecast = now + 16.0 * minute
+cursor = now + pan
+start = cursor - zoom * minute
+pad = max(16.0 * minute, last_forecast - now)
+end = cursor + pad
+span = end - start
+w = 600.0
+x_now = ((now - start) / span) * w
+x_dash = ((last_forecast - start) / span) * w
+if not (0 < x_now < x_dash <= w):
+    print(f"FAIL: dash not in-frame now={x_now:.1f} dash={x_dash:.1f} w={w}")
+    sys.exit(2)
+if x_dash - x_now < 80:
+    print(f"FAIL: dash too short ({x_dash - x_now:.1f}px)")
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "next-15m dash maps in-frame past now"
+else
+  bad "next-15m dash window"
+fi
+
 icon=HubPrediction/Assets.xcassets/AppIcon.appiconset/AppIcon.png
 if [ -f "$icon" ]; then
   info=$(file "$icon")

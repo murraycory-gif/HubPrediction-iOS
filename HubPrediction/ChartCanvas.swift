@@ -18,8 +18,9 @@ struct ChartCanvas: View {
         let slope = Forecast.emaSlope(prev: ema, raw: raw)
         let rebased = Forecast.rebasePrior(prior, live: live)
         let forecast = Forecast.forwardRay(now: now, closeAt: closeAt, live: live, slopePerMin: slope, lean: lean)
-        let end = now + pan
-        let start = end - zoom * HubMs.minute
+        let window = Forecast.chartWindow(now: now, zoomMinutes: zoom, pan: pan, lastForecastT: forecast.last?.t)
+        let start = window.start
+        let end = window.end
         let ys = points.map(\.px) + rebased.map(\.px) + forecast.map(\.px) + [live]
         let domain = Forecast.yDomain(live: live, values: ys)
 
@@ -63,7 +64,7 @@ struct ChartCanvas: View {
                         return CGPoint(x: x, y: y)
                     }
                     func line(_ list: [Point], color: Color, width: CGFloat, dash: Bool) {
-                        let vis = list.filter { $0.t >= start - 2.0 * HubMs.second && $0.t <= end + (dash ? 16.0 * HubMs.minute : 2.0 * HubMs.second) }
+                        let vis = list.filter { $0.t >= start - 2.0 * HubMs.second && $0.t <= end + 2.0 * HubMs.second }
                         guard vis.count >= 2 else { return }
                         var path = Path()
                         path.move(to: pt(vis[0]))
@@ -71,7 +72,7 @@ struct ChartCanvas: View {
                         ctx.stroke(
                             path,
                             with: .color(color),
-                            style: StrokeStyle(lineWidth: width, dash: dash ? [5, 4] : [])
+                            style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round, dash: dash ? [7, 5] : [])
                         )
                     }
                     for frac in [1.0 / 3.0, 0.5, 2.0 / 3.0] {
@@ -82,7 +83,21 @@ struct ChartCanvas: View {
                     }
                     line(rebased, color: Color(red: 0.30, green: 0.36, blue: 0.33), width: 1.5, dash: false)
                     line(points, color: HubTheme.up, width: 2.2, dash: false)
-                    line(forecast, color: HubTheme.up, width: 1.6, dash: true)
+
+                    if now >= start && now <= end {
+                        let origin = pt(Point(t: now, px: live))
+                        var nowLine = Path()
+                        nowLine.move(to: CGPoint(x: origin.x, y: top))
+                        nowLine.addLine(to: CGPoint(x: origin.x, y: top + h))
+                        ctx.stroke(nowLine, with: .color(HubTheme.ink.opacity(0.28)), lineWidth: 1)
+                        ctx.fill(
+                            Path(ellipseIn: CGRect(x: origin.x - 3.5, y: origin.y - 3.5, width: 7, height: 7)),
+                            with: .color(HubTheme.ink)
+                        )
+                    }
+
+                    line(forecast, color: HubTheme.up.opacity(0.30), width: 5.0, dash: true)
+                    line(forecast, color: HubTheme.ink, width: 2.4, dash: true)
 
                     func label(_ text: String, y: CGFloat, color: Color) {
                         ctx.draw(
