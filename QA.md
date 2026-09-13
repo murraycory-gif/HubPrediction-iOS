@@ -14,7 +14,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 | 2 | AI bots execute all buying (live + paper) | KEEP (structural) | Visible **BOTS // EXECUTE** lane (Strike / Tape / Path). Paper auto in window. LIVE Confirm. |
 | 3 | Show cash; size for profit | KEEP (structural) | `CashStrip` + quarter-Kelly `SizeCash` + expected profit EV. |
 | 4 | Beat-the-trend forecast; visible next-15m dash | KEEP (structural) | `chartWindow` + mint dash past now. |
-| 5 | Live updating tick | KEEP (structural) | Quote timer 2s; dash 8s; 0.25s clock + bot tick. |
+| 5 | Live updating tick | KEEP (structural) | Combine `.common` pulse (not `scheduledTimer`). Quote **1s**, dash **5s**, board **10s**. Chart uses wall-clock `clockNow`. |
 | 6 | Main chart: last week + theory + actual + current/upcoming | KEEP (structural) | `ChartCanvas` draws gray last week, blue theory, green actual/live, upcoming dash. |
 | 7 | Second chart: theory vs actual difference | KEEP (structural) | `VarianceChart` under TREND on Mac + iPhone. |
 | 8 | Markets browse + trade place/confirm + error/retry | KEEP (structural) | Markets sheet, PAPER/LIVE trade, banner Retry. |

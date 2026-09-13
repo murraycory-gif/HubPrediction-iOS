@@ -28,11 +28,18 @@ final class DeskStore: ObservableObject {
     @Published var botNote: String?
     @Published var botFiredTicker: String?
     @Published var confirmFromBot: Bool = false
+    @Published var lastQuoteAt: Double = 0
 
-    private var quoteTimer: Timer?
-    private var boardTimer: Timer?
-    private var dashTimer: Timer?
-    private var lastQuoteAt: Double = 0
+    static let quoteIntervalMs = 1_000.0
+    static let dashIntervalMs = 5_000.0
+    static let boardIntervalMs = 10_000.0
+
+    private var lastDashAt: Double = 0
+    private var lastBoardAt: Double = 0
+    private var didStart = false
+    private var quoteInFlight = false
+    private var dashInFlight = false
+    private var boardInFlight = false
     private var points: [Point] = []
     private var prior: [Point] = []
     private var past: [Settled] = []
@@ -62,8 +69,11 @@ final class DeskStore: ObservableObject {
         PaperBook.cash - PaperBook.startCash
     }
 
+    /// Combine `.common` pulse from DeskView drives this. Foundation `scheduledTimer`
+    /// sits on `.default` and often never fires again on Mac Catalyst after first paint.
     func start() {
-        guard quoteTimer == nil else { return }
+        guard !didStart else { return }
+        didStart = true
         hasCreds = KalshiCreds.isPresent
         mode = PaperBook.mode
         paperFills = PaperBook.fills
@@ -71,20 +81,30 @@ final class DeskStore: ObservableObject {
         Task { await refreshAll() }
         Task { await searchMarkets(query: "") }
         if mode == .live, hasCreds { Task { await refreshCash() } }
-        quoteTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.refreshQuote() }
+    }
+
+    func pulse(now: Double) {
+        tickBots(now: now)
+        if now - lastQuoteAt >= Self.quoteIntervalMs {
+            Task { await refreshQuote() }
         }
-        boardTimer = Timer.scheduledTimer(withTimeInterval: 12, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.refreshBoard() }
+        if now - lastDashAt >= Self.dashIntervalMs {
+            Task { await refreshDash() }
         }
-        dashTimer = Timer.scheduledTimer(withTimeInterval: 8, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.refreshDash() }
+        if now - lastBoardAt >= Self.boardIntervalMs {
+            Task { await refreshBoard() }
         }
     }
 
     func retry() {
         holdingLast = false
         banner = nil
+        quoteInFlight = false
+        dashInFlight = false
+        boardInFlight = false
+        lastQuoteAt = 0
+        lastDashAt = 0
+        lastBoardAt = 0
         Task { await refreshAll() }
     }
 
@@ -275,34 +295,33 @@ final class DeskStore: ObservableObject {
     }
 
     func refreshQuote() async {
+        guard !quoteInFlight else { return }
+        quoteInFlight = true
+        defer { quoteInFlight = false }
         let now = Date.nowMs
+        lastQuoteAt = now
         do {
             async let statusP = KalshiClient.fetchStatus()
-            let st = try await statusP
-            status = st
-            if st.tradingActive == false {
-                holdingLast = true
-                if let last = quote { publish(last) }
-                banner = DeskBanner(
-                    title: "Kalshi halted",
-                    detail: "Last ¢ is held on purpose. Retry to refresh status, or wait for the exchange.",
-                    holdingLast: true
-                )
-                return
-            }
-            let market: [String: Any]
-            if let pinned = pinnedTicker, !pinned.isEmpty {
-                market = try await KalshiClient.fetchMarket(ticker: pinned, timeout: 0.9)
-            } else {
-                let markets = try await KalshiClient.fetchMarkets(series: seriesTicker, status: "open", limit: 8, timeout: 0.9)
-                guard let picked = KalshiClient.pickOpen(markets, now: now) else {
-                    throw KalshiAuthError.http(404, "No open \(seriesTicker) market. Browse or retry.")
+            async let coinP = KalshiClient.fetchCoinbase(timeout: 1.5)
+            async let marketP = fetchOpenMarket(now: now)
+            let st = try? await statusP
+            if let st {
+                status = st
+                if st.tradingActive == false {
+                    holdingLast = true
+                    if let last = quote { publish(last) }
+                    banner = DeskBanner(
+                        title: "Kalshi halted",
+                        detail: "Last ¢ is held on purpose. Retry to refresh status, or wait for the exchange.",
+                        holdingLast: true
+                    )
+                    return
                 }
-                market = picked
             }
+            let market = try await marketP
             let live: Double
             let source: String
-            if isBTC, let px = try? await KalshiClient.fetchCoinbase(timeout: 0.9) {
+            if isBTC, let px = try? await coinP {
                 live = px
                 source = "coinbase"
             } else {
@@ -310,7 +329,6 @@ final class DeskStore: ObservableObject {
                 source = "kalshi"
             }
             var q = KalshiClient.marketToQuote(market, live: live, source: source, now: now)
-            lastQuoteAt = now
             if points.last.map({ now - $0.t > 0.8 * HubMs.second }) ?? true {
                 points.append(Point(t: now, px: live))
                 if points.count > 400 { points.removeFirst(points.count - 400) }
@@ -330,8 +348,23 @@ final class DeskStore: ObservableObject {
         }
     }
 
+    private func fetchOpenMarket(now: Double) async throws -> [String: Any] {
+        if let pinned = pinnedTicker, !pinned.isEmpty {
+            return try await KalshiClient.fetchMarket(ticker: pinned, timeout: 1.4)
+        }
+        let markets = try await KalshiClient.fetchMarkets(series: seriesTicker, status: "open", limit: 8, timeout: 1.4)
+        guard let picked = KalshiClient.pickOpen(markets, now: now) else {
+            throw KalshiAuthError.http(404, "No open \(seriesTicker) market. Browse or retry.")
+        }
+        return picked
+    }
+
     private func refreshBoard() async {
+        guard !boardInFlight else { return }
+        boardInFlight = true
+        defer { boardInFlight = false }
         let now = Date.nowMs
+        lastBoardAt = now
         do {
             async let openP = KalshiClient.fetchMarkets(series: seriesTicker, status: "open", limit: 8, timeout: 1.6)
             async let settledP = KalshiClient.fetchMarkets(series: seriesTicker, status: "settled", limit: 24, timeout: 1.4)
@@ -372,7 +405,11 @@ final class DeskStore: ObservableObject {
     }
 
     private func refreshDash() async {
+        guard !dashInFlight else { return }
+        dashInFlight = true
+        defer { dashInFlight = false }
         let now = Date.nowMs
+        lastDashAt = now
         let todayStart = ChicagoTime.startOfChicagoDay(now)
         var dayStart = todayStart
         let parts = day.split(separator: "-").compactMap { Int($0) }

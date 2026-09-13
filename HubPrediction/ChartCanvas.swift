@@ -7,6 +7,7 @@ struct ChartCanvas: View {
     let prior: [Point]
     let lean: DeskSide
     var dash: Dash?
+    var clockNow: Double = Date.nowMs
     var chartHeight: CGFloat = HubDesk.phoneChartHeight
 
     @State private var zoom: Double = 60
@@ -16,7 +17,7 @@ struct ChartCanvas: View {
     private let theoryColor = Color(red: 0.45, green: 0.72, blue: 1.0)
 
     var body: some View {
-        let now = points.last?.t ?? Date.nowMs
+        let now = max(points.last?.t ?? 0, clockNow)
         let raw = Forecast.slopeFromPoints(points, now: now)
         let slope = Forecast.emaSlope(prev: ema, raw: raw)
         let rebased = Forecast.rebasePrior(prior, live: live)

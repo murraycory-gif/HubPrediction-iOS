@@ -150,6 +150,19 @@ else
   bad "cold open missing store.start"
 fi
 
+# Live tick: Combine .common pulse, not Foundation scheduledTimer (dead on Catalyst)
+if grep -n 'Timer.scheduledTimer' HubPrediction/DeskStore.swift >/dev/null 2>&1; then
+  bad "DeskStore still uses scheduledTimer (Mac live tick FAIL)"
+fi
+grep -q 'func pulse(now' HubPrediction/DeskStore.swift || bad "pulse missing"
+grep -q 'quoteIntervalMs = 1_000' HubPrediction/DeskStore.swift || bad "1s quote interval missing"
+grep -q 'store.pulse(now:' HubPrediction/DeskView.swift || bad "DeskView does not pulse store"
+grep -q 'in: .common' HubPrediction/DeskView.swift || bad "Combine timer must use .common"
+grep -q 'clockNow: now' HubPrediction/DeskView.swift || bad "chart not wired to wall-clock now"
+grep -q 'clockNow' HubPrediction/ChartCanvas.swift || bad "ChartCanvas missing clockNow"
+grep -q 'waitsForConnectivity = false' HubPrediction/KalshiClient.swift || bad "session may stall on Catalyst"
+ok "live pulse 1s quote / 5s dash / 10s board on Combine .common"
+
 # Mac first-paint: signal chrome pinned; tables only inside a ScrollView
 if python3 - <<'PY'
 import pathlib, sys

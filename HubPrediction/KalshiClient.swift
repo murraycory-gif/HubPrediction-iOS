@@ -4,12 +4,23 @@ enum KalshiClient {
     static let kalshi = "https://external-api.kalshi.com/trade-api/v2"
     static let defaultSeries = "KXBTC15M"
 
+    /// Short, no wait-for-connectivity — Mac Catalyst `URLSession.shared` can stall a live desk.
+    static let session: URLSession = {
+        let c = URLSessionConfiguration.ephemeral
+        c.timeoutIntervalForRequest = 2.2
+        c.timeoutIntervalForResource = 3.0
+        c.waitsForConnectivity = false
+        c.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: c)
+    }()
+
     static func fetchJSON(_ url: URL, timeout: TimeInterval) async throws -> Any {
         var req = URLRequest(url: url)
         req.setValue("HUB-Prediction/1.0", forHTTPHeaderField: "User-Agent")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.timeoutInterval = timeout
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, resp) = try await session.data(for: req)
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if !(200..<300).contains(code) {
             let msg = String(data: data, encoding: .utf8) ?? "http \(code)"

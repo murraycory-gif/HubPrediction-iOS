@@ -23,8 +23,9 @@ struct DeskView: View {
         }
         .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
             now = Date.nowMs
-            store.tickBots(now: now)
+            store.pulse(now: now)
         }
+        .task { store.start() }
         .sheet(isPresented: $showMarkets) { MarketsSheet().environmentObject(store) }
         .sheet(isPresented: $showKeys) { CredsSheet().environmentObject(store) }
     }
@@ -49,6 +50,7 @@ struct DeskView: View {
                         prior: store.quote?.prior ?? [],
                         lean: store.call.side,
                         dash: store.dash,
+                        clockNow: now,
                         chartHeight: HubDesk.phoneChartHeight
                     )
                     VarianceChart(
@@ -98,6 +100,7 @@ struct DeskView: View {
                         prior: store.quote?.prior ?? [],
                         lean: store.call.side,
                         dash: store.dash,
+                        clockNow: now,
                         chartHeight: HubDesk.macChartHeight
                     )
                     VarianceChart(
@@ -182,6 +185,12 @@ struct DeskView: View {
         .shadow(color: (up ? HubTheme.up : down ? HubTheme.down : HubTheme.up).opacity(up || down ? 0.32 : 0.08), radius: 16)
     }
 
+    private var tickAge: String {
+        guard store.lastQuoteAt > 0 else { return "—" }
+        let sec = max(0, (now - store.lastQuoteAt) / HubMs.second)
+        return String(format: "%.1fs", sec)
+    }
+
     private var clockText: String {
         guard let close = store.quote?.closeAt, close.isFinite else { return "--:--" }
         let left = max(0.0, close - now)
@@ -225,7 +234,7 @@ struct DeskView: View {
                 .fill(HubTheme.up)
                 .frame(width: 7, height: 7)
                 .shadow(color: HubTheme.up, radius: 4)
-            Text("Live Coinbase \(Money.dollarsExact(store.quote?.live)) vs posted \(Money.dollarsExact(store.quote?.strike))")
+            Text("Live \(store.quote?.liveSource == "coinbase" ? "Coinbase" : "Kalshi") \(Money.dollarsExact(store.quote?.live)) vs posted \(Money.dollarsExact(store.quote?.strike)) · tick \(tickAge)")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(HubTheme.mute)
             if store.holdingLast {

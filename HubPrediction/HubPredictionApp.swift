@@ -18,6 +18,7 @@ struct HubPredictionApp: App {
                 .environmentObject(store)
                 .preferredColorScheme(.dark)
                 .onAppear { store.start() }
+                .task { store.start() }
                 #if targetEnvironment(macCatalyst)
                 .frame(minWidth: HubDesk.macMinWidth, minHeight: HubDesk.macMinHeight)
                 #endif
