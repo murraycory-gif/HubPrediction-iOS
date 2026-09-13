@@ -21,7 +21,8 @@ This product is **HubPrediction-iOS only**. FAIL if any item still depends on Fu
 | 11 | iPhone-only family | KEEP | `TARGETED_DEVICE_FAMILY = 1`. Portrait. Display name **HUB Pred**. |
 | 12 | TF archive script is Hub-only | KEEP | `./push-hub-testflight.sh` archives scheme `HubPrediction`. Does not mention Heartbeat projects. |
 | 13 | Docs / Fastlane point at this repo | KEEP | `~/Developer/HubPrediction-iOS`. Fastfile has no Heartbeat project/scheme. |
-| 14 | Web desk forecast unit tests | KEEP | `hub-prediction` vitest (forecast + sizing). Not the iPhone binary. |
+| 14 | Web desk forecast unit tests | KEEP | `hub-prediction` vitest: 6/6 passed. Not the iPhone binary. |
+| 14b | Web desk production build | KEEP | `npm run build` succeeded (Vite client + SSR). |
 | 15 | `xcodebuild` archive on this machine | Soft KEEP | No Xcode in this Linux environment. Script + project settings are ready for the Mac command below. |
 | 16 | App Store Connect listing exists | Soft KEEP | First-time create steps are in `HUB_TESTFLIGHT.md`. Skip if the app already exists. |
 | 17 | TestFlight install on Cory’s iPhone | Soft KEEP | Human step after upload: Internal group → TestFlight → **HUB Pred**. |
