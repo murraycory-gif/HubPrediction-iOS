@@ -18,6 +18,13 @@
 		HP0100000000000000000A09 /* DeskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B09 /* DeskView.swift */; };
 		HP0100000000000000000A10 /* ChartCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B10 /* ChartCanvas.swift */; };
 		HP0100000000000000000A11 /* HubDesk.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B11 /* HubDesk.swift */; };
+		HP0100000000000000000A12 /* SizeCash.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B12 /* SizeCash.swift */; };
+		HP0100000000000000000A13 /* KalshiCreds.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B13 /* KalshiCreds.swift */; };
+		HP0100000000000000000A14 /* KalshiAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B14 /* KalshiAuth.swift */; };
+		HP0100000000000000000A15 /* KalshiTrade.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B15 /* KalshiTrade.swift */; };
+		HP0100000000000000000A16 /* TradePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B16 /* TradePanel.swift */; };
+		HP0100000000000000000A17 /* MarketsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B17 /* MarketsSheet.swift */; };
+		HP0100000000000000000A18 /* CredsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B18 /* CredsSheet.swift */; };
 		HP0100000000000000000A90 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = HP0100000000000000000B90 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -33,6 +40,13 @@
 		HP0100000000000000000B09 /* DeskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskView.swift; sourceTree = "<group>"; };
 		HP0100000000000000000B10 /* ChartCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCanvas.swift; sourceTree = "<group>"; };
 		HP0100000000000000000B11 /* HubDesk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubDesk.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B12 /* SizeCash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SizeCash.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B13 /* KalshiCreds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KalshiCreds.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B14 /* KalshiAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KalshiAuth.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B15 /* KalshiTrade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KalshiTrade.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B16 /* TradePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TradePanel.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B17 /* MarketsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketsSheet.swift; sourceTree = "<group>"; };
+		HP0100000000000000000B18 /* CredsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredsSheet.swift; sourceTree = "<group>"; };
 		HP0100000000000000000B90 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		HP0100000000000000000B93 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		HP0100000000000000000B94 /* HubPrediction.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HubPrediction.entitlements; sourceTree = "<group>"; };
@@ -72,6 +86,13 @@
 				HP0100000000000000000B09 /* DeskView.swift */,
 				HP0100000000000000000B10 /* ChartCanvas.swift */,
 				HP0100000000000000000B11 /* HubDesk.swift */,
+				HP0100000000000000000B12 /* SizeCash.swift */,
+				HP0100000000000000000B13 /* KalshiCreds.swift */,
+				HP0100000000000000000B14 /* KalshiAuth.swift */,
+				HP0100000000000000000B15 /* KalshiTrade.swift */,
+				HP0100000000000000000B16 /* TradePanel.swift */,
+				HP0100000000000000000B17 /* MarketsSheet.swift */,
+				HP0100000000000000000B18 /* CredsSheet.swift */,
 				HP0100000000000000000B90 /* Assets.xcassets */,
 				HP0100000000000000000B93 /* Info.plist */,
 				HP0100000000000000000B94 /* HubPrediction.entitlements */,
@@ -162,6 +183,13 @@
 				HP0100000000000000000A09 /* DeskView.swift in Sources */,
 				HP0100000000000000000A10 /* ChartCanvas.swift in Sources */,
 				HP0100000000000000000A11 /* HubDesk.swift in Sources */,
+				HP0100000000000000000A12 /* SizeCash.swift in Sources */,
+				HP0100000000000000000A13 /* KalshiCreds.swift in Sources */,
+				HP0100000000000000000A14 /* KalshiAuth.swift in Sources */,
+				HP0100000000000000000A15 /* KalshiTrade.swift in Sources */,
+				HP0100000000000000000A16 /* TradePanel.swift in Sources */,
+				HP0100000000000000000A17 /* MarketsSheet.swift in Sources */,
+				HP0100000000000000000A18 /* CredsSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

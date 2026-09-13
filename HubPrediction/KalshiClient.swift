@@ -2,7 +2,7 @@ import Foundation
 
 enum KalshiClient {
     static let kalshi = "https://external-api.kalshi.com/trade-api/v2"
-    static let series = "KXBTC15M"
+    static let defaultSeries = "KXBTC15M"
 
     static func fetchJSON(_ url: URL, timeout: TimeInterval) async throws -> Any {
         var req = URLRequest(url: url)
@@ -10,8 +10,10 @@ enum KalshiClient {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.timeoutInterval = timeout
         let (data, resp) = try await URLSession.shared.data(for: req)
-        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw URLError(.badServerResponse)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if !(200..<300).contains(code) {
+            let msg = String(data: data, encoding: .utf8) ?? "http \(code)"
+            throw KalshiAuthError.http(code, msg)
         }
         return try JSONSerialization.jsonObject(with: data)
     }
@@ -56,6 +58,17 @@ enum KalshiClient {
         )
     }
 
+    static func pickToMarket(_ m: [String: Any]) -> MarketPick {
+        MarketPick(
+            ticker: String(describing: m["ticker"] ?? ""),
+            title: String(describing: m["title"] ?? m["subtitle"] ?? m["ticker"] ?? ""),
+            series: String(describing: m["series_ticker"] ?? defaultSeries),
+            yesAsk: askCents(m, yes: true),
+            noAsk: askCents(m, yes: false),
+            closeAt: Date.parse(m["close_time"])
+        )
+    }
+
     static func fetchCoinbase(timeout: TimeInterval) async throws -> Double {
         let url = URL(string: "https://api.coinbase.com/v2/prices/BTC-USD/spot")!
         let json = try await fetchJSON(url, timeout: timeout)
@@ -65,21 +78,57 @@ enum KalshiClient {
         return px
     }
 
-    static func fetchStatus(timeout: TimeInterval = 0.8) async -> (exchangeActive: Bool, tradingActive: Bool)? {
-        guard let url = URL(string: "\(kalshi)/exchange/status") else { return nil }
-        guard let json = try? await fetchJSON(url, timeout: timeout) as? [String: Any] else { return nil }
-        let indexes = json["exchange_index_statuses"] as? [[String: Any]] ?? []
+    static func fetchStatus(timeout: TimeInterval = 0.8) async throws -> (exchangeActive: Bool, tradingActive: Bool) {
+        guard let url = URL(string: "\(kalshi)/exchange/status") else { throw URLError(.badURL) }
+        let json = try await fetchJSON(url, timeout: timeout) as? [String: Any]
+        let indexes = json?["exchange_index_statuses"] as? [[String: Any]] ?? []
         let crypto = indexes.first { ($0["exchange_index"] as? Int) == 2 }
-        let exchange = (crypto?["exchange_active"] as? Bool) ?? (json["exchange_active"] as? Bool) ?? false
-        let trading = (crypto?["trading_active"] as? Bool) ?? (json["trading_active"] as? Bool) ?? false
+        let exchange = (crypto?["exchange_active"] as? Bool) ?? (json?["exchange_active"] as? Bool) ?? false
+        let trading = (crypto?["trading_active"] as? Bool) ?? (json?["trading_active"] as? Bool) ?? false
         return (exchange, trading)
     }
 
-    static func fetchMarkets(status: String, limit: Int, timeout: TimeInterval) async -> [[String: Any]] {
-        let urlS = "\(kalshi)/markets?series_ticker=\(series)&status=\(status)&limit=\(limit)"
-        guard let url = URL(string: urlS) else { return [] }
-        guard let json = try? await fetchJSON(url, timeout: timeout) as? [String: Any] else { return [] }
-        return json["markets"] as? [[String: Any]] ?? []
+    static func fetchMarkets(series: String?, status: String, limit: Int, timeout: TimeInterval) async throws -> [[String: Any]] {
+        var urlS = "\(kalshi)/markets?status=\(status)&limit=\(limit)"
+        if let series, !series.isEmpty {
+            urlS += "&series_ticker=\(series)"
+        }
+        guard let url = URL(string: urlS) else { throw URLError(.badURL) }
+        let json = try await fetchJSON(url, timeout: timeout) as? [String: Any]
+        return json?["markets"] as? [[String: Any]] ?? []
+    }
+
+    static func fetchMarket(ticker: String, timeout: TimeInterval) async throws -> [String: Any] {
+        let enc = ticker.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ticker
+        guard let url = URL(string: "\(kalshi)/markets/\(enc)") else { throw URLError(.badURL) }
+        let json = try await fetchJSON(url, timeout: timeout) as? [String: Any]
+        if let m = json?["market"] as? [String: Any] { return m }
+        if json?["ticker"] != nil { return json! }
+        throw KalshiAuthError.http(404, "No market \(ticker)")
+    }
+
+    static func searchMarkets(query: String, timeout: TimeInterval = 2.2) async throws -> [MarketPick] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if q.isEmpty {
+            return try await fetchMarkets(series: defaultSeries, status: "open", limit: 20, timeout: timeout)
+                .map(pickToMarket)
+                .filter { !$0.ticker.isEmpty }
+        }
+        let upper = q.uppercased()
+        let asSeries = (try? await fetchMarkets(series: upper, status: "open", limit: 20, timeout: timeout)) ?? []
+        if !asSeries.isEmpty {
+            return asSeries.map(pickToMarket).filter { !$0.ticker.isEmpty }
+        }
+        if upper.contains("-") || upper.count >= 8 {
+            if let one = try? await fetchMarket(ticker: upper, timeout: timeout) {
+                return [pickToMarket(one)]
+            }
+        }
+        let open = try await fetchMarkets(series: nil, status: "open", limit: 50, timeout: timeout)
+        let needle = q.lowercased()
+        return open.map(pickToMarket).filter {
+            $0.ticker.lowercased().contains(needle) || $0.title.lowercased().contains(needle) || $0.series.lowercased().contains(needle)
+        }
     }
 
     static func settledFromMarkets(_ markets: [[String: Any]]) -> [Settled] {
@@ -97,7 +146,7 @@ enum KalshiClient {
         .map { $0 }
     }
 
-    static func fetchCandles(startMs: Double, endMs: Double, gran: Int, timeout: TimeInterval) async -> [Point] {
+    static func fetchCandles(startMs: Double, endMs: Double, gran: Int, timeout: TimeInterval) async throws -> [Point] {
         let df = ISO8601DateFormatter()
         df.formatOptions = [.withInternetDateTime]
         let start = df.string(from: Date(timeIntervalSince1970: startMs / 1000.0))
@@ -105,8 +154,8 @@ enum KalshiClient {
         let encStart = start.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? start
         let encEnd = end.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? end
         let urlS = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=\(gran)&start=\(encStart)&end=\(encEnd)"
-        guard let url = URL(string: urlS) else { return [] }
-        guard let raw = try? await fetchJSON(url, timeout: timeout) as? [Any] else { return [] }
+        guard let url = URL(string: urlS) else { throw URLError(.badURL) }
+        guard let raw = try await fetchJSON(url, timeout: timeout) as? [Any] else { return [] }
         var pts: [Point] = []
         for row in raw {
             guard let arr = row as? [Any], arr.count >= 5 else { continue }

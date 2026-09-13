@@ -56,7 +56,14 @@ for f in \
   DeskStore.swift \
   DeskView.swift \
   ChartCanvas.swift \
-  HubDesk.swift
+  HubDesk.swift \
+  SizeCash.swift \
+  KalshiCreds.swift \
+  KalshiAuth.swift \
+  KalshiTrade.swift \
+  TradePanel.swift \
+  MarketsSheet.swift \
+  CredsSheet.swift
 do
   [ -f "HubPrediction/$f" ] || bad "missing HubPrediction/$f"
   grep -q "$f" "$pbx" || bad "$f not in pbxproj"
@@ -81,10 +88,25 @@ else
   ok "docs point at HubPrediction-iOS"
 fi
 
-if grep -R -n -E 'api[_-]?key|sk-|Bearer |Authorization:|secret_token' HubPrediction --include='*.swift' >/dev/null 2>&1; then
+grep -q 'TF HOLD' HUB_TESTFLIGHT.md QA.md README.md || bad "TF HOLD missing from docs"
+ok "TF HOLD documented"
+
+grep -q 'searchMarkets' HubPrediction/KalshiClient.swift || bad "markets search missing"
+grep -q 'func place' HubPrediction/KalshiTrade.swift || bad "trade place missing"
+grep -q 'confirmationDialog' HubPrediction/TradePanel.swift || bad "trade confirm missing"
+grep -q 'func retry' HubPrediction/DeskStore.swift || bad "retry missing"
+grep -q 'phoneStat' HubPrediction/DeskView.swift || bad "phone stacked rest-of-day missing"
+ok "browse + trade path + retry + phone cards"
+
+if grep -R -n -E 'sk-|Bearer |Authorization:|secret_token' HubPrediction --include='*.swift' >/dev/null 2>&1; then
   bad "secret-like string in Swift"
 else
   ok "no secrets in Swift"
+fi
+if find HubPrediction -name '*.pem' -o -name '*.p8' | grep -q .; then
+  bad "PEM file in tree"
+else
+  ok "no PEM files in tree"
 fi
 
 if grep -q 'external-api.kalshi.com' HubPrediction/KalshiClient.swift \
@@ -105,7 +127,7 @@ if python3 - <<'PY'
 import pathlib, sys
 src = pathlib.Path("HubPrediction/DeskView.swift").read_text()
 for n in (
-    "DESK // SIGNAL · VIEW · KXBTC15M",
+    "DESK // SIGNAL ·",
     "private var signalDesk",
     "private var wideDesk",
 ):

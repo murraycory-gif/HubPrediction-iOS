@@ -1,5 +1,7 @@
 # TestFlight
 
+**HOLD** until Soft KEEP on the full-desk bar (`QA.md`). Do not run the upload script until then.
+
 HUB Prediction lives in this repo. Follow **[HUB_TESTFLIGHT.md](HUB_TESTFLIGHT.md)**.
 
 ```bash

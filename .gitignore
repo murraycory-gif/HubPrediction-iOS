@@ -27,3 +27,9 @@ vendor/bundle/
 # Swift PM
 .build/
 .swiftpm/
+
+# Never commit Kalshi runtime creds
+*.pem
+*.p8
+.env
+.env.*

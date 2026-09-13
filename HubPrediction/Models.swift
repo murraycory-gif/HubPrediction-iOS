@@ -61,6 +61,23 @@ struct Dash: Equatable {
     var elapsed: [DashRow]
 }
 
+struct MarketPick: Equatable, Identifiable {
+    var ticker: String
+    var title: String
+    var series: String
+    var yesAsk: Double
+    var noAsk: Double
+    var closeAt: Double
+
+    var id: String { ticker }
+}
+
+struct DeskBanner: Equatable {
+    var title: String
+    var detail: String
+    var holdingLast: Bool
+}
+
 struct HeldThesis: Equatable, Codable {
     var ticker: String
     var side: String

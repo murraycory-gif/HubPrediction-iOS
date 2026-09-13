@@ -8,6 +8,20 @@ final class DeskStore: ObservableObject {
     @Published var dash: Dash?
     @Published var day: String = ChicagoTime.upcomingDays().first?.key ?? ""
     @Published var days: [(t: Double, key: String, label: String)] = ChicagoTime.upcomingDays()
+    @Published var banner: DeskBanner?
+    @Published var holdingLast: Bool = false
+    @Published var seriesTicker: String = KalshiClient.defaultSeries
+    @Published var pinnedTicker: String?
+    @Published var marketHits: [MarketPick] = []
+    @Published var marketQuery: String = ""
+    @Published var marketsBusy: Bool = false
+    @Published var hasCreds: Bool = KalshiCreds.isPresent
+    @Published var cash: Double?
+    @Published var tradeSide: DeskSide = .up
+    @Published var tradeCount: Int = 1
+    @Published var tradeBusy: Bool = false
+    @Published var tradeNote: String?
+    @Published var showConfirm: Bool = false
 
     private var quoteTimer: Timer?
     private var boardTimer: Timer?
@@ -17,14 +31,24 @@ final class DeskStore: ObservableObject {
     private var prior: [Point] = []
     private var past: [Settled] = []
     private var status: (exchangeActive: Bool, tradingActive: Bool)?
-    private var ema: Double?
     private let thesisKey = "hub.thesis"
+
+    var isBTC: Bool {
+        seriesTicker.uppercased().contains("BTC") || (pinnedTicker ?? quote?.ticker ?? "").uppercased().contains("BTC")
+    }
+
+    var suggestedCount: Int {
+        let ask = tradeSide == .down ? (quote?.noAsk ?? 0) : (quote?.yesAsk ?? 0)
+        let n = SizeCash.contractsFromCash(cash: cash ?? 0, askCents: ask, pWin: call.pWin)
+        return min(SizeCash.maxContracts, max(1, n == 0 ? 1 : n))
+    }
 
     func start() {
         guard quoteTimer == nil else { return }
-        Task { await refreshQuote() }
-        Task { await refreshBoard() }
-        Task { await refreshDash() }
+        hasCreds = KalshiCreds.isPresent
+        Task { await refreshAll() }
+        Task { await searchMarkets(query: "") }
+        if hasCreds { Task { await refreshCash() } }
         quoteTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refreshQuote() }
         }
@@ -36,9 +60,114 @@ final class DeskStore: ObservableObject {
         }
     }
 
+    func retry() {
+        holdingLast = false
+        banner = nil
+        Task { await refreshAll() }
+    }
+
+    func refreshAll() async {
+        await refreshQuote()
+        await refreshBoard()
+        await refreshDash()
+    }
+
     func setDay(_ key: String) {
         day = key
         Task { await refreshDash() }
+    }
+
+    func selectMarket(_ pick: MarketPick) {
+        seriesTicker = pick.series.isEmpty ? KalshiClient.defaultSeries : pick.series
+        pinnedTicker = pick.ticker
+        points = []
+        prior = []
+        past = []
+        quote = nil
+        Task { await refreshAll() }
+    }
+
+    func resetToBTC15m() {
+        seriesTicker = KalshiClient.defaultSeries
+        pinnedTicker = nil
+        marketQuery = ""
+        Task {
+            await searchMarkets(query: "")
+            await refreshAll()
+        }
+    }
+
+    func searchMarkets(query: String) async {
+        marketQuery = query
+        marketsBusy = true
+        defer { marketsBusy = false }
+        do {
+            marketHits = try await KalshiClient.searchMarkets(query: query)
+            if marketHits.isEmpty {
+                banner = DeskBanner(
+                    title: "No markets for “\(query.isEmpty ? seriesTicker : query)”",
+                    detail: "Retry or search another ticker / series. BTC15m is still the default.",
+                    holdingLast: false
+                )
+            }
+        } catch {
+            banner = DeskBanner(title: "Markets failed", detail: error.localizedDescription, holdingLast: quote != nil)
+        }
+    }
+
+    func credsDidChange() {
+        hasCreds = KalshiCreds.isPresent
+        if hasCreds { Task { await refreshCash() } } else { cash = nil }
+    }
+
+    func refreshCash() async {
+        do {
+            cash = try await KalshiTrade.fetchCash()
+            tradeCount = suggestedCount
+            if banner?.title == "Keys" { banner = nil }
+        } catch {
+            banner = DeskBanner(title: "Keys / cash", detail: error.localizedDescription, holdingLast: false)
+        }
+    }
+
+    func applySuggestedSize() {
+        tradeCount = suggestedCount
+        if call.side == .up || call.side == .down { tradeSide = call.side }
+    }
+
+    func requestPlace() {
+        guard quote?.ticker.isEmpty == false else {
+            banner = DeskBanner(title: "No market", detail: "Wait for a quote or pick a market, then retry.", holdingLast: false)
+            return
+        }
+        guard hasCreds else {
+            banner = DeskBanner(title: "Keys needed", detail: "Paste Kalshi API Key ID + PEM in Keys. Nothing is stored in git.", holdingLast: false)
+            return
+        }
+        if tradeSide == .sit { tradeSide = call.side == .down ? .down : .up }
+        tradeCount = min(SizeCash.maxContracts, max(1, tradeCount))
+        showConfirm = true
+    }
+
+    func confirmPlace() async {
+        showConfirm = false
+        guard let ticker = quote?.ticker, !ticker.isEmpty else { return }
+        tradeBusy = true
+        tradeNote = nil
+        defer { tradeBusy = false }
+        do {
+            let id = try await KalshiTrade.place(
+                ticker: ticker,
+                side: tradeSide,
+                count: tradeCount,
+                yesAsk: quote?.yesAsk ?? 0,
+                noAsk: quote?.noAsk ?? 0
+            )
+            tradeNote = "Placed \(tradeCount) \(tradeSide == .up ? "UP" : "DOWN") · \(id)"
+            await refreshCash()
+        } catch {
+            banner = DeskBanner(title: "Order failed", detail: error.localizedDescription, holdingLast: false)
+        }
     }
 
     private func attach(_ q: Quote) -> Quote {
@@ -56,62 +185,104 @@ final class DeskStore: ObservableObject {
         quote = attached
         let raw = KalshiSignal.kalshiCall(attached)
         call = KalshiSignal.holdThesis(quote: attached, next: raw, peek: peekThesis, write: writeThesis)
+        if tradeSide == .sit, call.side != .sit { tradeSide = call.side }
     }
 
-    private func refreshQuote() async {
+    func refreshQuote() async {
         let now = Date.nowMs
-        async let statusP = KalshiClient.fetchStatus()
-        async let liveP = KalshiClient.fetchCoinbase(timeout: 0.9)
-        async let marketsP = KalshiClient.fetchMarkets(status: "open", limit: 4, timeout: 0.9)
-        let st = await statusP
-        let live = try? await liveP
-        let markets = await marketsP
-        if let st { status = st }
-        if st?.tradingActive == false, let last = quote {
-            publish(last)
-            return
-        }
-        guard let live, let market = KalshiClient.pickOpen(markets, now: now) else {
+        do {
+            async let statusP = KalshiClient.fetchStatus()
+            let st = try await statusP
+            status = st
+            if st.tradingActive == false {
+                holdingLast = true
+                if let last = quote { publish(last) }
+                banner = DeskBanner(
+                    title: "Kalshi halted",
+                    detail: "Last ¢ is held on purpose. Retry to refresh status, or wait for the exchange.",
+                    holdingLast: true
+                )
+                return
+            }
+            let market: [String: Any]
+            if let pinned = pinnedTicker, !pinned.isEmpty {
+                market = try await KalshiClient.fetchMarket(ticker: pinned, timeout: 0.9)
+            } else {
+                let markets = try await KalshiClient.fetchMarkets(series: seriesTicker, status: "open", limit: 8, timeout: 0.9)
+                guard let picked = KalshiClient.pickOpen(markets, now: now) else {
+                    throw KalshiAuthError.http(404, "No open \(seriesTicker) market. Browse or retry.")
+                }
+                market = picked
+            }
+            let live: Double
+            let source: String
+            if isBTC, let px = try? await KalshiClient.fetchCoinbase(timeout: 0.9) {
+                live = px
+                source = "coinbase"
+            } else {
+                live = KalshiClient.num(market["last_price"]) ?? KalshiClient.num(market["yes_bid"]) ?? quote?.live ?? 0
+                source = "kalshi"
+            }
+            var q = KalshiClient.marketToQuote(market, live: live, source: source, now: now)
+            lastQuoteAt = now
+            if points.last.map({ now - $0.t > 0.8 * HubMs.second }) ?? true {
+                points.append(Point(t: now, px: live))
+                if points.count > 400 { points.removeFirst(points.count - 400) }
+            }
+            q.points = points
+            holdingLast = false
+            if banner?.holdingLast == true || banner?.title == "Quote failed" { banner = nil }
+            publish(q)
+        } catch {
+            holdingLast = quote != nil
+            banner = DeskBanner(
+                title: "Quote failed",
+                detail: error.localizedDescription,
+                holdingLast: quote != nil
+            )
             if let last = quote { publish(last) }
-            return
         }
-        var q = KalshiClient.marketToQuote(market, live: live, source: "coinbase", now: now)
-        lastQuoteAt = now
-        if points.last.map({ now - $0.t > 0.8 * HubMs.second }) ?? true {
-            points.append(Point(t: now, px: live))
-            if points.count > 400 { points.removeFirst(points.count - 400) }
-        }
-        q.points = points
-        publish(q)
     }
 
     private func refreshBoard() async {
         let now = Date.nowMs
-        async let openP = KalshiClient.fetchMarkets(status: "open", limit: 4, timeout: 1.600)
-        async let settledP = KalshiClient.fetchMarkets(status: "settled", limit: 24, timeout: 1.400)
-        async let closesP = KalshiClient.fetchCandles(startMs: now - 90.0 * HubMs.minute, endMs: now + 5.0 * HubMs.second, gran: 60, timeout: 1.4)
-        async let priorP = KalshiClient.fetchCandles(
-            startMs: now - HubMs.week - 90.0 * HubMs.minute,
-            endMs: now - HubMs.week + 5.0 * HubMs.second,
-            gran: 60,
-            timeout: 1.4
-        )
-        let (open, settled, closes, lastWeek) = await (openP, settledP, closesP, priorP)
-        if !closes.isEmpty { points = merge(points, closes) }
-        if !lastWeek.isEmpty { prior = lastWeek.map { Point(t: $0.t + HubMs.week, px: $0.px) } }
-        past = KalshiClient.settledFromMarkets(settled)
-        if let market = KalshiClient.pickOpen(open, now: now) {
-            let live = quote?.live ?? points.last?.px ?? 0
-            var q = KalshiClient.marketToQuote(market, live: live, source: quote?.liveSource ?? "coinbase", now: now)
-            if let current = quote {
-                q.yesAsk = current.yesAsk != 0 ? current.yesAsk : q.yesAsk
-                q.noAsk = current.noAsk != 0 ? current.noAsk : q.noAsk
-                q.live = current.live != 0 ? current.live : q.live
+        do {
+            async let openP = KalshiClient.fetchMarkets(series: seriesTicker, status: "open", limit: 8, timeout: 1.6)
+            async let settledP = KalshiClient.fetchMarkets(series: seriesTicker, status: "settled", limit: 24, timeout: 1.4)
+            let open = try await openP
+            let settled = try await settledP
+            if isBTC {
+                let closes = (try? await KalshiClient.fetchCandles(startMs: now - 90.0 * HubMs.minute, endMs: now + 5.0 * HubMs.second, gran: 60, timeout: 1.4)) ?? []
+                let lastWeek = (try? await KalshiClient.fetchCandles(
+                    startMs: now - HubMs.week - 90.0 * HubMs.minute,
+                    endMs: now - HubMs.week + 5.0 * HubMs.second,
+                    gran: 60,
+                    timeout: 1.4
+                )) ?? []
+                if !closes.isEmpty { points = merge(points, closes) }
+                if !lastWeek.isEmpty { prior = lastWeek.map { Point(t: $0.t + HubMs.week, px: $0.px) } }
             }
-            publish(q)
-        } else if let last = quote {
-            publish(last)
+            past = KalshiClient.settledFromMarkets(settled)
+            if let pinned = pinnedTicker, let exact = open.first(where: { String(describing: $0["ticker"] ?? "") == pinned })
+                ?? (try? await KalshiClient.fetchMarket(ticker: pinned, timeout: 1.2)) {
+                publishFromMarket(exact, now: now)
+            } else if let market = KalshiClient.pickOpen(open, now: now) {
+                publishFromMarket(market, now: now)
+            }
+        } catch {
+            banner = DeskBanner(title: "Board failed", detail: error.localizedDescription, holdingLast: quote != nil)
         }
+    }
+
+    private func publishFromMarket(_ market: [String: Any], now: Double) {
+        let live = quote?.live ?? points.last?.px ?? 0
+        var q = KalshiClient.marketToQuote(market, live: live, source: quote?.liveSource ?? "kalshi", now: now)
+        if let current = quote {
+            q.yesAsk = current.yesAsk != 0 ? current.yesAsk : q.yesAsk
+            q.noAsk = current.noAsk != 0 ? current.noAsk : q.noAsk
+            q.live = current.live != 0 ? current.live : q.live
+        }
+        publish(q)
     }
 
     private func refreshDash() async {
@@ -126,20 +297,22 @@ final class DeskStore: ObservableObject {
         let isToday = ChicagoTime.dayKey(dayStart) == ChicagoTime.dayKey(now)
         let lookNow = isToday ? now : dayStart + 12.0 * HubMs.hour
         let rangeStart = dayStart
-        async let thisWeek15P = KalshiClient.fetchCandles(
-            startMs: rangeStart - 30.0 * HubMs.minute,
-            endMs: rangeStart + HubMs.day,
-            gran: 900,
-            timeout: 1.6
-        )
-        async let lastWeekP = KalshiClient.fetchCandles(
-            startMs: rangeStart - HubMs.week - 30.0 * HubMs.minute,
-            endMs: rangeStart - HubMs.week + HubMs.day,
-            gran: 900,
-            timeout: 1.6
-        )
-        let thisWeek15 = await thisWeek15P
-        let lastWeekRaw = await lastWeekP
+        var thisWeek15: [Point] = []
+        var lastWeekRaw: [Point] = []
+        if isBTC {
+            thisWeek15 = (try? await KalshiClient.fetchCandles(
+                startMs: rangeStart - 30.0 * HubMs.minute,
+                endMs: rangeStart + HubMs.day,
+                gran: 900,
+                timeout: 1.6
+            )) ?? []
+            lastWeekRaw = (try? await KalshiClient.fetchCandles(
+                startMs: rangeStart - HubMs.week - 30.0 * HubMs.minute,
+                endMs: rangeStart - HubMs.week + HubMs.day,
+                gran: 900,
+                timeout: 1.6
+            )) ?? []
+        }
         let thisWeek = thisWeek15 + points
         let lastWeek = lastWeekRaw.map { Point(t: $0.t + HubMs.week, px: $0.px) }
         let live = quote?.live ?? thisWeek.last?.px ?? lastWeek.last?.px ?? 0

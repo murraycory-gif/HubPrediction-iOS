@@ -1,5 +1,7 @@
 # HUB Prediction — TestFlight (iPhone)
 
+**TF HOLD.** Do not archive or upload until Soft KEEP on the full-desk bar (browse + trade path + errors) on Mac and iPhone. See `QA.md`.
+
 This is its own iPhone app in **HubPrediction-iOS**. It is not Fulfillment Heartbeat. It does not share Heartbeat screens, facts, or the Heartbeat TestFlight build.
 
 **Mac view is not TestFlight.** On the Mac, open `HubPrediction.xcodeproj`, pick destination **My Mac (Mac Catalyst)**, and Run. Same bundle `com.corymurray.HubPrediction` and team `M7FL68Q43A`. First Run may create a Mac Catalyst development profile automatically. Archive for App Store Connect stays `generic/platform=iOS` — do not archive Catalyst for this TestFlight listing.

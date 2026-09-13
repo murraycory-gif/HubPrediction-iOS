@@ -4,6 +4,8 @@ struct DeskView: View {
     @EnvironmentObject private var store: DeskStore
     @Environment(\.horizontalSizeClass) private var hSize
     @State private var now = Date.nowMs
+    @State private var showMarkets = false
+    @State private var showKeys = false
 
     /// Mac Catalyst or iPad regular width — not a stretched phone stack.
     private var wide: Bool {
@@ -22,6 +24,8 @@ struct DeskView: View {
         .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in
             now = Date.nowMs
         }
+        .sheet(isPresented: $showMarkets) { MarketsSheet().environmentObject(store) }
+        .sheet(isPresented: $showKeys) { CredsSheet().environmentObject(store) }
     }
 
     private var phoneDesk: some View {
@@ -29,8 +33,10 @@ struct DeskView: View {
             callBar
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
+            AlertBanner()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    TradePanel(compact: true)
                     tape
                     liveLine
                     ChartCanvas(
@@ -56,6 +62,7 @@ struct DeskView: View {
         VStack(spacing: 0) {
             signalDesk
                 .layoutPriority(1)
+            AlertBanner()
             ScrollView {
                 dayFilter
                 restOfDay
@@ -70,6 +77,7 @@ struct DeskView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
             liveLine
+            TradePanel(compact: true)
             tape
             HStack(alignment: .top, spacing: 8) {
                 ChartCanvas(
@@ -101,7 +109,7 @@ struct DeskView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("DESK // SIGNAL · VIEW · KXBTC15M")
+                    Text("DESK // SIGNAL · \(store.seriesTicker)")
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .tracking(2.2)
                         .opacity(0.72)
@@ -114,9 +122,18 @@ struct DeskView: View {
                     .font(.system(size: 30, weight: .bold, design: .monospaced))
                     .monospacedDigit()
             }
-            Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted\(store.call.locked ? " · LOCK" : "")")
-                .font(.system(size: 12, design: .monospaced))
-                .opacity(0.8)
+            HStack {
+                Text("\(Money.dollarsExact(store.quote?.live)) vs \(Money.dollarsExact(store.quote?.strike)) posted\(store.call.locked ? " · LOCK" : "")")
+                    .font(.system(size: 12, design: .monospaced))
+                    .opacity(0.8)
+                Spacer()
+                Button("Markets") { showMarkets = true }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                Button("Keys") { showKeys = true }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            }
         }
         .foregroundStyle(down ? Color(red: 0.10, green: 0.02, blue: 0.02) : up ? Color(red: 0.016, green: 0.078, blue: 0.047) : HubTheme.ink)
         .padding(14)
@@ -183,8 +200,8 @@ struct DeskView: View {
             Text("Live Coinbase \(Money.dollarsExact(store.quote?.live)) vs posted \(Money.dollarsExact(store.quote?.strike))")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(HubTheme.mute)
-            if store.quote?.tradingActive == false {
-                Text("· Kalshi halted — holding last ¢")
+            if store.holdingLast {
+                Text("· last ¢ held — see banner + Retry")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(HubTheme.mute)
             }
@@ -300,37 +317,48 @@ struct DeskView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(HubTheme.up.opacity(0.16)))
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        headerRow
-                        ForEach(rows) { row in
-                            HStack(spacing: 0) {
-                                cell(row.clock, width: 118, now: row.isNow)
-                                cell(Money.dollarsExact(row.theory), width: 88, now: row.isNow)
-                                cell(Money.dollarsExact(row.actual), width: 88, now: row.isNow)
-                                cell(Money.signed(row.variance), width: 88, now: row.isNow)
-                                cell(Money.dollarsExact(row.lastWeek), width: 88, now: row.isNow)
+                VStack(spacing: 8) {
+                    ForEach(rows) { row in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(row.clock)
+                                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                                if row.isNow {
+                                    Text("NOW")
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(HubTheme.up)
+                                }
                             }
-                            .background(row.isNow ? HubTheme.up.opacity(0.08) : Color.clear)
+                            HStack {
+                                phoneStat("THEORY", Money.dollarsExact(row.theory))
+                                phoneStat("ACTUAL", Money.dollarsExact(row.actual))
+                            }
+                            HStack {
+                                phoneStat("VAR", Money.signed(row.variance))
+                                phoneStat("LAST WK", Money.dollarsExact(row.lastWeek))
+                            }
                         }
+                        .foregroundStyle(row.isNow ? HubTheme.up : HubTheme.ink)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(row.isNow ? HubTheme.up.opacity(0.08) : HubTheme.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(HubTheme.up.opacity(0.14)))
                     }
-                    .padding(8)
-                    .background(HubTheme.panel)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(HubTheme.up.opacity(0.16)))
                 }
             }
         }
     }
 
-    private var headerRow: some View {
-        HStack(spacing: 0) {
-            head("CLOCK", width: 118)
-            head("THEORY", width: 88)
-            head("ACTUAL", width: 88)
-            head("VARIANCE", width: 88)
-            head("LAST WEEK", width: 88)
+    private func phoneStat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(HubTheme.mute)
+            Text(value)
+                .font(.system(size: 13, design: .monospaced))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var wideHeader: some View {
@@ -352,23 +380,6 @@ struct DeskView: View {
             flexCell(Money.dollarsExact(row.lastWeek), now: row.isNow)
         }
         .background(row.isNow ? HubTheme.up.opacity(0.08) : Color.clear)
-    }
-
-    private func head(_ t: String, width: CGFloat) -> some View {
-        Text(t)
-            .font(.system(size: 10, design: .monospaced))
-            .foregroundStyle(HubTheme.mute)
-            .tracking(1.0)
-            .frame(width: width, alignment: .leading)
-            .padding(.vertical, 8)
-    }
-
-    private func cell(_ t: String, width: CGFloat, now: Bool) -> some View {
-        Text(t)
-            .font(.system(size: 13, design: .monospaced))
-            .foregroundStyle(now ? HubTheme.up : HubTheme.ink)
-            .frame(width: width, alignment: .leading)
-            .padding(.vertical, 8)
     }
 
     private func flexHead(_ t: String) -> some View {
