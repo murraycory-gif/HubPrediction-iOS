@@ -20,6 +20,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 | 8 | Markets browse + trade place/confirm + error/retry | KEEP (structural) | Markets sheet, PAPER/LIVE trade, banner Retry. |
 | 9 | Mac Catalyst + iPhone | KEEP (structural) | Same target. Mac pins desk above tables. Phone stacked, no forced H-scroll on rest-of-day. |
 | 10 | No secrets in git; no Heartbeat | KEEP | Keychain-only creds. |
+| 11 | Grok Build Now + rest of day · 15 min desk | KEEP (structural) | Native table+charts: Clock / Theory / Actual / Preview / Variance / Last week / Vs open / High / Low. Theory = hub-prediction `buildDashboard` (last-6m slope × 90m fade + last-week shape). Preview = naive slope (empty after Actual prints). Vs open / High / Low from Coinbase 15m OHLC last week. |
 
 | Extra | Verdict | Notes |
 |-------|---------|-------|

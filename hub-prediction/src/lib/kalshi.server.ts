@@ -1,7 +1,7 @@
 import { align15, dayKey, formatClock, slotsForDay, startOfChicagoDay, weekdayName } from './chicago-time'
-import { rebasePrior, slopeFromPoints } from './forecast'
+import { slopeFromPoints, slotPreview, slotTheory, vsOpen } from './forecast'
 import { mergeSettled, payloadFromQuote } from './rebase-kalshi'
-import type { Board, Dash, DashRow, Point, Quote, Settled } from './types'
+import type { Board, Candle, Dash, DashRow, Point, Quote, Settled } from './types'
 
 const KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
 const SERIES = 'KXBTC15M'
@@ -183,13 +183,22 @@ async function livePrice(budgetMs: number): Promise<{ px: number; source: Quote[
 }
 
 function candlePoints(raw: unknown, shift = 0): Point[] {
+  return candleOHLC(raw, shift).map((c) => ({ t: c.t, px: c.close }))
+}
+
+function candleOHLC(raw: unknown, shift = 0): Candle[] {
   if (!Array.isArray(raw)) return []
-  const pts: Point[] = []
+  const pts: Candle[] = []
   for (const row of raw) {
     if (!Array.isArray(row) || row.length < 5) continue
     const t = Number(row[0]) * 1000 + shift
-    const px = Number(row[4])
-    if (Number.isFinite(t) && Number.isFinite(px) && px > 1000) pts.push({ t, px })
+    const low = Number(row[1])
+    const high = Number(row[2])
+    const open = Number(row[3])
+    const close = Number(row[4])
+    if (Number.isFinite(t) && Number.isFinite(close) && close > 1000) {
+      pts.push({ t, open, high, low, close })
+    }
   }
   pts.sort((a, b) => a.t - b.t)
   return pts
@@ -201,6 +210,14 @@ async function fetchCandles(startMs: number, endMs: number, budget: number, gran
     `?granularity=${gran}&start=${new Date(startMs).toISOString()}&end=${new Date(endMs).toISOString()}`
   const raw = await fetchJson<unknown>(url, budget)
   return candlePoints(raw)
+}
+
+async function fetchOHLC(startMs: number, endMs: number, budget: number, gran = 60) {
+  const url =
+    `https://api.exchange.coinbase.com/products/BTC-USD/candles` +
+    `?granularity=${gran}&start=${new Date(startMs).toISOString()}&end=${new Date(endMs).toISOString()}`
+  const raw = await fetchJson<unknown>(url, budget)
+  return candleOHLC(raw)
 }
 
 export async function warmupCloses() {
@@ -372,6 +389,21 @@ function nearest(points: Point[], t: number) {
   return d < 12 * 60_000 ? best.px : null
 }
 
+function nearestCandle(candles: Candle[], t: number) {
+  const list = Array.isArray(candles) ? candles : []
+  if (!list.length) return null
+  let best = list[0]
+  let d = Math.abs(best.t - t)
+  for (const c of list) {
+    const nd = Math.abs(c.t - t)
+    if (nd < d) {
+      best = c
+      d = nd
+    }
+  }
+  return d < 12 * 60_000 ? best : null
+}
+
 export async function loadDashboard(day?: string): Promise<Dash> {
   const now = Date.now()
   try {
@@ -405,41 +437,38 @@ async function buildDashboard(day: string | undefined, now: number): Promise<Das
   const [thisWeek1m, thisWeek15, lastWeekRaw] = await Promise.all([
     warmupCloses(),
     fetchCandles(dayStart - 30 * 60_000, dayStart + 86_400_000, 1600, 900).catch(() => []),
-    fetchCandles(dayStart - WEEK - 30 * 60_000, dayStart - WEEK + 86_400_000, 1600, 900).catch(() => []),
+    fetchOHLC(dayStart - WEEK - 30 * 60_000, dayStart - WEEK + 86_400_000, 1600, 900).catch(() => []),
   ])
   const thisWeek = [...(thisWeek15 ?? []), ...(thisWeek1m ?? [])]
-  const lastWeek = (lastWeekRaw ?? []).map((p) => ({ t: p.t + WEEK, px: p.px }))
+  const lastWeekOHLC = (lastWeekRaw ?? []).map((c) => ({ ...c, t: c.t + WEEK }))
+  const lastWeek = lastWeekOHLC.map((c) => ({ t: c.t, px: c.close }))
 
   const live = quote?.live ?? thisWeek[thisWeek.length - 1]?.px ?? lastWeek[lastWeek.length - 1]?.px ?? 0
   const slope = slopeFromPoints(thisWeek.length ? thisWeek : quote?.points, lookNow)
   const nowSlot = align15(lookNow)
   const lwNow = nearest(lastWeek, nowSlot) ?? live
   const slots = slotsForDay(dayStart)
+  const lwOpen = nearest(lastWeek, slots[0] ?? nowSlot) ?? lastWeek[0]?.px ?? null
   const upcoming: DashRow[] = []
   const elapsed: DashRow[] = []
 
   for (const t of slots) {
     const actual = t <= lookNow ? nearest(thisWeek, t + 14 * 60_000) ?? nearest(thisWeek, t) : null
-    const lw = nearest(lastWeek, t)
-    const mins = (t - lookNow) / 60_000
-    const fade = Math.max(0, 1 - Math.max(0, mins) / 90)
-    const shape = lw != null ? lw - lwNow : 0
-    let theory: number | null
-    if (t >= nowSlot) {
-      theory = live + slope * Math.max(0, mins) * fade + shape
-    } else if (actual != null) {
-      const raw = lw != null ? live + (lw - lwNow) : actual
-      theory = Math.max(actual - 10, Math.min(actual + 10, raw))
-    } else {
-      theory = lw != null ? live + (lw - lwNow) : null
-    }
+    const bar = nearestCandle(lastWeekOHLC, t)
+    const lw = bar?.close ?? nearest(lastWeek, t)
+    const theory = slotTheory({ t, nowSlot, lookNow, live, slope, lastWeek: lw, lastWeekNow: lwNow, actual })
+    const preview = slotPreview({ t, nowSlot, lookNow, live, slope, actual })
     const row: DashRow = {
       t,
       clock: formatClock(t),
       theory,
       actual,
+      preview,
       lastWeek: lw,
       variance: actual != null && theory != null ? actual - theory : null,
+      vsOpen: vsOpen(lw, lwOpen),
+      high: bar?.high ?? null,
+      low: bar?.low ?? null,
       isNow: isToday && t === nowSlot,
     }
     if (isToday && t >= nowSlot) upcoming.push(row)
@@ -451,14 +480,19 @@ async function buildDashboard(day: string | undefined, now: number): Promise<Das
       day: dayKey(dayStart),
       weekday: weekdayName(dayStart),
       upcoming: slots.map((t) => {
-        const lw = nearest(lastWeek, t)
+        const bar = nearestCandle(lastWeekOHLC, t)
+        const lw = bar?.close ?? nearest(lastWeek, t)
         return {
           t,
           clock: formatClock(t),
           theory: lw,
           actual: null,
+          preview: null,
           lastWeek: lw,
           variance: null,
+          vsOpen: vsOpen(lw, lwOpen),
+          high: bar?.high ?? null,
+          low: bar?.low ?? null,
           isNow: false,
         }
       }),

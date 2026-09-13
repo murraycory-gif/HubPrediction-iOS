@@ -5,6 +5,14 @@ export type Point = {
   px: number
 }
 
+export type Candle = {
+  t: number
+  open: number
+  high: number
+  low: number
+  close: number
+}
+
 export type Settled = {
   ticker: string
   closeAt: number
@@ -45,8 +53,12 @@ export type DashRow = {
   clock: string
   theory: number | null
   actual: number | null
+  preview: number | null
   lastWeek: number | null
   variance: number | null
+  vsOpen: number | null
+  high: number | null
+  low: number | null
   isNow: boolean
 }
 

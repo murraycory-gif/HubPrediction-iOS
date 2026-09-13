@@ -9,6 +9,17 @@ struct Point: Equatable {
     var px: Double
 }
 
+/// Coinbase OHLC bucket. `t` is bucket start (ms).
+struct Candle: Equatable {
+    var t: Double
+    var open: Double
+    var high: Double
+    var low: Double
+    var close: Double
+
+    var point: Point { Point(t: t, px: close) }
+}
+
 struct Settled: Equatable, Identifiable {
     var ticker: String
     var closeAt: Double
@@ -47,8 +58,12 @@ struct DashRow: Equatable, Identifiable {
     var clock: String
     var theory: Double?
     var actual: Double?
+    var preview: Double?
     var lastWeek: Double?
     var variance: Double?
+    var vsOpen: Double?
+    var high: Double?
+    var low: Double?
     var isNow: Bool
 
     var id: Double { t }
@@ -76,6 +91,18 @@ struct Dash: Equatable {
 
     func upcomingTheory() -> [Point] {
         upcoming.compactMap { r in r.theory.map { Point(t: r.t, px: $0) } }
+    }
+
+    func previewPath() -> [Point] {
+        allRows.compactMap { r in r.preview.map { Point(t: r.t, px: $0) } }
+    }
+
+    func lastWeekHighPath() -> [Point] {
+        allRows.compactMap { r in r.high.map { Point(t: r.t, px: $0) } }
+    }
+
+    func lastWeekLowPath() -> [Point] {
+        allRows.compactMap { r in r.low.map { Point(t: r.t, px: $0) } }
     }
 
     func variancePath() -> [Point] {

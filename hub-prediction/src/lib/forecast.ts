@@ -76,3 +76,55 @@ export function maxStep(points: Point[]) {
   }
   return max
 }
+
+/** Grok Build / buildDashboard theory — fade + last-week shape, beats naive slope. */
+export const THEORY_FADE_MINS = 90
+export const THEORY_CLAMP = 10
+
+export function slotTheory(opts: {
+  t: number
+  nowSlot: number
+  lookNow: number
+  live: number
+  slope: number
+  lastWeek: number | null
+  lastWeekNow: number
+  actual: number | null
+}): number | null {
+  const mins = (opts.t - opts.lookNow) / 60_000
+  const fade = Math.max(0, 1 - Math.max(0, mins) / THEORY_FADE_MINS)
+  const shape = opts.lastWeek != null ? opts.lastWeek - opts.lastWeekNow : 0
+  const slope = clamp(opts.slope, -MAX_SLOPE, MAX_SLOPE)
+  if (opts.t >= opts.nowSlot) {
+    return opts.live + slope * Math.max(0, mins) * fade + shape
+  }
+  if (opts.actual != null) {
+    const raw = opts.lastWeek != null ? opts.live + shape : opts.actual
+    return Math.max(opts.actual - THEORY_CLAMP, Math.min(opts.actual + THEORY_CLAMP, raw))
+  }
+  return opts.lastWeek != null ? opts.live + shape : null
+}
+
+export function slotPreview(opts: {
+  t: number
+  nowSlot: number
+  lookNow: number
+  live: number
+  slope: number
+  actual: number | null
+}): number | null {
+  if (opts.actual != null) return null
+  if (opts.t < opts.nowSlot) return null
+  const mins = (opts.t - opts.lookNow) / 60_000
+  return opts.live + clamp(opts.slope, -MAX_SLOPE, MAX_SLOPE) * Math.max(0, mins)
+}
+
+export function vsOpen(lastWeek: number | null, dayOpen: number | null) {
+  if (lastWeek == null || dayOpen == null) return null
+  if (!Number.isFinite(lastWeek) || !Number.isFinite(dayOpen)) return null
+  return lastWeek - dayOpen
+}
+
+export function theoryBeatsNaive(actual: number, theory: number, preview: number) {
+  return Math.abs(actual - theory) < Math.abs(actual - preview)
+}

@@ -158,6 +158,11 @@ enum KalshiClient {
     }
 
     static func fetchCandles(startMs: Double, endMs: Double, gran: Int, timeout: TimeInterval) async throws -> [Point] {
+        try await fetchOHLC(startMs: startMs, endMs: endMs, gran: gran, timeout: timeout).map(\.point)
+    }
+
+    /// Coinbase bucket: [time, low, high, open, close, volume].
+    static func fetchOHLC(startMs: Double, endMs: Double, gran: Int, timeout: TimeInterval) async throws -> [Candle] {
         let df = ISO8601DateFormatter()
         df.formatOptions = [.withInternetDateTime]
         let start = df.string(from: Date(timeIntervalSince1970: startMs / 1000.0))
@@ -167,16 +172,19 @@ enum KalshiClient {
         let urlS = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=\(gran)&start=\(encStart)&end=\(encEnd)"
         guard let url = URL(string: urlS) else { throw URLError(.badURL) }
         guard let raw = try await fetchJSON(url, timeout: timeout) as? [Any] else { return [] }
-        var pts: [Point] = []
+        var out: [Candle] = []
         for row in raw {
             guard let arr = row as? [Any], arr.count >= 5 else { continue }
             let t = (num(arr[0]) ?? 0) * 1000.0
-            let px = num(arr[4]) ?? 0
-            if t.isFinite, px.isFinite, px > 1000 {
-                pts.append(Point(t: t, px: px))
+            let low = num(arr[1]) ?? 0
+            let high = num(arr[2]) ?? 0
+            let open = num(arr[3]) ?? 0
+            let close = num(arr[4]) ?? 0
+            if t.isFinite, close.isFinite, close > 1000 {
+                out.append(Candle(t: t, open: open, high: high, low: low, close: close))
             }
         }
-        return pts.sorted { $0.t < $1.t }
+        return out.sorted { $0.t < $1.t }
     }
 }
 

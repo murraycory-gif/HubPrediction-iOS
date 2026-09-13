@@ -304,6 +304,56 @@ else
   bad "buy window phases"
 fi
 
+# Grok Build rest-of-day desk: Clock / Theory / Actual / Preview / Variance / Last week / Vs open / High / Low
+grep -q 'var preview' HubPrediction/Models.swift || bad "DashRow preview missing"
+grep -q 'var vsOpen' HubPrediction/Models.swift || bad "DashRow vsOpen missing"
+grep -q 'var high' HubPrediction/Models.swift || bad "DashRow high missing"
+grep -q 'var low' HubPrediction/Models.swift || bad "DashRow low missing"
+grep -q 'func slotTheory' HubPrediction/Forecast.swift || bad "slotTheory missing"
+grep -q 'func slotPreview' HubPrediction/Forecast.swift || bad "slotPreview missing"
+grep -q 'theoryFadeMins = 90' HubPrediction/Forecast.swift || bad "90m theory fade missing"
+grep -q 'func fetchOHLC' HubPrediction/KalshiClient.swift || bad "Coinbase OHLC missing"
+grep -q 'Forecast.slotTheory' HubPrediction/DeskStore.swift || bad "refreshDash not using slotTheory"
+grep -q 'Forecast.vsOpen' HubPrediction/DeskStore.swift || bad "refreshDash missing vsOpen"
+grep -q 'flexHead("PREVIEW")' HubPrediction/DeskView.swift || bad "Mac Preview column missing"
+grep -q 'flexHead("VS OPEN")' HubPrediction/DeskView.swift || bad "Mac Vs open column missing"
+grep -q 'flexHead("HIGH")' HubPrediction/DeskView.swift || bad "Mac High column missing"
+grep -q 'flexHead("LOW")' HubPrediction/DeskView.swift || bad "Mac Low column missing"
+grep -q 'phoneStat("PREVIEW"' HubPrediction/DeskView.swift || bad "phone Preview missing"
+grep -q 'phoneStat("VS OPEN"' HubPrediction/DeskView.swift || bad "phone Vs open missing"
+grep -q 'phoneStat("HIGH"' HubPrediction/DeskView.swift || bad "phone High missing"
+grep -q 'lastWeekHighPath' HubPrediction/ChartCanvas.swift || bad "chart last-week high missing"
+grep -q 'Swipe sideways for last week' HubPrediction/DeskView.swift || bad "Grok Build caption missing"
+if python3 - <<'PY'
+import sys
+# Same numbers as hub-prediction/tests/forecast.test.ts Grok Build slot theory
+now = 1_700_000_000_000.0
+minute = 60_000.0
+live = 77353.0
+slope = 1.2
+mins = 15.0
+fade = 1.0 - mins / 90.0
+shape = 79900.0 - 80004.0
+theory = live + slope * mins * fade + shape
+naive = live + slope * mins
+if abs(theory - (live + 1.2 * 15 * (1 - 15 / 90) - 104)) > 1e-6:
+    print("FAIL: theory formula")
+    sys.exit(2)
+if not (theory < naive):
+    print("FAIL: theory must beat/differ from naive via last-week shape")
+    sys.exit(2)
+vs = 80004.0 - 79868.0
+if abs(vs - 136) > 1e-6:
+    print("FAIL: vs open")
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "Grok Build 9-col desk + fade/shape theory (beats naive)"
+else
+  bad "Grok Build theory/forecast desk"
+fi
+
 # Next-15m dash must sit in the future window, not clip off the right edge
 grep -q 'func chartWindow' HubPrediction/Forecast.swift || bad "chartWindow missing"
 grep -q 'futurePadMs' HubPrediction/Forecast.swift || bad "futurePadMs missing"

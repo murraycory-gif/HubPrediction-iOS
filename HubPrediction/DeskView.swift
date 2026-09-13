@@ -332,6 +332,9 @@ struct DeskView: View {
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(HubTheme.mute)
                 .tracking(1.4)
+            Text("Current clock and upcoming theory. Swipe sideways for last week.")
+                .font(.system(size: 12))
+                .foregroundStyle(HubTheme.mute)
             slotTable(upcoming, empty: "Waiting on rest-of-day slots")
             if !elapsed.isEmpty {
                 Text("ELAPSED · ACTUAL VS THEORY")
@@ -353,13 +356,16 @@ struct DeskView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(HubTheme.mute)
             } else if wide {
-                VStack(alignment: .leading, spacing: 0) {
-                    wideHeader
-                    ForEach(rows) { row in
-                        wideRow(row)
+                ScrollView(.horizontal, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        wideHeader
+                        ForEach(rows) { row in
+                            wideRow(row)
+                        }
                     }
+                    .frame(minWidth: 980)
+                    .padding(10)
                 }
-                .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(HubTheme.panel)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -382,8 +388,16 @@ struct DeskView: View {
                                 phoneStat("ACTUAL", Money.dollarsExact(row.actual))
                             }
                             HStack {
+                                phoneStat("PREVIEW", Money.dollarsExact(row.preview))
                                 phoneStat("VAR", Money.signed(row.variance))
+                            }
+                            HStack {
                                 phoneStat("LAST WK", Money.dollarsExact(row.lastWeek))
+                                phoneStat("VS OPEN", Money.signed(row.vsOpen))
+                            }
+                            HStack {
+                                phoneStat("HIGH", Money.dollarsExact(row.high))
+                                phoneStat("LOW", Money.dollarsExact(row.low))
                             }
                         }
                         .foregroundStyle(row.isNow ? HubTheme.up : HubTheme.ink)
@@ -414,18 +428,26 @@ struct DeskView: View {
             flexHead("CLOCK")
             flexHead("THEORY")
             flexHead("ACTUAL")
+            flexHead("PREVIEW")
             flexHead("VARIANCE")
             flexHead("LAST WEEK")
+            flexHead("VS OPEN")
+            flexHead("HIGH")
+            flexHead("LOW")
         }
     }
 
     private func wideRow(_ row: DashRow) -> some View {
         HStack(spacing: 0) {
-            flexCell(row.clock, now: row.isNow)
+            flexCell(row.clock + (row.isNow ? " · now" : ""), now: row.isNow)
             flexCell(Money.dollarsExact(row.theory), now: row.isNow)
             flexCell(Money.dollarsExact(row.actual), now: row.isNow)
+            flexCell(Money.dollarsExact(row.preview), now: row.isNow)
             flexCell(Money.signed(row.variance), now: row.isNow)
             flexCell(Money.dollarsExact(row.lastWeek), now: row.isNow)
+            flexCell(Money.signed(row.vsOpen), now: row.isNow)
+            flexCell(Money.dollarsExact(row.high), now: row.isNow)
+            flexCell(Money.dollarsExact(row.low), now: row.isNow)
         }
         .background(row.isNow ? HubTheme.up.opacity(0.08) : Color.clear)
     }

@@ -24,7 +24,10 @@ struct ChartCanvas: View {
         let slope = Forecast.emaSlope(prev: ema, raw: raw)
         let rebased = Forecast.rebasePrior(prior, live: live)
         let lastWeek = dash?.lastWeekPath().isEmpty == false ? (dash?.lastWeekPath() ?? rebased) : rebased
+        let lastHigh = dash?.lastWeekHighPath() ?? []
+        let lastLow = dash?.lastWeekLowPath() ?? []
         let theory = dash?.theoryPath() ?? []
+        let preview = dash?.previewPath() ?? []
         let actualSlots = dash?.actualPath() ?? []
         let upcoming = dash?.upcomingTheory() ?? []
         let liveBeat = BeatTrend.evaluate(quote: quote, points: points, prior: prior, dash: dash, now: now, closeAt: closeAt)
@@ -35,7 +38,7 @@ struct ChartCanvas: View {
         let window = Forecast.chartWindow(now: now, zoomMinutes: zoom, pan: pan, lastForecastT: lastT)
         let start = window.start
         let end = window.end
-        let ys = points.map(\.px) + lastWeek.map(\.px) + theory.map(\.px) + actualSlots.map(\.px) + forecast.map(\.px) + naive.map(\.px) + [live]
+        let ys = points.map(\.px) + lastWeek.map(\.px) + lastHigh.map(\.px) + lastLow.map(\.px) + theory.map(\.px) + preview.map(\.px) + actualSlots.map(\.px) + forecast.map(\.px) + naive.map(\.px) + [live]
         let domain = Forecast.yDomain(live: live, values: ys)
 
         VStack(alignment: .leading, spacing: 8) {
@@ -95,8 +98,11 @@ struct ChartCanvas: View {
                         grid.addLine(to: CGPoint(x: left + w, y: top + h * frac))
                         ctx.stroke(grid, with: .color(HubTheme.line), lineWidth: 1)
                     }
+                    line(lastHigh, color: Color(red: 0.30, green: 0.36, blue: 0.33).opacity(0.45), width: 1.0, dash: true)
+                    line(lastLow, color: Color(red: 0.30, green: 0.36, blue: 0.33).opacity(0.45), width: 1.0, dash: true)
                     line(lastWeek, color: Color(red: 0.30, green: 0.36, blue: 0.33), width: 1.5, dash: false)
                     line(theory, color: theoryColor.opacity(0.85), width: 1.8, dash: false)
+                    line(preview, color: Color(red: 0.82, green: 0.52, blue: 0.18).opacity(0.55), width: 1.1, dash: true)
                     line(actualSlots, color: HubTheme.up.opacity(0.55), width: 1.6, dash: false)
                     line(points, color: HubTheme.up, width: 2.2, dash: false)
                     line(upcoming, color: theoryColor, width: 1.6, dash: true)
@@ -130,7 +136,7 @@ struct ChartCanvas: View {
                 }
                 .frame(height: chartHeight)
             }
-            Text("GREEN actual · BLUE theory · GRAY last week · ORANGE naive · MINT DASH beat 15m")
+            Text("GREEN actual · BLUE theory · ORANGE preview/naive · GRAY last week + high/low · MINT DASH beat 15m")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(HubTheme.mute)
                 .tracking(0.8)

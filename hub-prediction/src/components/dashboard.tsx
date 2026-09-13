@@ -145,6 +145,7 @@ function RestOfDay({ dash }: { dash: Dash | null }) {
   return (
     <section className="mt-5 px-4 pb-8">
       <p className="hud-label">Now + rest of day · 15 min</p>
+      <p className="mt-1 text-sm text-mute">Current clock and upcoming theory. Swipe sideways for last week.</p>
       <SlotTable rows={upcoming} empty="Waiting on rest-of-day slots" />
       {elapsed.length ? (
         <>
@@ -168,20 +169,28 @@ function SlotTable({ rows, empty }: { rows: Dash['upcoming']; empty: string }) {
             <th className="clock-col sticky left-0 z-10 py-2 pr-3">Clock</th>
             <th className="px-3 py-2">Theory</th>
             <th className="px-3 py-2">Actual</th>
+            <th className="px-3 py-2">Preview</th>
             <th className="px-3 py-2">Variance</th>
             <th className="px-3 py-2">Last week</th>
+            <th className="px-3 py-2">Vs open</th>
+            <th className="px-3 py-2">High</th>
+            <th className="px-3 py-2">Low</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.t} className={r.isNow ? 'row-now' : ''}>
               <td className="clock-col sticky left-0 z-10 py-2 pr-3 font-medium">
-                <span>{r.clock}</span>
+                <span>{r.clock}{r.isNow ? ' · now' : ''}</span>
               </td>
               <td className="mono px-3 py-2 whitespace-nowrap">{dollarsExact(r.theory)}</td>
               <td className="mono px-3 py-2 whitespace-nowrap">{dollarsExact(r.actual)}</td>
+              <td className="mono px-3 py-2 whitespace-nowrap">{dollarsExact(r.preview)}</td>
               <td className="mono px-3 py-2 whitespace-nowrap">{signedDollars(r.variance)}</td>
               <td className="mono px-3 py-2 whitespace-nowrap">{dollarsExact(r.lastWeek)}</td>
+              <td className="mono px-3 py-2 whitespace-nowrap">{signedDollars(r.vsOpen)}</td>
+              <td className="mono px-3 py-2 whitespace-nowrap">{dollarsExact(r.high)}</td>
+              <td className="mono px-3 py-2 whitespace-nowrap">{dollarsExact(r.low)}</td>
             </tr>
           ))}
         </tbody>

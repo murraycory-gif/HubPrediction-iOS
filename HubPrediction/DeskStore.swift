@@ -486,7 +486,7 @@ final class DeskStore: ObservableObject {
         let lookNow = isToday ? now : dayStart + 12.0 * HubMs.hour
         let rangeStart = dayStart
         var thisWeek15: [Point] = []
-        var lastWeekRaw: [Point] = []
+        var lastWeekOHLC: [Candle] = []
         if isBTC {
             thisWeek15 = (try? await KalshiClient.fetchCandles(
                 startMs: rangeStart - 30.0 * HubMs.minute,
@@ -494,54 +494,62 @@ final class DeskStore: ObservableObject {
                 gran: 900,
                 timeout: 1.6
             )) ?? []
-            lastWeekRaw = (try? await KalshiClient.fetchCandles(
+            lastWeekOHLC = ((try? await KalshiClient.fetchOHLC(
                 startMs: rangeStart - HubMs.week - 30.0 * HubMs.minute,
                 endMs: rangeStart - HubMs.week + HubMs.day,
                 gran: 900,
                 timeout: 1.6
-            )) ?? []
+            )) ?? []).map { Candle(t: $0.t + HubMs.week, open: $0.open, high: $0.high, low: $0.low, close: $0.close) }
         }
         let thisWeek = thisWeek15 + points
-        let lastWeek = lastWeekRaw.map { Point(t: $0.t + HubMs.week, px: $0.px) }
+        let lastWeek = lastWeekOHLC.map(\.point)
         let live = quote?.live ?? thisWeek.last?.px ?? lastWeek.last?.px ?? 0
         let slope = Forecast.slopeFromPoints(thisWeek.isEmpty ? quote?.points : thisWeek, now: lookNow)
         let nowSlot = ChicagoTime.align15(lookNow)
-        let lwNow = nearest(lastWeek, nowSlot) ?? live
+        let slots = ChicagoTime.slotsForDay(dayStart)
+        let lwNow = Forecast.nearest(lastWeek, nowSlot) ?? live
+        let lwOpen = slots.first.flatMap { Forecast.nearest(lastWeek, $0) } ?? lastWeek.first?.px
         var upcoming: [DashRow] = []
         var elapsed: [DashRow] = []
-        for t in ChicagoTime.slotsForDay(dayStart) {
-            let actual = t <= lookNow ? nearest(thisWeek, t + 14.0 * HubMs.minute) ?? nearest(thisWeek, t) : nil
-            let lw = nearest(lastWeek, t)
-            let mins = (t - lookNow) / HubMs.minute
-            let fade = max(0.0, 1.0 - max(0.0, mins) / 90.0)
-            let shape = lw != nil ? lw! - lwNow : 0
-            let theory: Double?
-            if t >= nowSlot {
-                theory = live + slope * max(0.0, mins) * fade + shape
-            } else if let actual {
-                let raw = lw != nil ? live + (lw! - lwNow) : actual
-                theory = min(actual + 10.0, max(actual - 10.0, raw))
-            } else {
-                theory = lw != nil ? live + (lw! - lwNow) : nil
-            }
+        for t in slots {
+            let actual = t <= lookNow ? Forecast.nearest(thisWeek, t + 14.0 * HubMs.minute) ?? Forecast.nearest(thisWeek, t) : nil
+            let bar = Forecast.nearestCandle(lastWeekOHLC, t)
+            let lw = bar?.close ?? Forecast.nearest(lastWeek, t)
+            let theory = Forecast.slotTheory(
+                t: t,
+                nowSlot: nowSlot,
+                lookNow: lookNow,
+                live: live,
+                slope: slope,
+                lastWeek: lw,
+                lastWeekNow: lwNow,
+                actual: actual
+            )
+            let preview = Forecast.slotPreview(
+                t: t,
+                nowSlot: nowSlot,
+                lookNow: lookNow,
+                live: live,
+                slope: slope,
+                actual: actual
+            )
             let row = DashRow(
                 t: t,
                 clock: ChicagoTime.formatClock(t),
                 theory: theory,
                 actual: actual,
+                preview: preview,
                 lastWeek: lw,
                 variance: actual != nil && theory != nil ? actual! - theory! : nil,
+                vsOpen: Forecast.vsOpen(lastWeek: lw, dayOpen: lwOpen),
+                high: bar?.high,
+                low: bar?.low,
                 isNow: isToday && t == nowSlot
             )
             if isToday && t >= nowSlot { upcoming.append(row) } else { elapsed.append(row) }
         }
         dash = Dash(day: ChicagoTime.dayKey(dayStart), weekday: ChicagoTime.weekdayName(dayStart), upcoming: upcoming, elapsed: elapsed)
         recomputeBeat(quote)
-    }
-
-    private func nearest(_ points: [Point], _ t: Double) -> Double? {
-        guard let best = points.min(by: { abs($0.t - t) < abs($1.t - t) }) else { return nil }
-        return abs(best.t - t) < 12 * HubMs.minute ? best.px : nil
     }
 
     private func merge(_ a: [Point], _ b: [Point]) -> [Point] {
