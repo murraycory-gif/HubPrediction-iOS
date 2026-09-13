@@ -101,6 +101,7 @@ grep -q 'modeBtn("LIVE"' HubPrediction/TradePanel.swift || bad "LIVE toggle miss
 if grep -n 'portfolio/orders' HubPrediction/PaperBook.swift >/dev/null 2>&1; then
   bad "PaperBook must not call live order endpoints"
 fi
+grep -q 'Paper mode must not POST live Kalshi orders' HubPrediction/KalshiTrade.swift || bad "placeLive missing paper refuse"
 if python3 - <<'PY'
 import pathlib, sys
 src = pathlib.Path("HubPrediction/DeskStore.swift").read_text()
