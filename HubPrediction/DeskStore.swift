@@ -30,6 +30,7 @@ final class DeskStore: ObservableObject {
     @Published var confirmFromBot: Bool = false
     @Published var lastQuoteAt: Double = 0
     @Published var beat: BeatPath = BeatPath()
+    @Published var windowOpen: Bool = false
 
     static let quoteIntervalMs = 750.0
     static let dashIntervalMs = 5_000.0
@@ -211,12 +212,12 @@ final class DeskStore: ObservableObject {
         botsArmed = on
         DeskBots.armed = on
         botNote = on
-            ? "Bots armed — paper auto in the 6–4m window; LIVE still Confirm."
+            ? "Bots armed — execute ALL buys in the 6–4m window. Paper local · LIVE Kalshi (keys required)."
             : "Bots off."
     }
 
     func tickBots(now: Double) {
-        guard botsArmed, !tradeBusy, !showConfirm else { return }
+        guard botsArmed, !tradeBusy else { return }
         let ask = (call.side == .down ? quote?.noAsk : quote?.yesAsk) ?? 0
         let n = SizeCash.contractsFromCash(cash: workingCash, askCents: ask, pWin: call.pWin)
         guard n >= 1 else { return }
@@ -226,15 +227,34 @@ final class DeskStore: ObservableObject {
         guard DeskBots.shouldExecute(phase: phase, call: call, count: n) else { return }
         guard let ticker = quote?.ticker, !ticker.isEmpty, botFiredTicker != ticker else { return }
         tradeSide = call.side
-        confirmFromBot = true
-        if mode == .paper {
-            botNote = "BOT paper \(tradeCount) \(call.side == .down ? "DOWN" : "UP") · \(ticker)"
-            Task { await confirmPlace(fromBot: true) }
-        } else {
-            botFiredTicker = ticker
-            botNote = "BOT live \(tradeCount) \(call.side == .down ? "DOWN" : "UP") — Confirm LIVE"
-            requestPlace(fromBot: true)
+        if mode == .live {
+            guard hasCreds else {
+                banner = DeskBanner(title: "Keys needed", detail: "LIVE bots need Kalshi API Key ID + PEM in Keys. Paper still auto-fills.", holdingLast: false)
+                return
+            }
+            if status?.tradingActive == false { return }
         }
+        botFiredTicker = ticker
+        confirmFromBot = true
+        botNote = "BOT \(mode == .paper ? "paper" : "LIVE") \(tradeCount) \(call.side == .down ? "DOWN" : "UP") · \(ticker)"
+        Task { await confirmPlace(fromBot: true) }
+    }
+
+    @discardableResult
+    func assertOpenWindow(now: Double = Date.nowMs) -> Bool {
+        let close = quote?.closeAt ?? 0
+        let phase = BuyWindow.phase(closeAt: close, now: now)
+        windowOpen = phase == .open
+        guard phase == .open else {
+            showConfirm = false
+            banner = DeskBanner(
+                title: "Buy window closed",
+                detail: BuyWindow.detail(phase: phase, closeAt: close, now: now) + " Human and bot fills only in the last 6–4 minutes.",
+                holdingLast: false
+            )
+            return false
+        }
+        return true
     }
 
     func requestPlace(fromBot: Bool = false) {
@@ -242,6 +262,7 @@ final class DeskStore: ObservableObject {
             banner = DeskBanner(title: "No market", detail: "Wait for a quote or pick a market, then retry.", holdingLast: false)
             return
         }
+        guard assertOpenWindow() else { return }
         if mode == .live, !hasCreds {
             banner = DeskBanner(title: "Keys needed", detail: "Live needs Kalshi API Key ID + PEM in Keys. Switch to Paper to fill locally. Nothing is stored in git.", holdingLast: false)
             return
@@ -254,6 +275,7 @@ final class DeskStore: ObservableObject {
 
     func confirmPlace(fromBot: Bool = false) async {
         showConfirm = false
+        guard assertOpenWindow() else { return }
         guard let ticker = quote?.ticker, !ticker.isEmpty else { return }
         tradeBusy = true
         tradeNote = nil
@@ -320,6 +342,7 @@ final class DeskStore: ObservableObject {
         )
         let raw = KalshiSignal.kalshiCall(used, beat: beat)
         call = KalshiSignal.holdThesis(quote: used, next: raw, peek: peekThesis, write: writeThesis)
+        windowOpen = BuyWindow.phase(closeAt: used?.closeAt ?? 0, now: now) == .open
     }
 
     private func recomputeBeat(_ q: Quote?) {

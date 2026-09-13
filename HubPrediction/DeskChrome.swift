@@ -115,14 +115,14 @@ struct BotLane: View {
 
     private func botStatus(phase: BuyPhase) -> String {
         if !store.botsArmed {
-            return "Disarmed. Arm to let bots buy in the 6–4m window. Paper auto · LIVE Confirm."
+            return "Disarmed. Arm to let bots execute ALL buys in the 6–4m window. Paper local · LIVE Kalshi."
         }
         switch phase {
         case .waiting:
-            return "Armed · waiting for 6–4m window. \(store.mode == .paper ? "Paper auto" : "LIVE Confirm")."
+            return "Armed · waiting for 6–4m window. Then bots execute \(store.mode == .paper ? "paper" : "LIVE") fills."
         case .open:
             if store.call.willBuy {
-                return "Armed · window open · \(store.mode == .paper ? "PAPER AUTO" : "LIVE CONFIRM") \(store.tradeCount) \(store.call.side == .down ? "DOWN" : "UP")"
+                return "Armed · window open · EXECUTING \(store.mode == .paper ? "PAPER" : "LIVE") \(store.tradeCount) \(store.call.side == .down ? "DOWN" : "UP")"
             }
             return "Armed · window open · NO BUY (bots sit)."
         case .late:

@@ -232,6 +232,32 @@ grep -q 'openFromMin = 4' HubPrediction/BuyWindow.swift || bad "buy window 4m mi
 grep -q 'BUY UP' HubPrediction/BuyWindow.swift || bad "buy headline missing"
 grep -q 'NO BUY' HubPrediction/BuyWindow.swift || bad "no-buy headline missing"
 grep -q 'func tickBots' HubPrediction/DeskStore.swift || bad "bot executor missing"
+grep -q 'func assertOpenWindow' HubPrediction/DeskStore.swift || bad "window gate missing"
+if python3 - <<'PY'
+import pathlib, sys
+src = pathlib.Path("HubPrediction/DeskStore.swift").read_text()
+req = src.split("func requestPlace", 1)[1].split("func confirmPlace", 1)[0]
+conf = src.split("func confirmPlace", 1)[1].split("private func attach", 1)[0]
+bots = src.split("func tickBots", 1)[1].split("func assertOpenWindow", 1)[0]
+if "assertOpenWindow" not in req or "assertOpenWindow" not in conf:
+    print("FAIL: requestPlace/confirmPlace not gated to BuyPhase.open")
+    sys.exit(2)
+if "requestPlace(fromBot" in bots:
+    print("FAIL: live bots still open Confirm instead of executing")
+    sys.exit(2)
+if "confirmPlace(fromBot: true)" not in bots:
+    print("FAIL: bots do not execute confirmPlace")
+    sys.exit(2)
+if "mode == .live" not in bots or "hasCreds" not in bots:
+    print("FAIL: live bots missing credential gate")
+    sys.exit(2)
+sys.exit(0)
+PY
+then
+  ok "window-gated fills; bots execute paper + live"
+else
+  bad "window gate / live bot execute"
+fi
 grep -q 'BOTS // SCOUT' HubPrediction/DeskChrome.swift || bad "bot lane missing"
 grep -q '"SCOUT"' HubPrediction/DeskBots.swift || bad "SCOUT bot missing"
 grep -q '"SIGNAL"' HubPrediction/DeskBots.swift || bad "SIGNAL bot missing"

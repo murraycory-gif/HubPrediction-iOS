@@ -11,7 +11,7 @@ No Heartbeat. No secrets in git. Live PEM is Keychain-only. Default mode is **Pa
 | # | Check | Verdict | Notes |
 |---|--------|---------|-------|
 | 1 | Buy call in last 6–4 minutes before settle | KEEP (structural) | `BuyWindow`: WAIT / BUY UP / BUY DOWN / NO BUY / WINDOW CLOSED. Countdown on call bar. |
-| 2 | AI bots (SCOUT/SIGNAL/RISK) visible and in the forecast | KEEP (structural) | Port of desk.ts Strike/Tape/Path. Votes feed `BeatTrend`. Paper auto in window. LIVE Confirm. |
+| 2 | AI bots execute ALL buying (live + paper) in 6–4m | KEEP (structural) | SCOUT/SIGNAL/RISK. Armed bots call `confirmPlace` for paper and LIVE (keys required). Humans also gated to `BuyPhase.open`. |
 | 3 | Show cash; size for profit | KEEP (structural) | `CashStrip` + quarter-Kelly `SizeCash` + expected profit EV. |
 | 4 | Beat-the-trend forecast; visible next-15m dash | KEEP (structural) | Mint DASH = beat path (gap/tape/bots/shape). Orange dotted = naive last-6m. Not a last-week replot. Call bar shows BEAT/FADE/WITH TREND. |
 | 5 | Live spot-on refresh | KEEP (structural) | Combine `.common` pulse. Spot/asks **750ms** (Coinbase+Kalshi parallel). Call/bots/window recompute every **0.25s**. Dash **5s**, board **10s**. Halt does not freeze spot. No thesis LOCK. Board cannot clobber fresher asks. |
@@ -34,8 +34,8 @@ None in source. Prior Soft FAILs (signal-only desk, clipped dash) are closed in 
 
 Trade row **PAPER** | **LIVE**. Call bar: `BUY WINDOW 6–4m · PAPER|LIVE`.
 
-- **Paper** (default): Confirm paper or arm **BOTS ON** — bots fill locally in the 6–4m window. No Kalshi order POST.
-- **Live**: Confirm LIVE (including bot-driven). **Keys** required. Cancel aborts.
+- **Paper** (default): Human confirm or **BOTS ON** auto-fill — only in the 6–4m window. No Kalshi order POST.
+- **Live**: Human Confirm LIVE only in the 6–4m window. **BOTS ON** executes LIVE Kalshi orders in that window (Keys required). Cancel aborts a human dialog.
 
 ### Mac
 

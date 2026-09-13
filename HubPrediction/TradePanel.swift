@@ -62,16 +62,18 @@ struct TradePanel: View {
             Button {
                 store.requestPlace()
             } label: {
-                Text(store.tradeBusy ? "PLACING…" : "\(store.mode == .paper ? "PAPER" : "LIVE") \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP")")
+                Text(store.tradeBusy ? "PLACING…" : (store.windowOpen
+                     ? "\(store.mode == .paper ? "PAPER" : "LIVE") \(store.tradeCount) \(store.tradeSide == .down ? "DOWN" : "UP")"
+                     : "WAIT · 6–4m WINDOW"))
                     .font(.system(size: 14, weight: .bold, design: .monospaced))
                     .frame(maxWidth: .infinity)
                     .frame(height: compact ? 42 : 48)
-                    .background(store.tradeSide == .down ? HubTheme.down : HubTheme.up)
-                    .foregroundStyle(Color(red: 0.02, green: 0.04, blue: 0.03))
+                    .background(store.windowOpen ? (store.tradeSide == .down ? HubTheme.down : HubTheme.up) : HubTheme.chip)
+                    .foregroundStyle(store.windowOpen ? Color(red: 0.02, green: 0.04, blue: 0.03) : HubTheme.mute)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
-            .disabled(store.tradeBusy)
+            .disabled(store.tradeBusy || !store.windowOpen)
             if let note = store.tradeNote {
                 Text(note)
                     .font(.system(size: 11, design: .monospaced))
