@@ -1,4 +1,5 @@
 import { deskStorage } from './desk-storage'
+import { pushHostDesk } from './desk-persist'
 import { ticketCost } from './size-cash'
 import {
   GOLD_RECIPES,
@@ -254,6 +255,7 @@ export function saveFinance(state: FinanceState): FinanceState {
   } catch {
     /* quota */
   }
+  pushHostDesk({ finance: next })
   return next
 }
 

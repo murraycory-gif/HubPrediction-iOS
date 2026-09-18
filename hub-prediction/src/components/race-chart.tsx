@@ -8,11 +8,10 @@ import {
 } from '../lib/race-path'
 import {
   CHART_LABELS,
-  CHART_MS,
   CHART_RANGES,
-  CLOCK_MS,
   DEFAULT_CHART,
   DEFAULT_CLOCK,
+  chartWindowMs,
   TAPE_META,
   formatLive,
   nowTone,
@@ -59,7 +58,7 @@ export function raceDomain(id: TapeId, beat: number, live: number | null, pts: P
 }
 
 /** Ease NOW toward the latest Kalshi last without restarting on each print. */
-export function useSmoothedLive(live: number | null, ms = 700) {
+export function useSmoothedLive(live: number | null, ms = 180) {
   const [shown, setShown] = useState(live)
   const shownRef = useRef(live)
   const targetRef = useRef(live)
@@ -121,6 +120,7 @@ export const RaceChart = memo(function RaceChart({
   points,
   clock = DEFAULT_CLOCK,
   chart = DEFAULT_CHART,
+  ticker,
   openAt,
   closeAt,
   onChart,
@@ -132,6 +132,7 @@ export const RaceChart = memo(function RaceChart({
   points?: Point[]
   clock?: TapeClock
   chart?: ChartRange
+  ticker?: string
   openAt?: number
   closeAt?: number
   onChart?: (chart: ChartRange) => void
@@ -141,10 +142,9 @@ export const RaceChart = memo(function RaceChart({
   const [trail, setTrail] = useState<Point[]>([])
 
   useEffect(() => {
-    if (!openAt && !closeAt) return
     trailRef.current = []
     setTrail([])
-  }, [id, openAt, closeAt])
+  }, [id, ticker])
 
   useEffect(() => {
     const next = mergeRaceTrail(trailRef.current, points, live, Date.now())
@@ -160,7 +160,7 @@ export const RaceChart = memo(function RaceChart({
   const shown =
     displayLive != null && Number.isFinite(displayLive) && (displayLive as number) > 0 ? displayLive : live
   const now = chart === 'live' ? wall : trail.length ? trail[trail.length - 1]!.t : Date.now()
-  const windowMs = CHART_MS[chart] ?? CLOCK_MS[clock]
+  const windowMs = chartWindowMs(chart, clock)
   const pts = useMemo(
     () => cleanRacePoints(trail.length ? trail : points, now, windowMs, openAt, closeAt),
     [trail, points, now, windowMs, openAt, closeAt],

@@ -494,8 +494,9 @@ describe('one fast quote path Soft KEEP same ticker/second', () => {
     expect(slimLivePoints(Array.from({ length: 400 }, (_, i) => ({ t: now - (399 - i) * 1000, px: 80_000 + i }))).length).toBeLessThanOrEqual(LIVE_TRAIL_DOTS)
     expect(calls.every((u) => u.includes('/live_data/events/'))).toBe(true)
     expect(calls.some((u) => u.includes('range=5min'))).toBe(true)
-    expect(liveRangeFromCharts({ btc: 'live', ng: '5m', cu: 'live', gld: 'live' })).toBe('5min')
+    expect(liveRangeFromCharts({ btc: 'live', ng: '5m', cu: 'live', gld: 'live' })).toBe('15min')
     expect(liveRangeFromCharts({ btc: '1h' })).toBe('1h')
+    expect(liveRangeFromCharts({ btc: 'live' }, { btc: '1h' })).toBe('1h')
     const board: DeskBoard = {
       fetchedAt: now - 1000,
       tapes: {

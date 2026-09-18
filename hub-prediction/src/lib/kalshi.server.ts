@@ -295,9 +295,7 @@ export async function loadLivePrints(
         }
         const print = lastPrintFromLiveData(livePayload)
         const prev = lastPrints?.tapes[id]
-        const incoming = prev?.eventTicker === eventTicker && prev.points.length
-          ? slimLivePoints(pointsFromLiveData(livePayload), Date.now(), LIVE_TRAIL_MS, 3)
-          : slimLivePoints(pointsFromLiveData(livePayload))
+        const incoming = slimLivePoints(pointsFromLiveData(livePayload), Date.now(), LIVE_TRAIL_MS)
         const live = print?.px ?? prev?.live ?? incoming[incoming.length - 1]?.px ?? null
         const liveSource = print?.source ?? prev?.liveSource ?? (incoming.length ? 'kalshi-timeseries' : null)
         if (prev?.eventTicker === eventTicker && live === prev.live && liveSource === prev.liveSource) {

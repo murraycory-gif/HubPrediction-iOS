@@ -18,13 +18,32 @@ export const getDeskBoard = createServerFn({ method: 'POST' })
 
 export const getLivePrints = createServerFn({ method: 'POST' })
   .validator(
-    (d: { events?: Partial<Record<TapeId, string>>; charts?: Partial<Record<TapeId, ChartRange>> } | undefined) =>
-      d ?? {},
+    (
+      d:
+        | {
+            events?: Partial<Record<TapeId, string>>
+            charts?: Partial<Record<TapeId, ChartRange>>
+            clocks?: Partial<Record<TapeId, TapeClock>>
+          }
+        | undefined,
+    ) => d ?? {},
   )
   .handler(async ({ data }) => {
     const { loadLivePrints } = await import('./kalshi.server')
     const { liveRangeFromCharts } = await import('./tapes')
-    return loadLivePrints(data?.events ?? {}, liveRangeFromCharts(data?.charts))
+    return loadLivePrints(data?.events ?? {}, liveRangeFromCharts(data?.charts, data?.clocks))
+  })
+
+export const getDeskState = createServerFn({ method: 'GET' }).handler(async () => {
+  const { readDeskState } = await import('./desk-state.server')
+  return readDeskState()
+})
+
+export const saveDeskState = createServerFn({ method: 'POST' })
+  .validator((d: { settings?: unknown; tickets?: unknown; finance?: unknown; hits?: unknown } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+    const { writeDeskState } = await import('./desk-state.server')
+    return writeDeskState(data)
   })
 
 export const getSettledTape = createServerFn({ method: 'POST' })

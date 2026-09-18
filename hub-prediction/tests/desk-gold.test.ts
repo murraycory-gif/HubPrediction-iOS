@@ -6,6 +6,7 @@ import {
   DEFAULT_CLOCK,
   DEFAULT_SETTINGS,
   GOLD_RECIPES,
+  chartWindowMs,
   hydrateChartRange,
   nowTone,
   formatNowDelta,
@@ -429,6 +430,19 @@ describe('arm / pulse / send tab', () => {
 })
 
 describe('gold race path', () => {
+  it('LIVE chart uses the selected clock window — Soft FAIL a 90s one-dot stub', () => {
+    expect(chartWindowMs('live', '15m')).toBe(15 * 60_000)
+    expect(chartWindowMs('live', '5m')).toBe(5 * 60_000)
+    expect(chartWindowMs('live', '1h')).toBe(60 * 60_000)
+    const now = Date.now()
+    const openAt = now - 10 * 60_000
+    const series = Array.from({ length: 60 }, (_, i) => ({ t: openAt + i * 10_000, px: 80_000 + i }))
+    const pts = cleanRacePoints(series, now, chartWindowMs('live', '15m'), openAt, now + 5 * 60_000)
+    expect(pts.length).toBeGreaterThan(20)
+    const path = raceLinePath(pts, (t) => t / 1000, (px) => px)
+    expect(path).toContain(' C')
+  })
+
   it('downsamples a scribbled 1s series and zooms Gold around its own BEAT', () => {
     const now = 1_000_000
     const dense = Array.from({ length: 200 }, (_, i) => ({ t: now - (199 - i) * 1000, px: 4358 + (i % 7) * 0.1 }))
@@ -469,7 +483,7 @@ describe('gold race path', () => {
 
   it('LIVE chart eases NOW and ticks the wall on rAF — Soft FAIL 250ms hop', async () => {
     const src = await readFile(new URL('../src/components/race-chart.tsx', import.meta.url), 'utf8')
-    expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 700\)/)
+    expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 180\)/)
     expect(src).toMatch(/t - last >= 48/)
     expect(src).toMatch(/requestAnimationFrame\(tick\)/)
     expect(src).toMatch(/displayLive/)

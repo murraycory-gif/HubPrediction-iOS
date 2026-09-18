@@ -626,3 +626,38 @@ test('desktop desk: rain stays behind wordmark and BEAT/LIVE plates — Live OFF
   await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/desk-desktop-isolated.png', fullPage: false })
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
 })
+
+test('Live cash ON survives reload; master Live stays OFF', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await page.getByTestId('live-cash-btc').check()
+  await page.getByTestId('live-cash-ng').check()
+  await page.getByTestId('clock-btc').selectOption('5m')
+  await expect(page.getByTestId('live-cash-btc')).toBeChecked()
+  await expect(page.getByTestId('live-cash-ng')).toBeChecked()
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await page.reload({ waitUntil: 'networkidle' })
+  await expect(page.getByTestId('live-cash-btc')).toBeChecked()
+  await expect(page.getByTestId('live-cash-ng')).toBeChecked()
+  await expect(page.getByTestId('clock-btc')).toHaveValue('5m')
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/live-cash-persist.png', clip: { x: 0, y: 0, width: 390, height: 844 } })
+})
+
+test('LIVE chart has a continuous series, not one NOW dot', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('race-btc')).toBeVisible()
+  await expect
+    .poll(async () => {
+      return page.locator('[data-testid="race-btc"] .race-path').count()
+    }, { timeout: 20_000 })
+    .toBeGreaterThan(0)
+  const d = await page.locator('[data-testid="race-btc"] .race-path').getAttribute('d')
+  const commands = (d || '').match(/[CLc]/g) ?? []
+  expect((d || '').length).toBeGreaterThan(40)
+  expect(commands.length).toBeGreaterThan(2)
+  await page.locator('[data-testid="race-btc"]').screenshot({ path: '/opt/cursor/artifacts/screenshots/btc-live-chart.png' })
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+})

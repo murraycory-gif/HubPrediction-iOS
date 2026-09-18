@@ -1,6 +1,8 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { getDeskBoard, getDeskBriefs, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi } from '../lib/btc-data'
+import { getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
+import { applyHostDeskState } from '../lib/desk-hydrate'
+import { setHostDeskWriter } from '../lib/desk-persist'
 import {
   TAPE_IDS,
   TAPE_META,
@@ -155,6 +157,29 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })),
     )
     setRehab(loadAutoState())
+    void getDeskState()
+      .then((host) => {
+        if (host && applyHostDeskState(host)) {
+          setSettings(loadSettings())
+          const hostTickets = loadTickets()
+          setTickets(hostTickets)
+          setBook(
+            syncTicketsIntoBook(loadFinance(), hostTickets, () => ({
+              clock: '',
+              closeAt: 0,
+              ask: 50,
+            })),
+          )
+        }
+        setHostDeskWriter((patch) => {
+          void saveDeskState({ data: patch })
+        })
+      })
+      .catch(() => {
+        setHostDeskWriter((patch) => {
+          void saveDeskState({ data: patch })
+        })
+      })
     void getKalshiBalance()
       .then((r) => applyCashAndSettlements(r))
       .catch(() => {
@@ -165,6 +190,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       .catch(() => {
         /* settlements follow cash — latch stays */
       })
+    return () => setHostDeskWriter(null)
   }, [])
 
   const heldBoard = useRef<DeskBoard | null>(seedBoard ?? loadHeldBoard())
@@ -234,7 +260,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const printsQuery = useQuery({
     queryKey: ['live-prints', liveEvents, settings.charts],
-    queryFn: () => getLivePrints({ data: { events: liveEvents, charts: settings.charts } }),
+    queryFn: () => getLivePrints({ data: { events: liveEvents, charts: settings.charts, clocks: settings.clocks } }),
     enabled: Object.values(liveEvents).some(Boolean),
     refetchInterval: LIVE_PRINT_MS,
     refetchIntervalInBackground: true,
@@ -980,6 +1006,7 @@ function TapeRow({
         points={shownQuote?.points}
         clock={clock}
         chart={chart}
+        ticker={shownQuote?.ticker}
         openAt={shownQuote?.openAt}
         closeAt={shownQuote?.closeAt}
         onChart={onChart}
@@ -1101,7 +1128,7 @@ function Bets24Strip({
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
       <p className="hud-label">
         Bets since first deposit · Kalshi fills are LIVE and walk CASH · deskfill is PAPER and does not
-        walk CASH · WINDOW date/time · MODE · {HIT_FLOOR}% win-ratio goal
+        walk CASH · WINDOW · CLOCK · MODE · CASH · {HIT_FLOOR}% win-ratio goal
       </p>
       <div className="bets-filter" data-testid="bets-filter">
         <button
@@ -1198,7 +1225,7 @@ function Bets24Strip({
         </div>
         {rows.length ? null : (
           <p className="settings-note" data-testid="bets-empty">
-            No Kalshi fills since first deposit. The WINDOW · CLOCK · MODE · CASH columns stay here. Soft FAIL Live POST.
+            No fills since first deposit. Paper deskfill and Kalshi LIVE both show here. Soft FAIL Live POST.
           </p>
         )}
       </div>

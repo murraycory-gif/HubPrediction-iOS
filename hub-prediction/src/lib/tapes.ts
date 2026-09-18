@@ -1,4 +1,5 @@
 import { deskStorage } from './desk-storage'
+import { pushHostDesk } from './desk-persist'
 import { mergeRaceTrail, pointTime } from './race-path'
 import type { DeskBoard, LivePrints, TapeQuote } from './types'
 
@@ -48,11 +49,19 @@ export const CHART_LABELS: Record<ChartRange, string> = {
   '1h': '1H',
 }
 export const CHART_MS: Record<ChartRange, number> = {
-  live: 90_000,
+  live: 15 * 60_000,
   '5m': 5 * 60_000,
   '15m': 15 * 60_000,
   '1h': 60 * 60_000,
 }
+
+/** LIVE follows the selected clock — Soft FAIL a 90s stub with one NOW dot. */
+export function chartWindowMs(chart: ChartRange, clock: TapeClock = DEFAULT_CLOCK) {
+  if (hydrateChartRange(chart) === 'live') return CLOCK_MS[hydrateClock(clock)]
+  return CHART_MS[hydrateChartRange(chart)]
+}
+
+export { raceWindowStart } from './race-path'
 
 export const CLOCK_CALLOUT: Record<TapeClock, { kicker: string; title: string }> = {
   '5m': { kicker: '5 MIN', title: '5 min' },
@@ -113,9 +122,9 @@ export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
 
 /** Structure board only. Prints ride LIVE_PRINT_MS. Fast near close so the next clock latches. */
 export const LIVE_PRINT_MS = 200
-export const LIVE_TRAIL_MS = 90_000
-export const LIVE_TRAIL_DOTS = 90
-export const BOARD_STRUCTURE_MS = 2500
+export const LIVE_TRAIL_MS = 60 * 60_000
+export const LIVE_TRAIL_DOTS = 480
+export const BOARD_STRUCTURE_MS = 1000
 export const BOARD_ROLLOVER_MS = 350
 export const BOARD_CLOSED_MS = 200
 
@@ -180,12 +189,16 @@ export function nextBoardRolloverWait(
   return null
 }
 
-export function liveRangeFromCharts(charts?: Partial<Record<TapeId, ChartRange>> | null) {
+export function liveRangeFromCharts(
+  charts?: Partial<Record<TapeId, ChartRange>> | null,
+  clocks?: Partial<Record<TapeId, TapeClock>> | null,
+) {
   for (const id of TAPE_IDS) {
-    const c = charts?.[id]
-    if (c === '15m' || c === '1h') return CLOCK_LIVE_RANGE['1h']
+    const chart = hydrateChartRange(charts?.[id])
+    const clock = hydrateClock(clocks?.[id])
+    if (chart === '1h' || clock === '1h') return CLOCK_LIVE_RANGE['1h']
   }
-  return CLOCK_LIVE_RANGE['5m']
+  return CLOCK_LIVE_RANGE['15m']
 }
 
 export function boardEventTickers(
@@ -551,6 +564,7 @@ export function saveSettings(settings: DeskSettings) {
   } catch {
     /* quota */
   }
+  pushHostDesk({ settings: next })
   return next
 }
 
@@ -758,6 +772,7 @@ export function saveTickets(tickets: DeskTicket[]) {
   } catch {
     /* quota */
   }
+  pushHostDesk({ tickets: next })
   return next
 }
 

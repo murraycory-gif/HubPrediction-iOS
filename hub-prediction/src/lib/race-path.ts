@@ -1,5 +1,11 @@
 import type { Point } from './types'
 
+export function raceWindowStart(now: number, windowMs: number, openAt?: number) {
+  const open = Number(openAt)
+  if (Number.isFinite(open) && open > 0 && now - open <= windowMs + 2000) return open
+  return now - windowMs
+}
+
 export const MAX_RACE_DOTS = 180
 export const TRAIL_KEEP_MS = 2 * 60 * 60 * 1000
 
@@ -93,10 +99,10 @@ export function cleanRacePoints(
   points: Point[] | undefined,
   now = Date.now(),
   windowMs = 15 * 60_000,
-  _openAt?: number,
+  openAt?: number,
   closeAt?: number,
 ): Point[] {
-  const from = now - windowMs
+  const from = raceWindowStart(now, windowMs, openAt)
   const to = Number.isFinite(closeAt) && (closeAt as number) > 0 ? Math.min(now, closeAt as number) : now
   const raw: Point[] = []
   for (const p of points ?? []) {
