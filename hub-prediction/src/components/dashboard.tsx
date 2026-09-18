@@ -1,7 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getDeskBoard, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
-import { pWin as deskPWin } from '../lib/desk'
 import {
   bookBet,
   cashFloor,
@@ -58,7 +57,7 @@ import {
   type DeskTicket,
   type TapeId,
 } from '../lib/tapes'
-import type { DeskBoard, Quote, TapeQuote } from '../lib/types'
+import type { DeskBoard, TapeQuote } from '../lib/types'
 import { CashStrip } from './cash-strip'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
@@ -75,8 +74,8 @@ function writeLocal(key: string, value: string) {
 }
 
 export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
-  const [settings, setSettings] = useState<DeskSettings>(() => hydrateSettings(null))
-  const [tickets, setTickets] = useState<DeskTicket[]>([])
+  const [settings, setSettings] = useState<DeskSettings>(() => loadSettings())
+  const [tickets, setTickets] = useState<DeskTicket[]>(() => loadTickets())
   const [hits, setHits] = useState(() => loadHits())
   const [cash, setCash] = useState(() => loadCash())
   const [book, setBook] = useState<FinanceBook>(() => loadFinanceBook())
@@ -274,7 +273,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       if (!askInBand(ask, recipe)) continue
       const key = `${id}:${quote.ticker}`
       if (sentRef.current[key]) continue
-      const p = deskPWin(quoteToCall(quote))
+      const p = botPWin(quote, lean)
       const count = suggestedSize(book, ask, p, cash.cash)
       if (count < 1) continue
       sentRef.current[key] = 'armed'
@@ -399,8 +398,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             }}
             onRequestLive={() => setLiveConfirm(true)}
             onTape={(id, patch) => {
-              if (book.killed && patch.botOn) return
-              setSettings(patchTape(settings, id, patch))
+              setSettings((prev) => {
+                if (book.killed && patch.botOn) return prev
+                return patchTape(prev, id, patch)
+              })
             }}
             onRefreshCash={() => void refreshCash()}
           />
@@ -415,21 +416,14 @@ function ticketFor(tickets: DeskTicket[], id: TapeId, ticker?: string) {
   return tickets.find((t) => t.tape === id && t.ticker === ticker)
 }
 
-function quoteToCall(quote: TapeQuote): Quote {
-  return {
-    ticker: quote.ticker,
-    yesAsk: quote.yesAsk,
-    noAsk: quote.noAsk,
-    strike: quote.beat,
-    live: quote.live ?? quote.beat,
-    liveSource: quote.liveSource ?? 'kalshi-live',
-    openAt: quote.openAt,
-    closeAt: quote.closeAt,
-    fetchedAt: quote.fetchedAt,
-    tradingActive: quote.tradingActive,
-    points: quote.points,
-    past: [],
-  }
+function botPWin(quote: TapeQuote, side: 'up' | 'down') {
+  const live = quote.live ?? quote.beat
+  const gap = live - quote.beat
+  const ask = (side === 'down' ? quote.noAsk : quote.yesAsk) / 100
+  const fromGap = side === 'up' ? 0.5 + gap / 80 : 0.5 - gap / 80
+  const fromAsk = Number.isFinite(ask) ? 1 - ask : 0.5
+  const p = Math.max(0.05, Math.min(0.95, fromGap * 0.6 + fromAsk * 0.4))
+  return Number.isFinite(p) ? p : 0.62
 }
 
 function Stat({ label, value, testId }: { label: string; value: string; testId: string }) {

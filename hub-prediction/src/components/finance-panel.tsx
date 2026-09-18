@@ -10,9 +10,8 @@ import {
   workingCash,
   type FinanceBook,
 } from '../lib/finance-book'
-import { pWin as deskPWin } from '../lib/desk'
 import { TAPE_IDS, TAPE_META, formatCash, formatPnl, type TapeId } from '../lib/tapes'
-import type { DeskBoard, Quote, TapeQuote } from '../lib/types'
+import type { DeskBoard, TapeQuote } from '../lib/types'
 
 export function FinancePanel(props: {
   book: FinanceBook
@@ -28,14 +27,18 @@ export function FinancePanel(props: {
   const [pending, setPending] = useState(false)
 
   const quote = props.board?.tapes[tape] ?? null
-  const ask = side === 'down' ? (quote?.noAsk ?? 0) : (quote?.yesAsk ?? 0)
-  const pWin = useMemo(() => deskPWin(quoteToCall(quote)), [quote?.ticker, quote?.live, quote?.yesAsk, quote?.noAsk, quote?.beat])
+  const paperTicker = `PAPER-${TAPE_META[tape].series}`
+  const ticker = quote?.ticker || (props.book.mode === 'paper' ? paperTicker : '')
+  const rawAsk = side === 'down' ? quote?.noAsk : quote?.yesAsk
+  const ask = Number.isFinite(rawAsk) && (rawAsk as number) > 0 ? (rawAsk as number) : props.book.mode === 'paper' ? 50 : 0
+  const pWin = useMemo(() => tapePWin(quote, side), [quote?.ticker, quote?.live, quote?.yesAsk, quote?.noAsk, quote?.beat, side])
   const count = suggestedSize(props.book, ask, pWin, props.liveCash)
   const cost = ticketCost(count, ask)
   const ev = expectedProfit(count, ask, pWin)
   const gate = placeGate(props.book, cost, props.liveCash)
   const cash = workingCash(props.book, props.liveCash)
   const floor = cashFloor(props.book)
+  const canTicket = Boolean(ticker) && count >= 1
 
   function applyDeposit(kind: 'deposit' | 'withdrawal') {
     const n = Number(amount)
@@ -53,19 +56,19 @@ export function FinancePanel(props: {
       props.onMsg(gate.reason)
       return
     }
-    if (!quote?.ticker || count < 1) {
+    if (!ticker || count < 1) {
       props.onMsg('No SizeCash size on this tape')
       return
     }
     setPending(true)
-    props.onMsg(`Confirm ${count} ${side.toUpperCase()} ${quote.ticker} · ${cost.toFixed(2)}`)
+    props.onMsg(`Confirm ${count} ${side.toUpperCase()} ${ticker} · ${cost.toFixed(2)}`)
   }
 
   function onConfirm() {
     if (!pending) return
-    if (!quote?.ticker) return
+    if (!ticker) return
     const result = bookBet(props.book, {
-      ticker: quote.ticker,
+      ticker,
       side,
       count,
       ask,
@@ -145,7 +148,7 @@ export function FinancePanel(props: {
             type="button"
             className="chip-btn"
             data-testid="place"
-            disabled={!gate.ok || count < 1 || !quote?.ticker}
+            disabled={!gate.ok || !canTicket}
             onClick={onPlace}
           >
             Place
@@ -206,20 +209,13 @@ export function FinancePanel(props: {
   )
 }
 
-function quoteToCall(quote: TapeQuote | null): Quote | null {
-  if (!quote) return null
-  return {
-    ticker: quote.ticker,
-    yesAsk: quote.yesAsk,
-    noAsk: quote.noAsk,
-    strike: quote.beat,
-    live: quote.live ?? quote.beat,
-    liveSource: quote.liveSource ?? 'kalshi-live',
-    openAt: quote.openAt,
-    closeAt: quote.closeAt,
-    fetchedAt: quote.fetchedAt,
-    tradingActive: quote.tradingActive,
-    points: quote.points,
-    past: [],
-  }
+function tapePWin(quote: TapeQuote | null, side: 'up' | 'down') {
+  if (!quote) return 0.62
+  const live = quote.live ?? quote.beat
+  const gap = live - quote.beat
+  const ask = (side === 'down' ? quote.noAsk : quote.yesAsk) / 100
+  const fromGap = side === 'up' ? 0.5 + gap / 80 : 0.5 - gap / 80
+  const fromAsk = Number.isFinite(ask) ? 1 - ask : 0.5
+  const p = Math.max(0.05, Math.min(0.95, fromGap * 0.6 + fromAsk * 0.4))
+  return Number.isFinite(p) ? p : 0.62
 }

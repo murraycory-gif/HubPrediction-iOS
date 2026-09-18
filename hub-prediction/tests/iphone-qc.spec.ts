@@ -5,7 +5,7 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   page.on('pageerror', (err) => errors.push(err.message))
 
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await page.goto('/', { waitUntil: 'networkidle' })
 
   await expect(page.getByTestId('desk-title')).toHaveText(/HUB PREDICTIONS/)
   const head = page.getByTestId('desk-head')

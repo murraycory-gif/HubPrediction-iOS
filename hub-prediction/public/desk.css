@@ -146,6 +146,12 @@ body {
   gap: 8px;
 }
 
+.finance-log .chip-btn,
+.ticket-box .chip-btn,
+.kill-btn {
+  scroll-margin-top: 160px;
+}
+
 .finance-log .field {
   flex: 1 1 140px;
 }
