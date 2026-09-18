@@ -114,6 +114,7 @@ describe('settings persist', () => {
         ...DEFAULT_SETTINGS.tapes,
         ng: { ...GOLD_RECIPES.ng, contracts: 4, botOn: true },
       },
+      betsFilter: DEFAULT_SETTINGS.betsFilter,
     })
     const again = loadSettings()
     expect(again.tapes.ng.contracts).toBe(4)

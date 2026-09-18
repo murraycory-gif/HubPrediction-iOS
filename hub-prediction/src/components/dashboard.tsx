@@ -7,6 +7,7 @@ import {
   TAPE_IDS,
   TAPE_META,
   GOLD_RECIPES,
+  applyBetsFilter,
   askInBand,
   cashGates,
   claimSend,
@@ -49,22 +50,18 @@ import {
 import { ticketCost } from '../lib/size-cash'
 import type { DeskBoard, TapeQuote } from '../lib/types'
 import {
-  BETS_FILTER_KEY,
   bookFill,
   clearKill,
   engageKill,
   chasingLosses,
-  hydrateBetsFilter,
   isAllBetsFilter,
   last24hBets,
   liveArmGate,
   liveSendGate,
-  loadBetsFilter,
   loadFinance,
   recipeRetuneGate,
   settleBook,
   syncTicketsIntoBook,
-  toggleBetsFilter,
   type FinanceState,
 } from '../lib/finance'
 import { deskStorage } from '../lib/desk-storage'
@@ -95,7 +92,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [liveConfirm, setLiveConfirm] = useState(false)
   const [analystOpen, setAnalystOpen] = useState(false)
   const [financeOpen, setFinanceOpen] = useState(false)
-  const [betsFilter, setBetsFilter] = useState<TapeId[]>(() => loadBetsFilter())
   const sentRef = useRef<Record<string, SendClaim>>({})
 
   useEffect(() => {
@@ -113,16 +109,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask: 50,
       })),
     )
-    const raw = readLocal(BETS_FILTER_KEY)
-    if (raw) {
-      try {
-        setBetsFilter(hydrateBetsFilter(JSON.parse(raw)))
-      } catch {
-        setBetsFilter(loadBetsFilter())
-      }
-    } else {
-      setBetsFilter(loadBetsFilter())
-    }
   }, [])
 
   const boardQuery = useQuery({
@@ -295,7 +281,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }, [board?.fetchedAt, settings, tickets, book.killed])
 
   const ttl = ttlFromHits(hits)
-  const bets24 = last24hBets(book, hits, Date.now(), betsFilter)
+  const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter)
 
   return (
     <div className="desk">
@@ -408,14 +394,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           w={bets24.w}
           l={bets24.l}
           pnl={bets24.pnl}
-          filter={betsFilter}
-          onFilter={(chip) => {
-            setBetsFilter((cur) => {
-              const next = toggleBetsFilter(cur, chip)
-              writeLocal(BETS_FILTER_KEY, JSON.stringify(next))
-              return next
-            })
-          }}
+          filter={settings.betsFilter}
+          onFilter={(chip) => setSettings((cur) => applyBetsFilter(cur, chip))}
         />
 
         <div className="under-desk" data-testid="under-desk">

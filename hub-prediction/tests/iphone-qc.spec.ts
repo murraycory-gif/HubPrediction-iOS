@@ -65,7 +65,13 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   await expect(page.getByTestId('bets-filter-ng')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('bets-24h')).toHaveAttribute('data-filter', 'btc,ng')
   await expect
-    .poll(async () => page.evaluate(() => localStorage.getItem('hub.desk.betsFilter.v1')))
+    .poll(async () =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem('hub.desk.settings.v1')
+        if (!raw) return localStorage.getItem('hub.desk.betsFilter.v1')
+        return JSON.stringify(JSON.parse(raw).betsFilter)
+      }),
+    )
     .toBe(JSON.stringify(['btc', 'ng']))
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-bets-24h.png' })
   await page.reload({ waitUntil: 'networkidle' })

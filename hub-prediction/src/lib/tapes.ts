@@ -17,6 +17,7 @@ export type TapeRecipe = {
 export type DeskSettings = {
   liveBets: boolean
   tapes: Record<TapeId, TapeRecipe>
+  betsFilter: TapeId[]
 }
 
 export const TAPE_META: Record<
@@ -45,9 +46,36 @@ export const DEFAULT_SETTINGS: DeskSettings = {
     cu: { ...GOLD_RECIPES.cu },
     gld: { ...GOLD_RECIPES.gld },
   },
+  betsFilter: allBetsFilter(),
 }
 
 export const SETTINGS_KEY = 'hub.desk.settings.v1'
+export const BETS_FILTER_KEY = 'hub.desk.betsFilter.v1'
+
+export function allBetsFilter(): TapeId[] {
+  return [...TAPE_IDS]
+}
+
+export function isAllBetsFilter(ids: readonly TapeId[]) {
+  return TAPE_IDS.every((id) => ids.includes(id))
+}
+
+export function hydrateBetsFilter(raw: unknown): TapeId[] {
+  if (!Array.isArray(raw)) return allBetsFilter()
+  const ids = [...new Set(raw.filter((v): v is TapeId => typeof v === 'string' && isTapeId(v)))]
+  return ids.length ? ids : allBetsFilter()
+}
+
+/** All stays visible. Empty selection Soft FAIL — snap back to All. Last tape stays on. */
+export function nextBetsFilter(current: readonly TapeId[], chip: 'all' | TapeId): TapeId[] {
+  if (chip === 'all') return allBetsFilter()
+  if (isAllBetsFilter(current)) return [chip]
+  if (current.includes(chip)) {
+    const next = current.filter((id) => id !== chip)
+    return next.length ? next : [chip]
+  }
+  return [...current, chip]
+}
 export const TICKETS_KEY = 'hub.desk.tickets.v1'
 export const HITS_KEY = 'hub.desk.hits.v1'
 export const CASH_KEY = 'hub.desk.cash.v1'
@@ -93,6 +121,7 @@ export function hydrateSettings(raw: unknown): DeskSettings {
   return {
     liveBets: o.liveBets === true,
     tapes,
+    betsFilter: hydrateBetsFilter((o as { betsFilter?: unknown }).betsFilter),
   }
 }
 
@@ -128,6 +157,19 @@ export function patchTape(settings: DeskSettings, id: TapeId, patch: Partial<Tap
 
 export function setLiveBets(settings: DeskSettings, liveBets: boolean): DeskSettings {
   return saveSettings({ ...settings, liveBets })
+}
+
+export function applyBetsFilter(settings: DeskSettings, chip: 'all' | TapeId): DeskSettings {
+  const next = saveSettings({ ...settings, betsFilter: nextBetsFilter(settings.betsFilter, chip) })
+  const ls = deskStorage()
+  if (ls) {
+    try {
+      ls.setItem(BETS_FILTER_KEY, JSON.stringify(next.betsFilter))
+    } catch {
+      /* quota */
+    }
+  }
+  return next
 }
 
 /** KILL uses this. Soft FAIL leaving bots armed after KILL. */

@@ -23,7 +23,7 @@ import {
   isAllBetsFilter,
   BETS_FILTER_KEY,
 } from '../src/lib/finance'
-import { GOLD_RECIPES, DEFAULT_SETTINGS, hydrateSettings } from '../src/lib/tapes'
+import { GOLD_RECIPES, DEFAULT_SETTINGS, SETTINGS_KEY, applyBetsFilter, hydrateSettings, loadSettings } from '../src/lib/tapes'
 
 afterEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.clear()
@@ -257,5 +257,12 @@ describe('finance Soft KEEP', () => {
     const all = toggleBetsFilter(plus, 'all')
     expect(isAllBetsFilter(all)).toBe(true)
     expect(saveBetsFilter(['nope' as never])).toEqual(['btc', 'ng', 'cu', 'gld'])
+    const persisted = applyBetsFilter(loadSettings(), 'btc')
+    expect(persisted.betsFilter).toEqual(['btc'])
+    expect(JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}').betsFilter).toEqual(['btc'])
+    expect(applyBetsFilter(persisted, 'ng').betsFilter).toEqual(['btc', 'ng'])
+    expect(loadSettings().betsFilter).toEqual(['btc', 'ng'])
+    expect(loadSettings().liveBets).toBe(false)
+    expect(loadSettings().tapes.btc.armFromMin).toBe(8)
   })
 })

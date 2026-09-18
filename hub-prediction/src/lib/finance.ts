@@ -4,15 +4,55 @@ import {
   GOLD_RECIPES,
   TAPE_IDS,
   TAPE_META,
+  hydrateBetsFilter,
   isRealOrderId,
   isTapeId,
+  nextBetsFilter,
   type DeskTicket,
   type TapeId,
   type TapeRecipe,
 } from './tapes'
 
 export const FINANCE_KEY = 'hub.desk.finance.v1'
-export const BETS_FILTER_KEY = 'hub.desk.betsFilter.v1'
+export {
+  BETS_FILTER_KEY,
+  allBetsFilter,
+  applyBetsFilter,
+  hydrateBetsFilter,
+  isAllBetsFilter,
+  nextBetsFilter,
+} from './tapes'
+
+export function loadBetsFilter(): TapeId[] {
+  const ls = deskStorage()
+  if (!ls) return hydrateBetsFilter(null)
+  try {
+    const fromKey = ls.getItem('hub.desk.betsFilter.v1')
+    if (fromKey) return hydrateBetsFilter(JSON.parse(fromKey))
+    const settings = ls.getItem('hub.desk.settings.v1')
+    if (settings) return hydrateBetsFilter((JSON.parse(settings) as { betsFilter?: unknown }).betsFilter)
+  } catch {
+    /* ignore */
+  }
+  return hydrateBetsFilter(null)
+}
+
+export function saveBetsFilter(ids: readonly TapeId[]): TapeId[] {
+  const next = hydrateBetsFilter([...ids])
+  const ls = deskStorage()
+  if (!ls) return next
+  try {
+    ls.setItem('hub.desk.betsFilter.v1', JSON.stringify(next))
+  } catch {
+    /* quota */
+  }
+  return next
+}
+
+export function toggleBetsFilter(current: readonly TapeId[], chip: 'all' | TapeId): TapeId[] {
+  return saveBetsFilter(nextBetsFilter(current, chip))
+}
+
 export const PAPER_CASH_FLOOR = 50
 export const LIVE_FLOOR_MIN = 150
 export const LIVE_FLOOR_PCT = 0.2
@@ -110,54 +150,6 @@ export function bookRealizedPnl(state: FinanceState) {
   return Math.round(
     state.bets.filter((b) => b.status === 'settled' && b.pnl != null).reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
   ) / 100
-}
-
-export function allBetsFilter(): TapeId[] {
-  return [...TAPE_IDS]
-}
-
-export function isAllBetsFilter(ids: readonly TapeId[]) {
-  return TAPE_IDS.every((id) => ids.includes(id))
-}
-
-export function hydrateBetsFilter(raw: unknown): TapeId[] {
-  if (!Array.isArray(raw)) return allBetsFilter()
-  const ids = [...new Set(raw.filter((v): v is TapeId => typeof v === 'string' && isTapeId(v)))]
-  return ids.length ? ids : allBetsFilter()
-}
-
-export function loadBetsFilter(): TapeId[] {
-  const ls = deskStorage()
-  if (!ls) return allBetsFilter()
-  try {
-    const raw = ls.getItem(BETS_FILTER_KEY)
-    return hydrateBetsFilter(raw ? JSON.parse(raw) : null)
-  } catch {
-    return allBetsFilter()
-  }
-}
-
-export function saveBetsFilter(ids: readonly TapeId[]): TapeId[] {
-  const next = hydrateBetsFilter([...ids])
-  const ls = deskStorage()
-  if (!ls) return next
-  try {
-    ls.setItem(BETS_FILTER_KEY, JSON.stringify(next))
-  } catch {
-    /* quota */
-  }
-  return next
-}
-
-/** All stays visible. Empty selection Soft FAIL — snap back to All. Last tape stays on. */
-export function toggleBetsFilter(current: readonly TapeId[], chip: 'all' | TapeId): TapeId[] {
-  if (chip === 'all') return saveBetsFilter(allBetsFilter())
-  if (isAllBetsFilter(current)) return saveBetsFilter([chip])
-  if (current.includes(chip)) {
-    const next = current.filter((id) => id !== chip)
-    return saveBetsFilter(next.length ? next : [chip])
-  }
-  return saveBetsFilter([...current, chip])
 }
 
 export function last24hBets(
