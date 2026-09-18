@@ -25,12 +25,17 @@ FIRST TIME (do this once)
 
 EVERY TIME AFTER I SHIP A CHANGE
 --------------------------------
-In PowerShell, one line (Ctrl+C the old desk window first):
+In PowerShell, one line (Ctrl+C the old desk window first).
+Use a semicolon — PowerShell does not allow & as a command joiner:
 
-cd C:\Users\Cory\Developer\HubPrediction-iOS; git fetch origin cursor/desk-pnl-bets-charts-be4f; git checkout -B cursor/desk-pnl-bets-charts-be4f FETCH_HEAD; cd hub-prediction; npm.cmd install; npm.cmd run dev
+cd C:\Users\Cory\Developer\HubPrediction-iOS; .\update-desk.bat
 
 Then open http://127.0.0.1:8080 — refresh is safe. A host process stays on 8080 even while Vite restarts.
 If Chrome says refused, the desk window is closed. Double-click start-desk.bat.
+
+Same pull without the bat:
+
+cd C:\Users\Cory\Developer\HubPrediction-iOS; git fetch origin cursor/desk-pnl-bets-charts-be4f; git checkout -B cursor/desk-pnl-bets-charts-be4f FETCH_HEAD; cd hub-prediction; npm.cmd install; npm.cmd run dev
 
 Already pulled and just want to start without git:
 

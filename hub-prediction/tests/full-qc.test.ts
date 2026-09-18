@@ -350,5 +350,8 @@ describe('QC Windows host start Soft FAIL hop off 8080', () => {
     const start = await readFile(new URL('../../start-desk.bat', import.meta.url), 'utf8')
     expect(start).toMatch(/npm\.cmd run dev/)
     expect(start).toMatch(/127\.0\.0\.1:8080/)
+    const hub = await readFile(new URL('../../UPDATE-HUB.txt', import.meta.url), 'utf8')
+    expect(hub).toMatch(/cd C:\\Users\\Cory\\Developer\\HubPrediction-iOS; \.\\update-desk\.bat/)
+    expect(hub).not.toMatch(/HubPrediction-iOS & update-desk/)
   })
 })
