@@ -647,28 +647,6 @@ function TapeRow({
           </div>
         </div>
         <div className="tape-head-tools">
-          <div className="hit-chip" data-testid={`hit-${id}`}>
-            <span className="hit-k">24H</span>
-            <span className="tape-hit">{pct}%</span>
-            <span className="tape-wl" data-testid={`wl-${id}`}>
-              {hits.w}W–{hits.l}L
-            </span>
-          </div>
-          <label className="clock-field glyph-plate">
-            Clock
-            <select
-              className="clock-select"
-              data-testid={`clock-${id}`}
-              value={clock}
-              onChange={(e) => onClock(e.target.value as TapeClock)}
-            >
-              {TAPE_CLOCKS.map((c) => (
-                <option key={c} value={c}>
-                  {CLOCK_LABELS[c]}
-                </option>
-              ))}
-            </select>
-          </label>
           <CloseClock closeAt={quote?.closeAt} />
           <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
             {status}
@@ -678,7 +656,7 @@ function TapeRow({
 
       <div className="tape-marks">
         <div className="mark-beat glyph-plate" data-testid={`beat-${id}`}>
-          <p className="hud-label beat-k" data-testid={`beat-label-${id}`}>
+          <p className="mark-label beat-k" data-testid={`beat-label-${id}`}>
             TO BEAT
           </p>
           <p className="tape-num" data-testid={`beat-value-${id}`}>
@@ -687,7 +665,7 @@ function TapeRow({
           <p className="mark-sub">{quote?.clock || '—'}</p>
         </div>
         <div className="mark-now live-read glyph-plate" data-testid={`live-plate-${id}`}>
-          <p className="hud-label">NOW</p>
+          <p className="mark-label">NOW</p>
           <p className={`tape-num${tone ? ` tone-${tone}` : ''}`} data-testid={`live-${id}`}>
             {formatLive(id, live)}
           </p>
@@ -697,9 +675,33 @@ function TapeRow({
         </div>
       </div>
 
-      <p className="tape-ticket" data-testid={`ticket-${id}`}>
-        {ticket ? `${status} · ${ticket.contracts} · ${ticket.orderId}` : 'No ticket this clock'}
-      </p>
+      <div className="tape-row">
+        <div className="hit-chip" data-testid={`hit-${id}`}>
+          <span className="hit-k">24H</span>
+          <span className="tape-hit">{pct}%</span>
+          <span className="tape-wl" data-testid={`wl-${id}`}>
+            {hits.w}W–{hits.l}L
+          </span>
+        </div>
+        <label className="clock-field glyph-plate">
+          Clock
+          <select
+            className="clock-select"
+            data-testid={`clock-${id}`}
+            value={clock}
+            onChange={(e) => onClock(e.target.value as TapeClock)}
+          >
+            {TAPE_CLOCKS.map((c) => (
+              <option key={c} value={c}>
+                {CLOCK_LABELS[c]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="tape-ticket" data-testid={`ticket-${id}`}>
+          {ticket ? `${status} · ${ticket.contracts} · ${ticket.orderId}` : 'No ticket this clock'}
+        </p>
+      </div>
 
       <div className="tape-reads">
         <div>
