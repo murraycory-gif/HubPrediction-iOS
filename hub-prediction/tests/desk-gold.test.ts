@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanRacePoints, raceDomain } from '../src/components/race-chart'
+import { mergeRaceTrail, pointTime, raceLinePath, MAX_RACE_DOTS } from '../src/lib/race-path'
 import {
   DEFAULT_CLOCK,
   DEFAULT_SETTINGS,
@@ -26,6 +27,7 @@ import {
   inArmWindow,
   formatWeThink,
   lastPrintFromLiveData,
+  pointsFromLiveData,
   loadSettings,
   makePaperTicket,
   makeTicket,
@@ -230,6 +232,23 @@ describe('live $ and asks', () => {
     })
     expect(print?.px).toBeCloseTo(76541.5)
   })
+
+  it('normalizes live_data seconds into a Kalshi print trail', () => {
+    const nowSec = Math.floor(Date.now() / 1000)
+    const pts = pointsFromLiveData({
+      live_data: {
+        details: {
+          last: 76541.2,
+          timeseries: [
+            { t: nowSec - 3, v: 76540.1 },
+            { t: nowSec - 1, v: 76541.2 },
+          ],
+        },
+      },
+    })
+    expect(pts[0]?.t).toBeGreaterThan(1e12)
+    expect(pts[pts.length - 1]?.px).toBeCloseTo(76541.2)
+  })
 })
 
 describe('marketTradingActive Soft KEEP open window', () => {
@@ -366,8 +385,17 @@ describe('gold race path', () => {
     const now = 1_000_000
     const dense = Array.from({ length: 200 }, (_, i) => ({ t: now - (199 - i) * 1000, px: 4358 + (i % 7) * 0.1 }))
     const cleaned = cleanRacePoints(dense, now)
-    expect(cleaned.length).toBeLessThanOrEqual(120)
+    expect(cleaned.length).toBeLessThanOrEqual(MAX_RACE_DOTS)
     expect(cleaned[cleaned.length - 1]?.px).toBeCloseTo(dense[dense.length - 1]!.px)
+    expect(pointTime(1_714_000_000)).toBe(1_714_000_000_000)
+    const held = cleanRacePoints([{ t: now - 4000, px: 4358.2 }], now, 15_000)
+    expect(held[held.length - 1]?.t).toBe(now)
+    expect(held[held.length - 1]?.px).toBeCloseTo(4358.2)
+    const trail = mergeRaceTrail([{ t: now - 2000, px: 4358 }], [{ t: now - 1000, px: 4358.4 }], 4358.8, now)
+    expect(trail[trail.length - 1]?.px).toBeCloseTo(4358.8)
+    const path = raceLinePath(trail, (t) => t / 1000, (px) => px)
+    expect(path.startsWith('M')).toBe(true)
+    expect(path).toContain(' C')
     const hour = Array.from({ length: 40 }, (_, i) => ({ t: now - (39 - i) * 90_000, px: 4358 + i * 0.05 }))
     const hourPts = cleanRacePoints(hour, now, 60 * 60_000)
     expect(hourPts.length).toBeGreaterThan(20)

@@ -82,7 +82,7 @@ import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
 import { formatBetWindow, formatWindowRange } from '../lib/chicago-time'
-import { RaceChart } from './race-chart'
+import { RaceChart, useSmoothedLive } from './race-chart'
 import { SettingsPanel } from './settings-panel'
 import { TapeIcon } from './tape-icon'
 
@@ -152,10 +152,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const boardQuery = useQuery({
     queryKey: ['desk-board', settings.clocks],
     queryFn: () => getDeskBoard({ data: { clocks: settings.clocks } }),
-    refetchInterval: 2000,
+    refetchInterval: 1000,
     placeholderData: keepPreviousData,
     initialData: seedBoard ?? undefined,
-    staleTime: 800,
+    staleTime: 400,
   })
 
   const board = boardQuery.data ?? seedBoard
@@ -605,6 +605,7 @@ function TapeRow({
   const status = ticketStatus(ticket)
   const pct = hitPct(hits)
   const live = quote?.live ?? null
+  const shownLive = useSmoothedLive(live)
   const beat = quote?.beat ?? 0
   const think = weThinkPair(live, beat, quote?.points ?? [])
   const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)
@@ -678,10 +679,10 @@ function TapeRow({
         <div className="mark-now live-read glyph-plate" data-testid={`live-plate-${id}`}>
           <p className="mark-label">NOW</p>
           <p className={`tape-num${tone ? ` tone-${tone}` : ''}`} data-testid={`live-${id}`}>
-            {formatLive(id, live)}
+            {formatLive(id, shownLive)}
           </p>
           <p className={`mark-sub now-delta${tone ? ` tone-${tone}` : ''}`} data-testid={`now-delta-${id}`}>
-            {formatNowDelta(id, live, beat)}
+            {formatNowDelta(id, shownLive, beat)}
           </p>
         </div>
       </div>

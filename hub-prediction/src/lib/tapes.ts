@@ -1,4 +1,5 @@
 import { deskStorage } from './desk-storage'
+import { pointTime } from './race-path'
 
 export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
 export type TapeId = (typeof TAPE_IDS)[number]
@@ -882,6 +883,60 @@ export function lastPrintFromLiveData(payload: unknown): { px: number; source: '
   }
 
   return null
+}
+
+/** Full print trail from Kalshi live_data. Seconds → ms. Keeps 1s candles + ticks. */
+export function pointsFromLiveData(payload: unknown): { t: number; px: number }[] {
+  const root = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
+  const live = (root?.live_data && typeof root.live_data === 'object' ? root.live_data : root) as Record<string, unknown> | null
+  const details = (live?.details && typeof live.details === 'object' ? live.details : live) as Record<string, unknown> | null
+  if (!details) return []
+  const out: Point[] = []
+  const push = (rawT: unknown, rawPx: unknown) => {
+    const t = pointTime(num(rawT) ?? 0)
+    const px = num(rawPx)
+    if (t != null && px != null && px > 0) out.push({ t, px })
+  }
+  const ts = details.timeseries
+  if (Array.isArray(ts)) {
+    for (const row of ts) {
+      if (!row || typeof row !== 'object') continue
+      const r = row as Record<string, unknown>
+      push(r.t ?? r.ts, r.v ?? r.px ?? r.price ?? r.close)
+    }
+  }
+  const ticks = details.ticks ?? details.trades ?? live?.ticks
+  if (Array.isArray(ticks)) {
+    for (const row of ticks) {
+      if (!row || typeof row !== 'object') continue
+      const r = row as Record<string, unknown>
+      push(r.t ?? r.ts ?? r.created_time, r.v ?? r.px ?? r.price ?? r.close)
+    }
+  }
+  const sticks = details.candlesticks
+  const groups = sticks && typeof sticks === 'object' ? (sticks as Record<string, unknown>) : null
+  const series = Array.isArray(groups?.['1S'])
+    ? groups!['1S']
+    : Array.isArray(groups?.['1s'])
+      ? groups!['1s']
+      : Array.isArray(groups?.['1M'])
+        ? groups!['1M']
+        : Array.isArray(groups?.['1m'])
+          ? groups!['1m']
+          : Array.isArray(groups?.['15M'])
+            ? groups!['15M']
+            : []
+  if (Array.isArray(series)) {
+    for (const row of series) {
+      if (!row || typeof row !== 'object') continue
+      const r = row as Record<string, unknown>
+      push(r.open_ts_ms ?? r.t ?? r.ts, r.close ?? r.c ?? r.v ?? r.px)
+    }
+  }
+  out.sort((a, b) => a.t - b.t)
+  const bag = new Map<number, number>()
+  for (const p of out) bag.set(p.t, p.px)
+  return [...bag.entries()].map(([t, px]) => ({ t, px })).sort((a, b) => a.t - b.t).slice(-2400)
 }
 
 /** Soft KEEP: Kalshi status=open|active and now < close. `active` is the open-filter field. */

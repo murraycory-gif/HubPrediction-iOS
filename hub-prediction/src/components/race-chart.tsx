@@ -1,5 +1,10 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatChartTick } from '../lib/chicago-time'
+import {
+  cleanRacePoints,
+  mergeRaceTrail,
+  raceLinePath,
+} from '../lib/race-path'
 import {
   CHART_LABELS,
   CHART_MS,
@@ -16,35 +21,14 @@ import {
 } from '../lib/tapes'
 import type { Point } from '../lib/types'
 
-const MAX_DOTS = 120
+export { cleanRacePoints, MAX_RACE_DOTS as MAX_DOTS } from '../lib/race-path'
+
 const PAD = { l: 8, r: 78, t: 18, b: 24 }
 const TAPE_STROKE: Record<TapeId, string> = {
   btc: '#f7931a',
   ng: '#4ea3ff',
   cu: '#c47a3a',
   gld: '#d4af37',
-}
-
-/** Downsample live prints for the selected Kalshi-style chart window. */
-export function cleanRacePoints(
-  points: Point[] | undefined,
-  now = Date.now(),
-  windowMs = CLOCK_MS[DEFAULT_CLOCK],
-  openAt?: number,
-  closeAt?: number,
-): Point[] {
-  const from = now - windowMs
-  const to = Number.isFinite(closeAt) && (closeAt as number) > 0 ? Math.min(now, closeAt as number) : now
-  const raw = (points ?? []).filter(
-    (p) => p && Number.isFinite(p.t) && Number.isFinite(p.px) && p.px > 0 && p.t >= from - 2000 && p.t <= to + 2000,
-  )
-  if (raw.length <= MAX_DOTS) return raw
-  const step = Math.ceil(raw.length / MAX_DOTS)
-  const out: Point[] = []
-  for (let i = 0; i < raw.length; i += step) out.push(raw[i])
-  const last = raw[raw.length - 1]
-  if (out[out.length - 1]?.t !== last.t) out.push(last)
-  return out
 }
 
 /** Per-tape zoom around BEAT / live. Soft FAIL drawing Gold on a BTC ±$90 scale. */
@@ -70,6 +54,48 @@ export function raceDomain(id: TapeId, beat: number, live: number | null, pts: P
   return { lo, hi }
 }
 
+/** Ease the on-screen NOW print toward the latest Kalshi last. Logic still uses raw live. */
+export function useSmoothedLive(live: number | null, ms = 280) {
+  const [shown, setShown] = useState(live)
+  const shownRef = useRef(live)
+  useEffect(() => {
+    shownRef.current = shown
+  }, [shown])
+  useEffect(() => {
+    if (live == null || !Number.isFinite(live) || live <= 0) {
+      setShown(live)
+      return
+    }
+    const from = shownRef.current
+    if (from == null || !Number.isFinite(from)) {
+      setShown(live)
+      return
+    }
+    if (from === live) return
+    const t0 = performance.now()
+    let raf = 0
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - t0) / ms)
+      const e = 1 - (1 - p) * (1 - p)
+      setShown(from + (live - from) * e)
+      if (p < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [live, ms])
+  return shown
+}
+
+function useWallClock(on: boolean) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!on) return
+    const id = setInterval(() => setNow(Date.now()), 250)
+    return () => clearInterval(id)
+  }, [on])
+  return now
+}
+
 export function RaceChart({
   id,
   beat,
@@ -91,11 +117,26 @@ export function RaceChart({
   closeAt?: number
   onChart?: (chart: ChartRange) => void
 }) {
-  const now = points?.length ? points[points.length - 1]!.t : Date.now()
+  const wall = useWallClock(chart === 'live')
+  const trailRef = useRef<Point[]>([])
+  const [trail, setTrail] = useState<Point[]>([])
+
+  useEffect(() => {
+    trailRef.current = []
+    setTrail([])
+  }, [id, openAt, closeAt])
+
+  useEffect(() => {
+    const next = mergeRaceTrail(trailRef.current, points, live, Date.now())
+    trailRef.current = next
+    setTrail(next)
+  }, [points, live])
+
+  const now = chart === 'live' ? wall : trail.length ? trail[trail.length - 1]!.t : Date.now()
   const windowMs = CHART_MS[chart] ?? CLOCK_MS[clock]
   const pts = useMemo(
-    () => cleanRacePoints(points, now, windowMs, openAt, closeAt),
-    [points, now, windowMs, openAt, closeAt],
+    () => cleanRacePoints(trail.length ? trail : points, now, windowMs, openAt, closeAt),
+    [trail, points, now, windowMs, openAt, closeAt],
   )
   const { lo, hi } = raceDomain(id, beat, live, pts)
   const w = 640
@@ -112,11 +153,9 @@ export function RaceChart({
   const xOf = (t: number) => PAD.l + ((t - start) / span) * innerW
   const yOf = (px: number) => PAD.t + innerH - ((px - lo) / range) * innerH
 
-  const line = pts
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${xOf(p.t).toFixed(1)},${yOf(p.px).toFixed(1)}`)
-    .join(' ')
+  const line = raceLinePath(pts, xOf, yOf)
   const area = pts.length
-    ? `${line} L${xOf(pts[pts.length - 1]!.t).toFixed(1)},${(PAD.t + innerH).toFixed(1)} L${xOf(pts[0]!.t).toFixed(1)},${(PAD.t + innerH).toFixed(1)} Z`
+    ? `${line} L${xOf(pts[pts.length - 1]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} L${xOf(pts[0]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} Z`
     : ''
 
   const beatY = Number.isFinite(beat) && beat > 0 ? yOf(beat) : PAD.t + innerH / 2

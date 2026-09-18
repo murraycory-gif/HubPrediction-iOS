@@ -693,7 +693,7 @@ body {
 }
 
 .race-path {
-  stroke-width: 2.2;
+  stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
@@ -748,6 +748,7 @@ body {
 
 .race-live {
   fill: #00e57a;
+  transition: cx 180ms linear, cy 180ms linear;
 }
 
 .tape-hit,

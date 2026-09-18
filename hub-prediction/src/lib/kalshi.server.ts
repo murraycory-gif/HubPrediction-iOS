@@ -8,12 +8,14 @@ import {
   hydrateClock,
   lastPrintFromLiveData,
   marketTradingActive,
+  pointsFromLiveData,
   num,
   seriesForTape,
   seriesToTape,
   type TapeClock,
   type TapeId,
 } from './tapes'
+import { mergeRaceTrail } from './race-path'
 import type { DeskBoard, Point, Settled, TapeQuote } from './types'
 
 const KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
@@ -83,53 +85,6 @@ function stillOpen(openAt: number, closeAt: number, now: number) {
   return openAt > 0 && closeAt > now && openAt <= now
 }
 
-function pointsFromLive(payload: unknown): Point[] {
-  const root = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
-  const live = (root?.live_data && typeof root.live_data === 'object' ? root.live_data : root) as Record<string, unknown> | null
-  const details = (live?.details && typeof live.details === 'object' ? live.details : live) as Record<string, unknown> | null
-  if (!details) return []
-  const out: Point[] = []
-  const ts = details.timeseries
-  if (Array.isArray(ts)) {
-    for (const row of ts) {
-      if (!row || typeof row !== 'object') continue
-      const t = num((row as { t?: unknown }).t)
-      const px = num((row as { v?: unknown; px?: unknown }).v ?? (row as { px?: unknown }).px)
-      if (t != null && px != null && px > 0) out.push({ t, px })
-    }
-  }
-  const ticks = details.ticks ?? details.trades ?? live?.ticks
-  if (Array.isArray(ticks)) {
-    for (const row of ticks) {
-      if (!row || typeof row !== 'object') continue
-      const t = num((row as { t?: unknown; ts?: unknown }).t ?? (row as { ts?: unknown }).ts)
-      const px = num((row as { v?: unknown; px?: unknown; price?: unknown }).v ?? (row as { px?: unknown }).px ?? (row as { price?: unknown }).price)
-      if (t != null && px != null && px > 0) out.push({ t: t < 1e12 ? t * 1000 : t, px })
-    }
-  }
-  const sticks = details.candlesticks
-  const groups = sticks && typeof sticks === 'object' ? (sticks as Record<string, unknown>) : null
-  const series = Array.isArray(groups?.['1S'])
-    ? groups!['1S']
-    : Array.isArray(groups?.['1M'])
-      ? groups!['1M']
-      : Array.isArray(groups?.['1m'])
-        ? groups!['1m']
-        : Array.isArray(groups?.['15M'])
-          ? groups!['15M']
-          : []
-  if (Array.isArray(series)) {
-    for (const row of series) {
-      if (!row || typeof row !== 'object') continue
-      const t = num((row as { open_ts_ms?: unknown; t?: unknown }).open_ts_ms ?? (row as { t?: unknown }).t)
-      const px = num((row as { close?: unknown }).close)
-      if (t != null && px != null && px > 0) out.push({ t, px })
-    }
-  }
-  out.sort((a, b) => a.t - b.t)
-  return out.slice(-480)
-}
-
 function clocksKey(clocks: Record<TapeId, TapeClock>) {
   return TAPE_IDS.map((id) => clocks[id]).join(',')
 }
@@ -174,21 +129,21 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
 
   let live: number | null = null
   let liveSource: TapeQuote['liveSource'] = null
-  let points: Point[] = []
+  let incoming: Point[] = []
   if (livePayload) {
     const print = lastPrintFromLiveData(livePayload)
     if (print) {
       live = print.px
       liveSource = print.source
     }
-    points = pointsFromLive(livePayload)
+    incoming = pointsFromLiveData(livePayload)
   }
 
   if (live == null && prev?.ticker === ticker && prev.live != null) {
     live = prev.live
     liveSource = prev.liveSource
-    points = prev.points?.length ? prev.points : points
   }
+  const points = mergeRaceTrail(prev?.ticker === ticker ? prev.points : [], incoming, live, now)
 
   return {
     id,
