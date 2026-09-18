@@ -10,6 +10,7 @@ import {
   askInBand,
   cashGates,
   claimSend,
+  clampContracts,
   depositsFromPayload,
   disarmAllBots,
   eventsFromKalshiSettlements,
@@ -44,6 +45,7 @@ import {
   type DeskTicket,
   type SendClaim,
   type TapeId,
+  type TapeRecipe,
 } from '../lib/tapes'
 import { ticketCost } from '../lib/size-cash'
 import type { DeskBoard, TapeQuote } from '../lib/types'
@@ -65,6 +67,7 @@ import {
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
+import { RaceChart } from './race-chart'
 import { SettingsPanel } from './settings-panel'
 
 function readLocal(key: string) {
@@ -88,6 +91,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [settingsOpen, setSettingsOpen] = useState(true)
   const [book, setBook] = useState<FinanceState>(() => loadFinance())
   const [liveConfirm, setLiveConfirm] = useState(false)
+  const [bets, setBets] = useState<TapeId[] | 'all'>('all')
   const sentRef = useRef<Record<string, SendClaim>>({})
 
   useEffect(() => {
@@ -265,11 +269,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   })
   const pulseQuote = liveTicket ? board?.tapes[liveTicket.tape] : board?.tapes.btc
   const pulse = pulseTone(liveTicket, pulseQuote?.live ?? null)
+  const visible = bets === 'all' ? TAPE_IDS : TAPE_IDS.filter((id) => bets.includes(id))
 
   return (
     <div className="desk">
       <header className="desk-head" data-testid="desk-head">
-        <div className="brand-row">
+        <div className="brand-bar">
           <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
           <button
             type="button"
@@ -282,9 +287,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         </div>
         <div className="stat-row">
           <Stat
-            label="P&L / DEPOSITS"
+            label="P&L VS DEPOSITS"
             value={`${formatPnl(cash.pnl)} from ${formatCash(cash.deposits)}`}
             testId="pnl"
+            tone={cash.pnl != null && cash.pnl < 0 ? 'down' : cash.pnl != null && cash.pnl > 0 ? 'up' : undefined}
           />
           <Stat label="TTL 24H" value={`${ttl.pct}% ${ttl.w}W–${ttl.l}L`} testId="ttl" />
           <Stat label="KALSHI CASH" value={formatCash(cash.cash)} testId="kalshi-cash" />
@@ -334,15 +340,60 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       </header>
 
       <main className="desk-main">
-        {TAPE_IDS.map((id) => (
-          <TapeRow
-            key={id}
-            id={id}
-            quote={board?.tapes[id] ?? null}
-            ticket={ticketFor(tickets, id, board?.tapes[id]?.ticker)}
-            hits={hits.tapes[id]}
-          />
-        ))}
+        <div className="bets-filter" data-testid="bets-filter">
+          <button
+            type="button"
+            className={`chip-btn ${bets === 'all' ? 'toggle-on' : ''}`}
+            data-testid="filter-all"
+            onClick={() => setBets('all')}
+          >
+            All
+          </button>
+          {TAPE_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              className={`chip-btn ${bets !== 'all' && bets.includes(id) ? 'toggle-on' : ''}`}
+              data-testid={`filter-${id}`}
+              onClick={() => {
+                setBets((prev) => {
+                  if (prev === 'all') return [id]
+                  const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+                  return next.length === 0 || next.length === TAPE_IDS.length ? 'all' : next
+                })
+              }}
+            >
+              {TAPE_META[id].label}
+            </button>
+          ))}
+        </div>
+
+        <div className="tape-grid">
+          {visible.map((id) => (
+            <TapeRow
+              key={id}
+              id={id}
+              quote={board?.tapes[id] ?? null}
+              ticket={ticketFor(tickets, id, board?.tapes[id]?.ticker)}
+              hits={hits.tapes[id]}
+              recipe={settings.tapes[id]}
+              liveBets={settings.liveBets}
+              recipeLocked={chasingLosses(book) || book.killed}
+              onTape={(patch) => {
+                if (book.killed && patch.botOn) {
+                  setMsg('KILL on — bots stay off')
+                  return
+                }
+                const gate = recipeRetuneGate(book, patch)
+                if (!gate.ok) {
+                  setMsg(gate.reason)
+                  return
+                }
+                setSettings(patchTape(settings, id, patch))
+              }}
+            />
+          ))}
+        </div>
 
         <PulseCard
           ticket={liveTicket}
@@ -417,11 +468,21 @@ function ticketFor(tickets: DeskTicket[], id: TapeId, ticker?: string) {
   return tickets.find((t) => t.tape === id && t.ticker === ticker)
 }
 
-function Stat({ label, value, testId }: { label: string; value: string; testId: string }) {
+function Stat({
+  label,
+  value,
+  testId,
+  tone,
+}: {
+  label: string
+  value: string
+  testId: string
+  tone?: 'up' | 'down'
+}) {
   return (
     <div className="stat" data-testid={testId}>
       <p className="hud-label">{label}</p>
-      <p className="stat-value">{value}</p>
+      <p className={`stat-value ${tone ? `tone-${tone}` : ''}`}>{value}</p>
     </div>
   )
 }
@@ -431,48 +492,144 @@ function TapeRow({
   quote,
   ticket,
   hits,
+  recipe,
+  liveBets,
+  recipeLocked,
+  onTape,
 }: {
   id: TapeId
   quote: TapeQuote | null
   ticket: DeskTicket | undefined
   hits: { w: number; l: number }
+  recipe: TapeRecipe
+  liveBets: boolean
+  recipeLocked: boolean
+  onTape: (patch: Partial<TapeRecipe>) => void
 }) {
   const status = ticketStatus(ticket)
   const pct = hitPct(hits)
   const live = quote?.live ?? null
   const beat = quote?.beat ?? 0
-  const delta = live != null && beat ? live - beat : null
+  const think = weThinkPair(live, beat, quote?.points ?? [])
+  const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)
+  const [draft, setDraft] = useState(recipe.contracts)
+  useEffect(() => {
+    setDraft(recipe.contracts)
+  }, [recipe.contracts])
+
+  function saveContracts(raw: number = draft) {
+    const n = clampContracts(Number(raw))
+    setDraft(n)
+    onTape({ contracts: n })
+  }
+
   return (
     <article className="tape" data-testid={`tape-${id}`}>
       <div className="tape-row">
+        <div className="hit-chip" data-testid={`hit-${id}`}>
+          <span className="hit-k">24H</span>
+          <span className="tape-hit">{pct}%</span>
+          <span className="tape-wl" data-testid={`wl-${id}`}>
+            {hits.w}W–{hits.l}L
+          </span>
+        </div>
         <p className="tape-name">
           {TAPE_META[id].label} · {quote?.clock || '—'}
-        </p>
-        <p className="tape-hit" data-testid={`hit-${id}`}>
-          {pct}%
         </p>
         <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
           {status}
         </p>
-        <p className="tape-wl" data-testid={`wl-${id}`}>
-          {hits.w}W–{hits.l}L
+        <p className="tape-ticket" data-testid={`ticket-${id}`}>
+          {ticket
+            ? `${status} · ${ticket.contracts} · ${ticket.orderId}`
+            : 'No ticket this clock'}
         </p>
         <CloseClock closeAt={quote?.closeAt} />
         <p className="tape-num" data-testid={`beat-${id}`}>
           BEAT {formatLive(id, beat || null)}
         </p>
-        <p className="tape-num" data-testid={`live-${id}`}>
-          {formatLive(id, live)}
-        </p>
       </div>
+
+      <div className="tape-reads">
+        <div>
+          <p className="hud-label">LIVE</p>
+          <p className="tape-num" data-testid={`live-${id}`}>
+            {formatLive(id, live)}
+          </p>
+        </div>
+        <div>
+          <p className="hud-label">WE THINK</p>
+          <p className="tape-think" data-testid={`we-think-${id}`}>
+            {formatWeThink(id, think.live, think.ahead)}
+          </p>
+        </div>
+        <div className="tape-cents">
+          <p className="hud-label">UP / DOWN ¢</p>
+          <p className="tape-ask" data-testid={`ask-${id}`}>
+            <span className="tone-up">UP {Number.isFinite(quote?.yesAsk) ? `${quote!.yesAsk}¢` : '—'}</span>
+            <span className="tone-down">DOWN {Number.isFinite(quote?.noAsk) ? `${quote!.noAsk}¢` : '—'}</span>
+          </p>
+        </div>
+      </div>
+
+      <RaceChart id={id} beat={beat} live={live} points={quote?.points} />
+
       <p className="tape-line">
-        {status} live {formatLive(id, live)} vs BEAT {formatLive(id, beat || null)}
-        {delta != null ? ` (${delta >= 0 ? '+' : ''}${formatLive(id, Math.abs(delta)).replace('$', '')})` : ''}
-        {' · '}UP {Number.isFinite(quote?.yesAsk) ? `${quote!.yesAsk}¢` : '—'} / DOWN{' '}
-        {Number.isFinite(quote?.noAsk) ? `${quote!.noAsk}¢` : '—'}
-        {' · '}
-        {ticket ? `${ticket.contracts} ${ticket.side.toUpperCase()}` : 'ticket none'}
+        {paper ? 'PAPER · bot on / live cash or master off · not sent to Kalshi' : recipe.botOn ? 'bot armed' : 'bot OFF'}
+        {ticket ? ` · live ticket ${ticket.orderId}` : ''}
       </p>
+
+      <div className="tape-controls">
+        <label className={`toggle ${recipe.botOn ? 'toggle-on' : ''}`}>
+          <input
+            type="checkbox"
+            data-testid={`bot-${id}`}
+            checked={recipe.botOn}
+            onChange={(e) => onTape({ botOn: e.target.checked })}
+          />
+          Bot {recipe.botOn ? 'ON' : 'OFF'}
+        </label>
+        <label className={`toggle ${recipe.liveOn ? 'toggle-hot' : ''}`}>
+          <input
+            type="checkbox"
+            data-testid={`live-cash-${id}`}
+            checked={recipe.liveOn}
+            onChange={(e) => onTape({ liveOn: e.target.checked })}
+          />
+          Live cash {recipe.liveOn ? 'ON' : 'OFF'}
+        </label>
+        <label className="contracts-field">
+          Contracts
+          <input
+            className="field field-contracts"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={99}
+            data-testid={`contracts-${id}`}
+            value={draft}
+            disabled={recipeLocked}
+            onChange={(e) => {
+              const n = clampContracts(Number(e.target.value))
+              setDraft(n)
+              onTape({ contracts: n })
+            }}
+            onBlur={() => saveContracts()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveContracts()
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className="chip-btn"
+          data-testid={`save-${id}`}
+          disabled={recipeLocked}
+          onClick={() => saveContracts()}
+        >
+          Save
+        </button>
+      </div>
     </article>
   )
 }
@@ -491,10 +648,12 @@ function PulseCard({
     [quote?.live, quote?.beat, quote?.fetchedAt],
   )
   const vs = quote?.live != null && quote.beat ? quote.live - quote.beat : null
+  const vsLabel = quote
+    ? `${TAPE_META[quote.id].short} VS LINE`
+    : 'VS LINE'
   if (tone === 'quiet' || !ticket) {
     return (
       <section className="pulse pulse-quiet" data-testid="pulse">
-        <p className="hud-label">Pulse</p>
         <p className="pulse-title">{quote ? TAPE_META[quote.id].pulseName : 'PULSE'}</p>
         <div className="pulse-grid">
           <div>
@@ -506,10 +665,10 @@ function PulseCard({
             <p data-testid="we-think">{quote ? formatWeThink(quote.id, think.live, think.ahead) : '—'}</p>
           </div>
           <div>
-            <p className="hud-label">VS LINE</p>
+            <p className="hud-label">{vsLabel}</p>
             <p>
               {quote && vs != null
-                ? `${vs >= 0 ? '+' : ''}${formatLive(quote.id, Math.abs(vs)).replace('$', '')}`
+                ? `${vs >= 0 ? '+' : ''}${formatLive(quote.id, Math.abs(vs))}`
                 : '—'}
             </p>
           </div>
@@ -536,14 +695,14 @@ function PulseCard({
           <p>{formatLive(ticket.tape, ticket.beat)}</p>
         </div>
         <div>
-          <p className="hud-label">LIVE</p>
-          <p>{formatLive(ticket.tape, quote?.live ?? null)}</p>
+          <p className="hud-label">WE THINK</p>
+          <p data-testid="we-think">{formatWeThink(ticket.tape, think.live, think.ahead)}</p>
         </div>
         <div>
-          <p className="hud-label">VS LINE</p>
+          <p className="hud-label">{TAPE_META[ticket.tape].short} VS LINE</p>
           <p>
             {quote?.live != null
-              ? `${quote.live - ticket.beat >= 0 ? '+' : ''}${formatLive(ticket.tape, Math.abs(quote.live - ticket.beat)).replace('$', '')}`
+              ? `${quote.live - ticket.beat >= 0 ? '+' : ''}${formatLive(ticket.tape, Math.abs(quote.live - ticket.beat))}`
               : '—'}
           </p>
         </div>

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { cleanRacePoints, raceDomain } from '../src/components/race-chart'
 import {
   DEFAULT_SETTINGS,
   GOLD_RECIPES,
@@ -256,6 +257,20 @@ describe('arm / pulse / send tab', () => {
   it('extracts Kalshi order_id from place payload', () => {
     expect(extractOrderId({ order: { order_id: 'deadbeef-1111-2222' } })).toBe('deadbeef-1111-2222')
     expect(extractOrderId({ order_id: 'short' })).toBeNull()
+  })
+})
+
+describe('gold race path', () => {
+  it('downsamples a scribbled 1s series and zooms Gold around its own BEAT', () => {
+    const now = 1_000_000
+    const dense = Array.from({ length: 200 }, (_, i) => ({ t: now - (199 - i) * 1000, px: 4358 + (i % 7) * 0.1 }))
+    const cleaned = cleanRacePoints(dense, now)
+    expect(cleaned.length).toBeLessThanOrEqual(50)
+    expect(cleaned[cleaned.length - 1]?.px).toBeCloseTo(dense[dense.length - 1]!.px)
+    const gold = raceDomain('gld', 4358, 4360, cleaned)
+    expect(gold.hi - gold.lo).toBeLessThan(40)
+    const btc = raceDomain('btc', 76500, 76540, [{ t: now, px: 76520 }])
+    expect(btc.hi - btc.lo).toBeGreaterThan(70)
   })
 })
 
