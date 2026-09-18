@@ -600,13 +600,16 @@ function TapeRow({
             : 'No ticket this clock'}
         </p>
         <CloseClock closeAt={quote?.closeAt} />
-        <p className="tape-num" data-testid={`beat-${id}`}>
-          BEAT {formatLive(id, beat || null)}
+        <p className="tape-num glyph-plate" data-testid={`beat-${id}`}>
+          <span className="beat-k" data-testid={`beat-label-${id}`}>
+            BEAT
+          </span>{' '}
+          <span data-testid={`beat-value-${id}`}>{formatLive(id, beat || null)}</span>
         </p>
       </div>
 
       <div className="tape-reads">
-        <div>
+        <div className="live-read glyph-plate" data-testid={`live-plate-${id}`}>
           <p className="hud-label">LIVE</p>
           <p className="tape-num" data-testid={`live-${id}`}>
             {formatLive(id, live)}

@@ -42,6 +42,11 @@ describe('HARD QA 1–10', () => {
     expect(css).toMatch(/content:\s*none/)
     expect(css).toMatch(/grid-template-columns:\s*repeat\(3/)
     expect(css).toMatch(/\.scoreboard-row \.stat \{[\s\S]*flex-direction:\s*column/)
+    expect(css).toMatch(/\.brand-bar \{[\s\S]*overflow:\s*hidden/)
+    expect(css).toMatch(/\.glyph-plate/)
+    expect(css).toMatch(/\.beat-k/)
+    expect(dash).toMatch(/glyph-plate/)
+    expect(dash).toMatch(/beat-k/)
   })
 
   it('2 recipes stay gold — Soft FAIL rewrite', () => {

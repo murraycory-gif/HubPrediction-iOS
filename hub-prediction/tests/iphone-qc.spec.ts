@@ -34,6 +34,40 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   expect(rainIso.titleZ).toBeGreaterThan(rainIso.rainZ)
   expect(rainIso.titleBg).not.toMatch(/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)|transparent/i)
   expect(rainIso.plateBg).not.toMatch(/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)|transparent/i)
+  const plates = await page.evaluate(() => {
+    const rain = document.querySelector('[data-testid="rain"]') as HTMLElement
+    const title = document.querySelector('[data-testid="desk-title"]') as HTMLElement
+    const beat = document.querySelector('[data-testid="beat-label-btc"]') as HTMLElement
+    const live = document.querySelector('[data-testid="live-plate-btc"]') as HTMLElement
+    const rr = rain.getBoundingClientRect()
+    const hit = (el: HTMLElement) => {
+      const b = el.getBoundingClientRect()
+      return !(b.right <= rr.left || b.left >= rr.right || b.bottom <= rr.top || b.top >= rr.bottom)
+    }
+    const opaque = (el: HTMLElement) => {
+      const bg = getComputedStyle(el).backgroundColor
+      return !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)|transparent/i.test(bg)
+    }
+    return {
+      titleText: (title.textContent || '').trim(),
+      beatText: (beat.textContent || '').trim(),
+      rainHitsBeat: hit(beat),
+      rainHitsLive: hit(live),
+      rainBottom: rr.bottom,
+      beatTop: beat.getBoundingClientRect().top,
+      beatPlate: opaque(beat) || opaque(beat.closest('.glyph-plate') as HTMLElement),
+      livePlate: opaque(live),
+    }
+  })
+  expect(plates.titleText).toBe('HUB / PREDICTIONS')
+  expect(plates.titleText).not.toMatch(/HUBEB|PREDICTTIONS|HUBPREDICTIONS/)
+  expect(plates.beatText).toBe('BEAT')
+  expect(plates.beatText).not.toMatch(/BEATET/)
+  expect(plates.rainHitsBeat).toBe(false)
+  expect(plates.rainHitsLive).toBe(false)
+  expect(plates.rainBottom).toBeLessThan(plates.beatTop)
+  expect(plates.beatPlate).toBe(true)
+  expect(plates.livePlate).toBe(true)
   const head = page.getByTestId('desk-head')
   const box = await head.boundingBox()
   expect(box?.y).toBeLessThanOrEqual(2)
@@ -364,4 +398,50 @@ test('phone desk: boot first-paints cash when keys present — no Settings tap, 
   for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
     await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()
   }
+})
+
+test('desktop desk: rain stays behind wordmark and BEAT/LIVE plates — Live OFF', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
+  await expect(page.getByTestId('desk-title')).not.toHaveText(/HUBEB|PREDICTTIONS|HUBPREDICTIONS/)
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await expect(page.locator('.rain-col')).toHaveCount(0)
+  for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+    await expect(page.getByTestId(`beat-label-${id}`)).toHaveText('BEAT')
+    await expect(page.getByTestId(`beat-label-${id}`)).not.toHaveText(/BEATET/)
+    await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()
+  }
+  const iso = await page.evaluate(() => {
+    const rain = document.querySelector('[data-testid="rain"]') as HTMLElement
+    const rr = rain.getBoundingClientRect()
+    const hit = (sel: string) => {
+      const el = document.querySelector(sel) as HTMLElement
+      const b = el.getBoundingClientRect()
+      return !(b.right <= rr.left || b.left >= rr.right || b.bottom <= rr.top || b.top >= rr.bottom)
+    }
+    const opaque = (sel: string) => {
+      const bg = getComputedStyle(document.querySelector(sel) as HTMLElement).backgroundColor
+      return !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)|transparent/i.test(bg)
+    }
+    return {
+      rainHitsBeat: hit('[data-testid="beat-label-btc"]'),
+      rainHitsLive: hit('[data-testid="live-plate-btc"]'),
+      titlePlate: opaque('[data-testid="desk-title"]'),
+      wordPlate: opaque('[data-testid="wordmark"]'),
+      beatPlate: opaque('[data-testid="beat-btc"]'),
+      livePlate: opaque('[data-testid="live-plate-btc"]'),
+      rainBottom: rr.bottom,
+      beatTop: (document.querySelector('[data-testid="beat-label-btc"]') as HTMLElement).getBoundingClientRect().top,
+    }
+  })
+  expect(iso.rainHitsBeat).toBe(false)
+  expect(iso.rainHitsLive).toBe(false)
+  expect(iso.titlePlate).toBe(true)
+  expect(iso.wordPlate).toBe(true)
+  expect(iso.beatPlate).toBe(true)
+  expect(iso.livePlate).toBe(true)
+  expect(iso.rainBottom).toBeLessThan(iso.beatTop)
+  await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/desk-desktop-isolated.png', fullPage: false })
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
 })

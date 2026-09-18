@@ -58,6 +58,8 @@ body {
 .brand-bar {
   position: relative;
   z-index: 1;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -102,7 +104,7 @@ body {
   min-width: 0;
   background: #020403;
   mix-blend-mode: normal;
-  padding: 4px 8px 4px 0;
+  padding: 4px 10px 4px 0;
 }
 
 .desk-head h1 {
@@ -116,7 +118,27 @@ body {
   color: var(--up);
   background: #020403;
   mix-blend-mode: normal;
+  background-clip: padding-box;
+  -webkit-font-smoothing: antialiased;
   white-space: nowrap;
+  padding: 2px 6px 2px 0;
+}
+
+.glyph-plate {
+  position: relative;
+  z-index: 2;
+  isolation: isolate;
+  background: #0c1110;
+  mix-blend-mode: normal;
+  background-clip: padding-box;
+  padding: 2px 6px 2px 0;
+}
+
+.beat-k {
+  display: inline-block;
+  background: #0c1110;
+  mix-blend-mode: normal;
+  padding: 0 4px 0 0;
 }
 
 .brand-actions {
@@ -647,9 +669,13 @@ button {
 }
 
 @media (min-width: 1100px) {
+  .wordmark {
+    padding: 6px 14px 6px 0;
+  }
   .desk-head h1 {
     font-size: 22px;
     letter-spacing: 0.12em;
+    padding: 3px 8px 3px 0;
   }
   .tape-grid {
     grid-template-columns: 1fr 1fr;
