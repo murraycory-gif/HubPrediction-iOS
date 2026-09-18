@@ -573,7 +573,7 @@ export function profitImpact(t: TapeNote, askCents?: number | null) {
   if (!t.changed) {
     return {
       headline: `${evLabel} expected per ${ask}¢ take at ${HIT_FLOOR}%`,
-      detail: `Keep these rules. At ${HIT_FLOOR}% a ${ask}¢ contract is about ${evLabel}. Sitting a hug keeps ${missLabel} in cash instead of a miss. That is how the desk grows dollars.`,
+      detail: `Keep these rules. At ${HIT_FLOOR}% a ${ask}¢ contract is about ${evLabel}. Sitting a hug keeps ${missLabel} in cash instead of a miss. That is how the desk grows dollars. Accept does not flip Live.`,
       tone: ev >= 0 ? ('up' as const) : ('down' as const),
       ev,
     }
