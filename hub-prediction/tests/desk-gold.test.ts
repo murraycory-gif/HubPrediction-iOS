@@ -376,6 +376,29 @@ describe('gold race path', () => {
     expect(btc.hi - btc.lo).toBeGreaterThan(70)
   })
 
+  it('settlement cost in cents does not inflate spent to dollars', () => {
+    const now = Date.now()
+    const ev = eventsFromKalshiSettlements(
+      {
+        settlements: [
+          {
+            ticker: 'KXBTC15M-CENTS',
+            market_result: 'yes',
+            yes_count_fp: '1',
+            no_count_fp: '0',
+            yes_total_cost: 72,
+            revenue: 100,
+            settled_time: new Date(now - 1000).toISOString(),
+          },
+        ],
+      },
+      now,
+    )
+    expect(ev[0]?.spent).toBeCloseTo(0.72)
+    expect(ev[0]?.pnl).toBeCloseTo(0.28)
+    expect(hydrateSettings(null).liveBets).toBe(false)
+  })
+
   it('NOW is green below TO BEAT and red above — Kalshi chips LIVE/5M/15M/1H', () => {
     expect(nowTone(80935.21, 81005.03)).toBe('up')
     expect(nowTone(81040, 81005.03)).toBe('down')

@@ -535,12 +535,18 @@ export function eventsFromKalshiSettlements(raw: unknown, now = Date.now(), minA
     const revenueDollars = num(s.revenue_dollars) ?? num(s.revenue_fp)
     const revenue =
       revenueDollars != null
-        ? revenueDollars
+        ? kalshiMoney(revenueDollars, 'dollars')
         : num(s.revenue) != null
-          ? Number(s.revenue) / 100
+          ? kalshiMoney(s.revenue, 'cents')
           : 0
-    const yesCost = settlementDollars(s.yes_total_cost_dollars) || settlementDollars(s.yes_total_cost)
-    const noCost = settlementDollars(s.no_total_cost_dollars) || settlementDollars(s.no_total_cost)
+    const yesCost =
+      num(s.yes_total_cost_dollars) != null
+        ? kalshiMoney(s.yes_total_cost_dollars, 'dollars')
+        : kalshiMoney(s.yes_total_cost, 'cents')
+    const noCost =
+      num(s.no_total_cost_dollars) != null
+        ? kalshiMoney(s.no_total_cost_dollars, 'dollars')
+        : kalshiMoney(s.no_total_cost, 'cents')
     const spent = Math.round((yesCost + noCost) * 100) / 100
     const hasFill = yes > 0 || no > 0 || spent > 0 || revenue > 0
     if (!hasFill) continue
@@ -612,6 +618,15 @@ export function saveHits(hits: HitLatch) {
 function settlementDollars(v: unknown) {
   const n = num(v)
   if (n == null) return 0
+  if (Number.isInteger(n) && Math.abs(n) >= 1000) return n / 100
+  return n
+}
+
+/** Kalshi money: *_dollars stay dollars; legacy integer fields are cents. */
+export function kalshiMoney(v: unknown, unit: 'dollars' | 'cents'): number {
+  const n = num(v)
+  if (n == null) return 0
+  if (unit === 'cents') return n / 100
   if (Number.isInteger(n) && Math.abs(n) >= 1000) return n / 100
   return n
 }

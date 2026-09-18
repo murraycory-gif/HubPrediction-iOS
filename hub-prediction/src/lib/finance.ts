@@ -399,13 +399,23 @@ function clockFromTicker(ticker: string) {
 function dollarsFrom(row: Record<string, unknown>, dollarKeys: string[], centKeys: string[] = []) {
   for (const key of dollarKeys) {
     const n = num(row[key])
-    if (n != null) return n
+    if (n != null) return Number.isInteger(n) && Math.abs(n) >= 1000 ? n / 100 : n
   }
   for (const key of centKeys) {
     const n = num(row[key])
     if (n != null) return n / 100
   }
   return 0
+}
+
+function fillPriceDollars(row: Record<string, unknown>, dollarKey: string, centKey: string) {
+  const d = num(row[dollarKey])
+  if (d != null) {
+    if (Number.isInteger(d) && d >= 1 && d <= 99) return d / 100
+    return d
+  }
+  const c = num(row[centKey])
+  return c != null ? c / 100 : 0
 }
 
 function fillSide(row: Record<string, unknown>): 'up' | 'down' {
@@ -431,8 +441,8 @@ export function betsFromKalshiFills(raw: unknown, fromMs = 0): BookedBet[] {
     if (at && at < fromMs) continue
     const side = fillSide(row)
     const count = Math.abs(num(row.count_fp) ?? num(row.count) ?? 0)
-    const yesPx = dollarsFrom(row, ['yes_price_dollars'], ['yes_price'])
-    const noPx = dollarsFrom(row, ['no_price_dollars'], ['no_price'])
+    const yesPx = fillPriceDollars(row, 'yes_price_dollars', 'yes_price')
+    const noPx = fillPriceDollars(row, 'no_price_dollars', 'no_price')
     const px = side === 'up' ? yesPx || noPx : noPx || yesPx
     const spent = Math.round(count * px * 100) / 100
     const orderId = String(row.order_id ?? row.fill_id ?? row.trade_id ?? `fill-${ticker}`).trim()
@@ -554,7 +564,7 @@ export function mergeKalshiHistoryToBook(
       side: b.side,
       count: b.count || cur.count,
       ask: b.ask || cur.ask,
-      spent: b.spent || cur.spent,
+      spent: cur.spent || b.spent,
       orderId: isRealOrderId(b.orderId) ? b.orderId : cur.orderId,
       filledAt: Math.min(cur.filledAt || b.filledAt, b.filledAt || cur.filledAt),
     })

@@ -638,21 +638,50 @@ body {
   color: var(--up);
 }
 
+.bets-log-wrap {
+  margin-top: 10px;
+}
+
 .bets-log {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   display: grid;
-  gap: 4px;
+  gap: 2px;
+  max-height: 28rem;
+  overflow: auto;
 }
 
 .bets-log-row {
   display: grid;
-  grid-template-columns: 3rem 3.2rem 4.5rem 1fr;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
+  align-items: center;
+  padding: 6px 4px;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink);
+}
+
+.bets-log-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bets-log-row > span:nth-child(4),
+.bets-log-row > span:nth-child(5) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.bets-log-head {
+  color: var(--mute);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid rgba(0, 229, 122, 0.16);
+  padding-bottom: 8px;
 }
 
 .race-beat {

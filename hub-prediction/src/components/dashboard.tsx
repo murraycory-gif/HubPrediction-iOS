@@ -461,14 +461,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           placed={bets24.placed}
           w={bets24.w}
           l={bets24.l}
-          pnl={bets24.pnl}
+          pnl={isAllBetsFilter(settings.betsFilter) && cash.pnl != null ? cash.pnl : bets24.pnl}
           open={bets24.open}
           pct={bets24.pct}
           rows={book.bets
             .filter((b) => settings.betsFilter.includes(b.tape))
             .slice()
-            .sort((a, b) => (b.filledAt || b.settledAt || 0) - (a.filledAt || a.settledAt || 0))
-            .slice(0, 120)}
+            .sort((a, b) => (b.filledAt || b.settledAt || 0) - (a.filledAt || a.settledAt || 0))}
           filter={settings.betsFilter}
           onFilter={(chip) => setSettings((cur) => applyBetsFilter(cur, chip))}
         />
@@ -832,7 +831,7 @@ function Bets24Strip({
   const allOn = isAllBetsFilter(filter)
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
-      <p className="hud-label">Bets since first deposit · hit floor {HIT_FLOOR}%</p>
+      <p className="hud-label">Bets since first deposit · P&L is cash − deposits · hit floor {HIT_FLOOR}%</p>
       <div className="bets-filter" data-testid="bets-filter">
         <button
           type="button"
@@ -861,25 +860,48 @@ function Bets24Strip({
       </div>
       <div className="scoreboard-row">
         <Stat label="PLACED" value={placed > 0 || open > 0 ? formatCash(placed) : '—'} testId="bets-placed" />
-        <Stat label="WINS–LOSSES" value={`${w}W–${l}L · ${open} open`} testId="bets-wl" />
+        <Stat
+          label="WINS–LOSSES"
+          value={`${w}W–${l}L · ${open} open${w + l > 0 ? ` · ${pct}%${pct > 0 && pct < HIT_FLOOR ? ` <${HIT_FLOOR}%` : ''}` : ''}`}
+          testId="bets-wl"
+        />
         <Stat
           label="P&L"
-          value={w + l === 0 && placed === 0 ? '—' : `${formatPnl(pnl)} · ${pct}%${pct > 0 && pct < HIT_FLOOR ? ` <${HIT_FLOOR}%` : ''}`}
+          value={w + l === 0 && placed === 0 && pnl === 0 ? '—' : formatPnl(pnl)}
           testId="bets-pnl"
           tone={pnl < 0 ? 'down' : pnl > 0 ? 'up' : undefined}
         />
       </div>
       {rows.length ? (
-        <ul className="bets-log" data-testid="bets-log">
-          {rows.map((b) => (
-            <li key={b.betId} className="bets-log-row">
-              <span>{b.tape.toUpperCase()}</span>
-              <span>{b.side.toUpperCase()}</span>
-              <span>{b.status === 'open' ? 'OPEN' : (b.pnl ?? 0) >= 0 ? 'WIN' : 'LOSS'}</span>
-              <span>{b.status === 'settled' && b.pnl != null ? formatPnl(b.pnl) : formatCash(b.spent)}</span>
-            </li>
-          ))}
-        </ul>
+        <div className="bets-log-wrap">
+          <div className="bets-log-row bets-log-head" aria-hidden>
+            <span>TAPE</span>
+            <span>SIDE</span>
+            <span>RESULT</span>
+            <span>SPENT</span>
+            <span>P&L</span>
+          </div>
+          <ul className="bets-log" data-testid="bets-log">
+            {rows.map((b) => {
+              const settled = b.status === 'settled' && b.pnl != null
+              const result = b.status === 'open' ? 'OPEN' : (b.pnl ?? 0) > 0 ? 'WIN' : (b.pnl ?? 0) < 0 ? 'LOSS' : 'PUSH'
+              const rowPnl = settled ? (b.pnl as number) : null
+              return (
+                <li key={b.betId} className="bets-log-row">
+                  <span>{b.tape.toUpperCase()}</span>
+                  <span>{b.side.toUpperCase()}</span>
+                  <span>{result}</span>
+                  <span>{formatCash(b.spent)}</span>
+                  <span
+                    className={rowPnl == null ? undefined : rowPnl > 0 ? 'tone-up' : rowPnl < 0 ? 'tone-down' : undefined}
+                  >
+                    {rowPnl == null ? '—' : formatPnl(rowPnl)}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       ) : (
         <p className="settings-note">No Kalshi fills since first deposit. Soft FAIL Live POST.</p>
       )}
