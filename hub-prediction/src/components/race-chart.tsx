@@ -1,10 +1,21 @@
 import { useMemo } from 'react'
-import { CLOCK_MS, DEFAULT_CLOCK, TAPE_META, type TapeClock, type TapeId } from '../lib/tapes'
+import {
+  CHART_LABELS,
+  CHART_MS,
+  CHART_RANGES,
+  CLOCK_MS,
+  DEFAULT_CHART,
+  DEFAULT_CLOCK,
+  TAPE_META,
+  type ChartRange,
+  type TapeClock,
+  type TapeId,
+} from '../lib/tapes'
 import type { Point } from '../lib/types'
 
-const MAX_DOTS = 48
+const MAX_DOTS = 80
 
-/** Downsample live prints for the selected Kalshi window. Soft FAIL a hard-coded 15m clip on 1h. */
+/** Downsample live prints for the selected Kalshi-style chart window. */
 export function cleanRacePoints(
   points: Point[] | undefined,
   now = Date.now(),
@@ -12,7 +23,7 @@ export function cleanRacePoints(
   openAt?: number,
   closeAt?: number,
 ): Point[] {
-  const from = Number.isFinite(openAt) && (openAt as number) > 0 ? (openAt as number) : now - windowMs
+  const from = now - windowMs
   const to = Number.isFinite(closeAt) && (closeAt as number) > 0 ? Math.min(now, closeAt as number) : now
   const raw = (points ?? []).filter(
     (p) => p && Number.isFinite(p.t) && Number.isFinite(p.px) && p.px > 0 && p.t >= from - 2000 && p.t <= to + 2000,
@@ -55,28 +66,32 @@ export function RaceChart({
   live,
   points,
   clock = DEFAULT_CLOCK,
+  chart = DEFAULT_CHART,
   openAt,
   closeAt,
+  onChart,
 }: {
   id: TapeId
   beat: number
   live: number | null
   points?: Point[]
   clock?: TapeClock
+  chart?: ChartRange
   openAt?: number
   closeAt?: number
+  onChart?: (chart: ChartRange) => void
 }) {
   const now = points?.length ? points[points.length - 1]!.t : Date.now()
-  const windowMs = CLOCK_MS[clock]
+  const windowMs = CHART_MS[chart] ?? CLOCK_MS[clock]
   const pts = useMemo(
     () => cleanRacePoints(points, now, windowMs, openAt, closeAt),
     [points, now, windowMs, openAt, closeAt],
   )
   const { lo, hi } = raceDomain(id, beat, live, pts)
-  const w = 320
-  const h = 72
-  const start = Number.isFinite(openAt) && (openAt as number) > 0 ? (openAt as number) : (pts[0]?.t ?? now - windowMs)
-  const end = Number.isFinite(closeAt) && (closeAt as number) > 0 ? (closeAt as number) : Math.max(now, pts[pts.length - 1]?.t ?? now)
+  const w = 640
+  const h = 168
+  const start = now - windowMs
+  const end = now
   const span = Math.max(1, end - start)
   const range = Math.max(1e-9, hi - lo)
 
@@ -94,6 +109,20 @@ export function RaceChart({
 
   return (
     <div className={`race race-${id}`} data-testid={`race-${id}`} aria-label={`${TAPE_META[id].label} race`}>
+      <div className="chart-ranges" data-testid={`chart-range-${id}`}>
+        {CHART_RANGES.map((r) => (
+          <button
+            key={r}
+            type="button"
+            className={`chart-range glyph-plate${chart === r ? ' toggle-on' : ''}`}
+            data-testid={`chart-range-${id}-${r}`}
+            aria-pressed={chart === r}
+            onClick={() => onChart?.(r)}
+          >
+            {CHART_LABELS[r]}
+          </button>
+        ))}
+      </div>
       <svg viewBox={`0 0 ${w} ${h}`} className="race-svg" role="img">
         <line x1="0" y1={beatY} x2={w} y2={beatY} className="race-beat" />
         {path ? (
@@ -101,8 +130,13 @@ export function RaceChart({
         ) : (
           <line x1="0" y1={h / 2} x2={w} y2={h / 2} className="race-empty" />
         )}
-        {liveY != null ? <circle className="race-live" cx={w - 3} cy={liveY} r="2.4" /> : null}
+        {liveY != null ? <circle className="race-live" cx={w - 6} cy={liveY} r="4.2" /> : null}
       </svg>
+      <p className="chart-key">
+        <span className="chart-key-beat">BEAT</span>
+        <span className="chart-key-live">LIVE</span>
+        <span>{CHART_LABELS[chart]}</span>
+      </p>
     </div>
   )
 }

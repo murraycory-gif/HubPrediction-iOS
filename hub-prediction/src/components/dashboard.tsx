@@ -13,6 +13,7 @@ import {
   claimSend,
   clampContracts,
   disarmAllBots,
+  eventsFromKalshiSettlements,
   eventsFromTickets,
   extractOrderId,
   formatCash,
@@ -27,6 +28,7 @@ import {
   hydrateSettings,
   loadSettings,
   loadTickets,
+  makePaperTicket,
   makeTicket,
   markFilled,
   mergeHitEvents,
@@ -34,6 +36,7 @@ import {
   releaseClaim,
   saveHits,
   setLiveBets,
+  setTapeChart,
   setTapeClock,
   tabIsOpen,
   tapeLean,
@@ -44,6 +47,7 @@ import {
   type DeskSettings,
   type DeskTicket,
   type SendClaim,
+  type ChartRange,
   type TapeClock,
   type TapeId,
   type TapeRecipe,
@@ -56,8 +60,10 @@ import {
   engageKill,
   chasingLosses,
   isAllBetsFilter,
+  HIT_FLOOR,
   last24hBets,
   liveArmGate,
+  mergeSettlementEventsToBook,
   liveSendGate,
   loadFinance,
   recipeRetuneGate,
@@ -95,6 +101,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     setCash(next.cash)
     setHits(next.hits)
     if (r.hostCreds === true) setHostCreds(true)
+    const life = eventsFromKalshiSettlements(r.settlements, Date.now(), next.cash.firstDepositAt ?? 0)
+    if (life.length) setBook((prev) => mergeSettlementEventsToBook(prev, life))
   }
 
   useLayoutEffect(() => {
@@ -190,6 +198,36 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     if (ev.length) setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
     setBook((prev) => settleBook(prev, recent))
   }, [settledQuery.data, tickets])
+
+  function sendPaper(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
+    if (!tabIsOpen() || !quote.ticker) return
+    const ticket = makePaperTicket({
+      tape,
+      ticker: quote.ticker,
+      side,
+      contracts: settings.tapes[tape].contracts,
+      beat: quote.beat,
+    })
+    if (!ticket) {
+      releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
+      return
+    }
+    const ask = side === 'down' ? quote.noAsk : quote.yesAsk
+    markFilled(sentRef.current, `${tape}:${quote.ticker}`, ticket.orderId)
+    setTickets((prev) => upsertTicket(prev, ticket))
+    const booked = bookFill(book, {
+      tape,
+      ticker: quote.ticker,
+      clock: quote.clock,
+      closeAt: quote.closeAt,
+      side,
+      count: ticket.contracts,
+      ask,
+      orderId: ticket.orderId,
+    })
+    if (booked.ok) setBook(booked.state)
+    setMsg(`${TAPE_META[tape].label} PAPER ${side.toUpperCase()} ${ticket.orderId}`)
+  }
 
   async function sendLive(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
     if (!tabIsOpen()) {
@@ -287,14 +325,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       if (!askInBand(ask, gold)) continue
       const key = `${id}:${quote.ticker}`
       const gates = cashGates(settings, id)
-      if (!gates.ok) continue
       if (claimSend(sentRef.current, key) !== 'send') continue
-      void sendLive(id, lean, quote)
+      if (gates.ok) void sendLive(id, lean, quote)
+      else if (!settings.liveBets && !recipe.liveOn) sendPaper(id, lean, quote)
     }
   }, [board?.fetchedAt, settings, tickets, book.killed])
 
   const ttl = ttlFromHits(hits)
-  const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter)
+  const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter, cash.firstDepositAt ?? 0)
 
   return (
     <div className="desk">
@@ -334,8 +372,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           <Stat
             label="P&L VS DEPOSITS"
             value={
-              cash.pnl == null && cash.deposits == null
-                ? '—'
+              cash.pnl == null || cash.deposits == null
+                ? cash.cash != null && cash.deposits == null
+                  ? `${formatCash(cash.cash)} cash · deposits pending`
+                  : '—'
                 : `${formatPnl(cash.pnl)} from ${formatCash(cash.deposits)}`
             }
             testId="pnl"
@@ -387,9 +427,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               hits={hits.tapes[id]}
               recipe={settings.tapes[id]}
               clock={settings.clocks[id]}
+              chart={settings.charts?.[id] ?? '20m'}
               liveBets={settings.liveBets}
               recipeLocked={chasingLosses(book) || book.killed}
               onClock={(next) => setSettings(setTapeClock(settings, id, next))}
+              onChart={(next) => setSettings(setTapeChart(settings, id, next))}
               onTape={(patch) => {
                 if (book.killed && patch.botOn) {
                   setMsg('KILL on — bots stay off')
@@ -411,6 +453,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           w={bets24.w}
           l={bets24.l}
           pnl={bets24.pnl}
+          open={bets24.open}
+          pct={bets24.pct}
+          rows={book.bets
+            .filter((b) => settings.betsFilter.includes(b.tape))
+            .slice()
+            .sort((a, b) => (b.filledAt || 0) - (a.filledAt || 0))
+            .slice(0, 24)}
           filter={settings.betsFilter}
           onFilter={(chip) => setSettings((cur) => applyBetsFilter(cur, chip))}
         />
@@ -521,9 +570,11 @@ function TapeRow({
   hits,
   recipe,
   clock,
+  chart,
   liveBets,
   recipeLocked,
   onClock,
+  onChart,
   onTape,
 }: {
   id: TapeId
@@ -532,9 +583,11 @@ function TapeRow({
   hits: { w: number; l: number }
   recipe: TapeRecipe
   clock: TapeClock
+  chart: ChartRange
   liveBets: boolean
   recipeLocked: boolean
   onClock: (clock: TapeClock) => void
+  onChart: (chart: ChartRange) => void
   onTape: (patch: Partial<TapeRecipe>) => void
 }) {
   const status = ticketStatus(ticket)
@@ -630,13 +683,15 @@ function TapeRow({
         live={live}
         points={quote?.points}
         clock={clock}
+        chart={chart}
         openAt={quote?.openAt}
         closeAt={quote?.closeAt}
+        onChart={onChart}
       />
 
       {paper || ticket ? (
         <p className="tape-banner glyph-plate" data-testid={`banner-${id}`}>
-          {ticket ? `LIVE ${status}` : 'PAPER'}
+          {ticket ? `${ticket.orderId.startsWith('deskfill') ? 'PAPER' : 'LIVE'} ${status}` : 'PAPER'}
         </p>
       ) : null}
 
@@ -708,6 +763,9 @@ function Bets24Strip({
   w,
   l,
   pnl,
+  open,
+  pct,
+  rows,
   filter,
   onFilter,
 }: {
@@ -715,13 +773,24 @@ function Bets24Strip({
   w: number
   l: number
   pnl: number
+  open: number
+  pct: number
+  rows: Array<{
+    betId: string
+    tape: TapeId
+    ticker: string
+    side: 'up' | 'down'
+    status: 'open' | 'settled'
+    spent: number
+    pnl: number | null
+  }>
   filter: TapeId[]
   onFilter: (chip: 'all' | TapeId) => void
 }) {
   const allOn = isAllBetsFilter(filter)
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
-      <p className="hud-label">Last 24H bets</p>
+      <p className="hud-label">Bets since first deposit · hit floor {HIT_FLOOR}%</p>
       <div className="bets-filter" data-testid="bets-filter">
         <button
           type="button"
@@ -749,15 +818,29 @@ function Bets24Strip({
         })}
       </div>
       <div className="scoreboard-row">
-        <Stat label="PLACED" value={placed > 0 ? formatCash(placed) : '—'} testId="bets-placed" />
-        <Stat label="WINS–LOSSES" value={`${w}W–${l}L`} testId="bets-wl" />
+        <Stat label="PLACED" value={placed > 0 || open > 0 ? formatCash(placed) : '—'} testId="bets-placed" />
+        <Stat label="WINS–LOSSES" value={`${w}W–${l}L · ${open} open`} testId="bets-wl" />
         <Stat
-          label="P&L 24H"
-          value={w + l === 0 && placed === 0 ? '—' : formatPnl(pnl)}
+          label="P&L"
+          value={w + l === 0 && placed === 0 ? '—' : `${formatPnl(pnl)} · ${pct}%${pct > 0 && pct < HIT_FLOOR ? ` <${HIT_FLOOR}%` : ''}`}
           testId="bets-pnl"
           tone={pnl < 0 ? 'down' : pnl > 0 ? 'up' : undefined}
         />
       </div>
+      {rows.length ? (
+        <ul className="bets-log" data-testid="bets-log">
+          {rows.map((b) => (
+            <li key={b.betId} className="bets-log-row">
+              <span>{b.tape.toUpperCase()}</span>
+              <span>{b.side.toUpperCase()}</span>
+              <span>{b.status === 'open' ? 'OPEN' : (b.pnl ?? 0) >= 0 ? 'WIN' : 'LOSS'}</span>
+              <span>{b.status === 'settled' && b.pnl != null ? formatPnl(b.pnl) : formatCash(b.spent)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="settings-note">No desk bets yet. Bot ON + Live cash OFF books paper fills. Soft FAIL Live POST.</p>
+      )}
     </section>
   )
 }

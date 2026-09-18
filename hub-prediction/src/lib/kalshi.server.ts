@@ -148,7 +148,7 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
     fetchJson<unknown>(`${KALSHI}/markets/${encodeURIComponent(ticker)}`, TICKER_ABORT).catch(() => null),
     eventTicker
       ? fetchJson<unknown>(
-          `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=${CLOCK_LIVE_RANGE[clock]}`,
+          `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=${clock === '5m' ? CLOCK_LIVE_RANGE['5m'] : '1h'}`,
           LIVE_ABORT,
         ).catch(() => null)
       : Promise.resolve(null),

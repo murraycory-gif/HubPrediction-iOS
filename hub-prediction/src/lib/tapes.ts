@@ -36,6 +36,43 @@ export const CLOCK_LIVE_RANGE: Record<TapeClock, string> = {
   '1h': '1h',
 }
 
+export const CHART_RANGES = ['live', '5m', '10m', '20m', '1h'] as const
+export type ChartRange = (typeof CHART_RANGES)[number]
+export const DEFAULT_CHART: ChartRange = '20m'
+export const CHART_LABELS: Record<ChartRange, string> = {
+  live: 'Live',
+  '5m': '5m',
+  '10m': '10m',
+  '20m': '20m',
+  '1h': '1h',
+}
+export const CHART_MS: Record<ChartRange, number> = {
+  live: 90_000,
+  '5m': 5 * 60_000,
+  '10m': 10 * 60_000,
+  '20m': 20 * 60_000,
+  '1h': 60 * 60_000,
+}
+
+export function isChartRange(v: unknown): v is ChartRange {
+  return typeof v === 'string' && (CHART_RANGES as readonly string[]).includes(v)
+}
+
+export function hydrateChartRange(raw: unknown): ChartRange {
+  return isChartRange(raw) ? raw : DEFAULT_CHART
+}
+
+export function defaultChartRanges(): Record<TapeId, ChartRange> {
+  return { btc: DEFAULT_CHART, ng: DEFAULT_CHART, cu: DEFAULT_CHART, gld: DEFAULT_CHART }
+}
+
+export function hydrateChartRanges(raw: unknown): Record<TapeId, ChartRange> {
+  const o = raw && typeof raw === 'object' ? (raw as Partial<Record<TapeId, unknown>>) : {}
+  const next = defaultChartRanges()
+  for (const id of TAPE_IDS) next[id] = hydrateChartRange(o[id])
+  return next
+}
+
 /** Kalshi series per tape clock. 15m is gold. 5m/1h use the listed Kalshi ticker when it exists. */
 export const TAPE_SERIES: Record<TapeId, Record<TapeClock, string>> = {
   btc: { '5m': 'KXBTC5M', '15m': 'KXBTC15M', '1h': 'KXBTCD' },
@@ -72,6 +109,7 @@ export type DeskSettings = {
   tapes: Record<TapeId, TapeRecipe>
   betsFilter: TapeId[]
   clocks: Record<TapeId, TapeClock>
+  charts: Record<TapeId, ChartRange>
 }
 
 export const TAPE_META: Record<
@@ -102,6 +140,7 @@ export const DEFAULT_SETTINGS: DeskSettings = {
   },
   betsFilter: allBetsFilter(),
   clocks: defaultClocks(),
+  charts: defaultChartRanges(),
 }
 
 export const SETTINGS_KEY = 'hub.desk.settings.v1'
@@ -178,6 +217,7 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     tapes,
     betsFilter: hydrateBetsFilter((o as { betsFilter?: unknown }).betsFilter),
     clocks: hydrateClocks((o as { clocks?: unknown }).clocks),
+    charts: hydrateChartRanges((o as { charts?: unknown }).charts),
   }
 }
 
@@ -219,6 +259,13 @@ export function setTapeClock(settings: DeskSettings, id: TapeId, clock: TapeCloc
   return saveSettings({
     ...settings,
     clocks: { ...hydrateClocks(settings.clocks), [id]: hydrateClock(clock) },
+  })
+}
+
+export function setTapeChart(settings: DeskSettings, id: TapeId, chart: ChartRange): DeskSettings {
+  return saveSettings({
+    ...settings,
+    charts: { ...hydrateChartRanges(settings.charts), [id]: hydrateChartRange(chart) },
   })
 }
 
@@ -341,6 +388,18 @@ export function isRealOrderId(id: unknown): id is string {
   return true
 }
 
+/** Local paper fill. Soft FAIL Live POST. Id must not start with paper/arm. */
+export function makePaperTicket(input: {
+  tape: TapeId
+  ticker: string
+  side: 'up' | 'down'
+  contracts: number
+  beat: number
+}): DeskTicket | null {
+  const orderId = `deskfill-${input.tape}-${Math.random().toString(36).slice(2, 10)}`
+  return makeTicket({ ...input, orderId })
+}
+
 /** Soft FAIL ARMING as a fill. Soft FAIL ticket without a real Kalshi order id. */
 export function makeTicket(input: {
   tape: TapeId
@@ -447,7 +506,7 @@ function settlementAt(s: Record<string, unknown>, now: number) {
   return Number.isFinite(parsed) ? parsed : now
 }
 
-export function eventsFromKalshiSettlements(raw: unknown, now = Date.now()): HitEvent[] {
+export function eventsFromKalshiSettlements(raw: unknown, now = Date.now(), minAt = now - TTL_MS): HitEvent[] {
   const root = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
   const nested = root && typeof root.data === 'object' ? (root.data as Record<string, unknown>) : null
   const list = Array.isArray(root?.settlements)
@@ -464,7 +523,7 @@ export function eventsFromKalshiSettlements(raw: unknown, now = Date.now()): Hit
     const tape = seriesToTape(ticker)
     if (!tape) continue
     const at = settlementAt(s, now)
-    if (at < now - TTL_MS) continue
+    if (at < minAt) continue
     const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? num(s.yes_total_cost_fp) ?? 0
     const no = num(s.no_count_fp) ?? num(s.no_count) ?? num(s.no_total_cost_fp) ?? 0
     const result = String(s.market_result ?? s.result ?? '').toLowerCase()
@@ -554,15 +613,18 @@ export function hydrateHitsFromKalshiCash(raw: unknown, prev: HitLatch = loadHit
 }
 
 export function hydrateCashFromKalshi(
-  raw: { cash?: number | null; deposits?: unknown; settlements?: unknown },
+  raw: { cash?: number | null; deposits?: unknown; settlements?: unknown; raw?: unknown },
   prev: CashLatch = loadCash(),
 ): { cash: CashLatch; hits: HitLatch } {
-  const deposits = depositsFromPayload(raw.deposits) ?? prev.deposits
+  const meta = depositsMeta(raw.deposits) ?? depositsMeta(raw.raw) ?? null
+  const deposits = meta?.total ?? depositsFromPayload(raw.deposits) ?? depositsFromPayload(raw.raw) ?? prev.deposits
+  const firstDepositAt = meta?.firstAt ?? prev.firstDepositAt
   const cashAmt = Number.isFinite(raw.cash as number) ? Number(raw.cash) : prev.cash
   const cash = saveCash({
     cash: cashAmt,
     deposits,
-    pnl: cashAmt != null && deposits != null ? cashAmt - deposits : prev.pnl,
+    firstDepositAt,
+    pnl: cashAmt != null && deposits != null ? Math.round((cashAmt - deposits) * 100) / 100 : prev.pnl,
     asOf: Date.now(),
   })
   return { cash, hits: hydrateHitsFromKalshiCash(raw.settlements ?? raw, loadHits()) }
@@ -584,23 +646,34 @@ export function hitPct(cell: HitCell) {
   return n ? Math.round((cell.w / n) * 100) : 0
 }
 
-export type CashLatch = { cash: number | null; pnl: number | null; deposits: number | null; asOf: number }
+export type CashLatch = {
+  cash: number | null
+  pnl: number | null
+  deposits: number | null
+  firstDepositAt: number | null
+  asOf: number
+}
+
+function emptyCash(): CashLatch {
+  return { cash: null, pnl: null, deposits: null, firstDepositAt: null, asOf: 0 }
+}
 
 export function loadCash(): CashLatch {
   const ls = deskStorage()
-  if (!ls) return { cash: null, pnl: null, deposits: null, asOf: 0 }
+  if (!ls) return emptyCash()
   try {
     const raw = ls.getItem(CASH_KEY)
-    if (!raw) return { cash: null, pnl: null, deposits: null, asOf: 0 }
+    if (!raw) return emptyCash()
     const o = JSON.parse(raw) as CashLatch
     return {
       cash: Number.isFinite(o.cash) ? Number(o.cash) : null,
       pnl: Number.isFinite(o.pnl) ? Number(o.pnl) : null,
       deposits: Number.isFinite(o.deposits) ? Number(o.deposits) : null,
+      firstDepositAt: Number.isFinite(o.firstDepositAt) ? Number(o.firstDepositAt) : null,
       asOf: Number(o.asOf) || 0,
     }
   } catch {
-    return { cash: null, pnl: null, deposits: null, asOf: 0 }
+    return emptyCash()
   }
 }
 
@@ -615,27 +688,70 @@ export function saveCash(cash: CashLatch) {
   return cash
 }
 
-export function depositsFromPayload(raw: unknown): number | null {
-  if (!raw || typeof raw !== 'object') return null
+function depositRowDollars(d: Record<string, unknown>) {
+  const dollars =
+    num(d.amount_dollars) ?? num(d.deposit_dollars) ?? num(d.usd) ?? num(d.amount_usd) ?? num(d.value_dollars)
+  if (dollars != null) return dollars
+  const cents = num(d.amount) ?? num(d.deposit) ?? num(d.amount_cents) ?? num(d.value)
+  if (cents == null) return 0
+  if (Number.isInteger(cents) && Math.abs(cents) >= 50) return cents / 100
+  return cents
+}
+
+function depositRowAt(d: Record<string, unknown>) {
+  const raw = d.created_ts ?? d.ts ?? d.timestamp ?? d.created_time ?? d.deposit_time ?? d.settled_time
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw < 1e12 ? raw * 1000 : raw
+  const parsed = Date.parse(String(raw ?? ''))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function depositsMeta(raw: unknown): { total: number; firstAt: number | null } | null {
+  if (raw == null) return null
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const total = Number.isInteger(raw) && Math.abs(raw) >= 1000 ? raw / 100 : raw
+    return { total, firstAt: null }
+  }
+  if (typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   const nested = o.data && typeof o.data === 'object' ? (o.data as Record<string, unknown>) : null
+  const flat = Object.assign({}, o, nested || {})
+  for (const key of ['lifetime_deposits', 'total_deposits', 'deposited', 'deposit_total', 'deposits_dollars']) {
+    const n = num(flat[key])
+    if (n != null && !Array.isArray(flat[key])) {
+      const total = Number.isInteger(n) && Math.abs(n) >= 1000 ? n / 100 : n
+      return { total, firstAt: null }
+    }
+  }
   const list = Array.isArray(o.deposits)
     ? (o.deposits as Record<string, unknown>[])
     : Array.isArray(nested?.deposits)
       ? (nested.deposits as Record<string, unknown>[])
-      : []
-  if (!list.length) return null
-  let sum = 0
-  for (const d of list) {
-    const dollars = num(d.amount_dollars) ?? num(d.deposit_dollars)
-    if (dollars != null) {
-      sum += dollars
-      continue
+      : Array.isArray(o.deposit_history)
+        ? (o.deposit_history as Record<string, unknown>[])
+        : Array.isArray(nested?.deposit_history)
+          ? (nested.deposit_history as Record<string, unknown>[])
+          : []
+  if (!list.length) {
+    const n = num(flat.deposits)
+    if (n != null) {
+      const total = Number.isInteger(n) && Math.abs(n) >= 1000 ? n / 100 : n
+      return { total, firstAt: null }
     }
-    const cents = num(d.amount) ?? num(d.deposit)
-    if (cents != null) sum += cents > 50 ? cents / 100 : cents
+    return null
   }
-  return sum
+  let sum = 0
+  let firstAt: number | null = null
+  for (const d of list) {
+    if (!d || typeof d !== 'object') continue
+    sum += depositRowDollars(d)
+    const at = depositRowAt(d)
+    if (at != null && (firstAt == null || at < firstAt)) firstAt = at
+  }
+  return { total: Math.round(sum * 100) / 100, firstAt }
+}
+
+export function depositsFromPayload(raw: unknown): number | null {
+  return depositsMeta(raw)?.total ?? null
 }
 
 export function seriesToTape(seriesOrTicker: string): TapeId | null {

@@ -59,6 +59,7 @@ export const LIVE_FLOOR_PCT = 0.2
 export const ASK_CAP = 80
 export const PAPER_HOURS = 48
 export const DAILY_PNL_FLOOR_PAPER = -50
+export const HIT_FLOOR = 85
 
 export type BookedBet = {
   betId: string
@@ -157,11 +158,13 @@ export function last24hBets(
   hits: { tapes: Record<TapeId, { w: number; l: number }>; events?: Array<{ tape: TapeId; at: number; spent?: number; pnl?: number }> },
   now = Date.now(),
   tapes: readonly TapeId[] = TAPE_IDS,
+  fromMs?: number,
 ) {
   const allow = new Set(hydrateBetsFilter([...tapes]))
-  const from = now - 24 * 60 * 60 * 1000
+  const from = Number.isFinite(fromMs) ? Number(fromMs) : now - 24 * 60 * 60 * 1000
   const recent = state.bets.filter((b) => allow.has(b.tape) && (b.filledAt || b.settledAt || 0) >= from)
   const settled = recent.filter((b) => b.status === 'settled')
+  const open = recent.filter((b) => b.status === 'open').length
   const bookW = settled.filter((b) => (b.pnl ?? 0) > 0).length
   const bookL = settled.filter((b) => (b.pnl ?? 0) < 0).length
   const selected = TAPE_IDS.filter((id) => allow.has(id))
@@ -178,7 +181,9 @@ export function last24hBets(
     recent.length > 0
       ? Math.round(settled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
       : Math.round(ev.reduce((s, e) => s + (Number(e.pnl) || 0), 0) * 100) / 100
-  return { placed, w, l, pnl }
+  const n = w + l
+  const pct = n ? Math.round((w / n) * 100) : 0
+  return { placed, w, l, pnl, open, pct }
 }
 
 export function dailyRealizedPnl(state: FinanceState, now = Date.now()) {
@@ -325,6 +330,36 @@ export function syncTicketsIntoBook(state: FinanceState, tickets: DeskTicket[], 
     if (booked.ok) next = booked.state
   }
   return next
+}
+
+export function mergeSettlementEventsToBook(
+  state: FinanceState,
+  events: Array<{ tape: TapeId; ticker: string; win: boolean; at: number; spent?: number; pnl?: number }>,
+): FinanceState {
+  const have = new Set(state.bets.map((b) => b.ticker))
+  const extra: BookedBet[] = []
+  for (const e of events) {
+    if (have.has(e.ticker)) continue
+    have.add(e.ticker)
+    extra.push({
+      betId: `kalshi:${e.ticker}`,
+      tape: e.tape,
+      ticker: e.ticker,
+      clock: '',
+      closeAt: e.at,
+      side: e.win ? 'up' : 'down',
+      count: 1,
+      ask: 50,
+      spent: e.spent ?? 0,
+      orderId: `settled-${e.ticker}`.slice(0, 48),
+      status: 'settled',
+      pnl: e.pnl ?? (e.win ? 0 : 0),
+      filledAt: e.at,
+      settledAt: e.at,
+    })
+  }
+  if (!extra.length) return state
+  return saveFinance({ ...state, bets: [...state.bets, ...extra] })
 }
 
 export function settleBook(

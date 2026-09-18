@@ -13,8 +13,9 @@ export function SettingsPanel(props: {
     <section className="settings" data-testid="settings">
       <p className="hud-label">Settings · same desk on phone</p>
       <p className="settings-note">
-        Bot, live cash, and contracts sit on each tape card. Kalshi keys live on the Windows host (env or
-        .secrets) — Soft FAIL paste PEM in the browser. Live bets stay OFF unless you confirm Live.
+        Bot, live cash, and contracts sit on each tape card. Gold recipes stay locked. For paper test: Bot ON,
+        Live cash OFF, master Live OFF. Kalshi keys live on the Windows host. Soft FAIL paste PEM. Soft FAIL
+        Live POST. Hit floor 85% is a scoreboard mark — recipes are not rewritten.
         {props.recipeLocked ? ' Recipe lock on — Soft FAIL chase retune after a loss / KILL.' : ''}
       </p>
 

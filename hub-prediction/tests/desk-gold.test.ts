@@ -23,6 +23,7 @@ import {
   formatWeThink,
   lastPrintFromLiveData,
   loadSettings,
+  makePaperTicket,
   makeTicket,
   marketTradingActive,
   patchTape,
@@ -360,7 +361,7 @@ describe('gold race path', () => {
     const now = 1_000_000
     const dense = Array.from({ length: 200 }, (_, i) => ({ t: now - (199 - i) * 1000, px: 4358 + (i % 7) * 0.1 }))
     const cleaned = cleanRacePoints(dense, now)
-    expect(cleaned.length).toBeLessThanOrEqual(50)
+    expect(cleaned.length).toBeLessThanOrEqual(80)
     expect(cleaned[cleaned.length - 1]?.px).toBeCloseTo(dense[dense.length - 1]!.px)
     const hour = Array.from({ length: 40 }, (_, i) => ({ t: now - (39 - i) * 90_000, px: 4358 + i * 0.05 }))
     const hourPts = cleanRacePoints(hour, now, 60 * 60_000)
@@ -453,6 +454,30 @@ describe('Kalshi-settled 24h latch', () => {
     expect(desk.cash.cash).toBe(200)
     expect(desk.hits.tapes.ng.w).toBe(1)
     expect(hydrateSettings(null).liveBets).toBe(false)
+  })
+
+  it('P&L vs deposits reads cents deposits and first deposit time', () => {
+    const now = Date.now()
+    const desk = hydrateCashFromKalshi({
+      cash: 293.37,
+      deposits: {
+        deposits: [
+          { amount: 76000, created_ts: Math.floor((now - 40 * 86400000) / 1000) },
+        ],
+      },
+    })
+    expect(desk.cash.deposits).toBeCloseTo(760)
+    expect(desk.cash.pnl).toBeCloseTo(293.37 - 760)
+    expect(desk.cash.firstDepositAt).toBeGreaterThan(0)
+    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(GOLD_RECIPES.btc.centLo).toBe(69)
+  })
+
+  it('paper ticket books without a Kalshi POST id prefix', () => {
+    const t = makePaperTicket({ tape: 'btc', ticker: 'KXBTC15M-PAPER', side: 'up', contracts: 1, beat: 80000 })
+    expect(t?.orderId.startsWith('deskfill-')).toBe(true)
+    expect(t?.orderId).not.toMatch(/^paper/i)
+    expect(hydrateSettings(null).tapes.btc.liveOn).toBe(false)
   })
 
   it('Last 24H strip uses settlement spent / P&L when the phone book is empty', () => {

@@ -162,6 +162,8 @@ describe('finance Soft KEEP', () => {
         },
       ],
     }
+    const sinceDeposit = last24hBets(state, hits, now, undefined, now - 40 * 60 * 60 * 1000)
+    expect(sinceDeposit.placed).toBeCloseTo(10.71)
     const strip = last24hBets(state, hits, now)
     expect(strip.placed).toBeCloseTo(0.72)
     expect(strip.w).toBe(4)

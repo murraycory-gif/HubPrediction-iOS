@@ -482,7 +482,62 @@ body {
 .race-svg {
   display: block;
   width: 100%;
-  height: 72px;
+  height: 168px;
+}
+
+.chart-ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 8px 0;
+}
+
+.chart-range {
+  min-height: 36px;
+  min-width: 52px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #0c1110;
+  color: var(--ink);
+  border: 1px solid rgba(0, 229, 122, 0.16);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.chart-key {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  padding: 4px 10px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--mute);
+}
+
+.chart-key-beat {
+  color: #d4af37;
+}
+
+.chart-key-live {
+  color: var(--up);
+}
+
+.bets-log {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.bets-log-row {
+  display: grid;
+  grid-template-columns: 3rem 3.2rem 4.5rem 1fr;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
 }
 
 .race-beat {
