@@ -641,6 +641,12 @@ body {
 .bets-log-wrap {
   margin-top: 10px;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.bets-log-scroll {
+  min-width: 44rem;
 }
 
 .bets-log {
@@ -650,19 +656,22 @@ body {
   display: grid;
   gap: 2px;
   max-height: 28rem;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .bets-log-row {
   display: grid;
-  grid-template-columns: 4.2rem minmax(12.5rem, 2fr) 4.6rem 4.8rem 4.8rem 5rem 5.2rem 5.2rem;
-  gap: 8px;
+  grid-template-columns: 3.4rem minmax(11.5rem, 2.2fr) 3.8rem 4.2rem 4.6rem minmax(4.6rem, 1fr) minmax(4.8rem, 1fr) minmax(4.4rem, 1fr);
+  gap: 6px;
   align-items: center;
   padding: 6px 4px;
   font-family: var(--mono);
   font-size: 13px;
   color: var(--ink);
-  min-width: 58rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .bets-log-row > span {
@@ -673,8 +682,8 @@ body {
 }
 
 .bets-log-row > span.bets-window {
-  overflow: visible;
-  text-overflow: unset;
+  overflow: hidden;
+  text-overflow: clip;
   white-space: nowrap;
 }
 

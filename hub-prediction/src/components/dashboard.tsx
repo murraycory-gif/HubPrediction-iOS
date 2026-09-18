@@ -913,17 +913,18 @@ function Bets24Strip({
       </div>
       {rows.length ? (
         <div className="bets-log-wrap">
-          <div className="bets-log-row bets-log-head" aria-hidden>
-            <span>TAPE</span>
-            <span>WINDOW</span>
-            <span>SIDE</span>
-            <span>RESULT</span>
-            <span>MODE</span>
-            <span>SPENT</span>
-            <span>P&L</span>
-            <span>CASH</span>
-          </div>
-          <ul className="bets-log" data-testid="bets-log">
+          <div className="bets-log-scroll">
+            <div className="bets-log-row bets-log-head" aria-hidden>
+              <span>TAPE</span>
+              <span>WINDOW</span>
+              <span>SIDE</span>
+              <span>RESULT</span>
+              <span>MODE</span>
+              <span>SPENT</span>
+              <span>P&L</span>
+              <span>CASH</span>
+            </div>
+            <ul className="bets-log" data-testid="bets-log">
             {rows.map((b) => {
               const settled = b.status === 'settled' && b.pnl != null
               const result = b.status === 'open' ? 'OPEN' : (b.pnl ?? 0) > 0 ? 'WIN' : (b.pnl ?? 0) < 0 ? 'LOSS' : 'PUSH'
@@ -967,7 +968,8 @@ function Bets24Strip({
                 </li>
               )
             })}
-          </ul>
+            </ul>
+          </div>
         </div>
       ) : (
         <p className="settings-note">No Kalshi fills since first deposit. Soft FAIL Live POST.</p>

@@ -461,6 +461,20 @@ describe('gold race path', () => {
   })
 })
 
+describe('bets log one scrollbar', () => {
+  it('wrap is the only x-scroller — Soft FAIL overflow:auto on the list', async () => {
+    const css = await readFile(new URL('../public/desk.css', import.meta.url), 'utf8')
+    const dash = await readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8')
+    expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?overflow-x:\s*auto/)
+    expect(css).toMatch(/\.bets-log \{[\s\S]*?overflow-x:\s*hidden/)
+    expect(css).toMatch(/\.bets-log \{[\s\S]*?overflow-y:\s*auto/)
+    expect(css).not.toMatch(/min-width:\s*58rem/)
+    expect(css).toMatch(/\.bets-log-scroll/)
+    expect(dash).toMatch(/bets-log-scroll/)
+    expect(css).not.toMatch(/\.bets-log-row > span\.bets-window \{\s*overflow:\s*visible/)
+  })
+})
+
 describe('Kalshi-settled 24h latch', () => {
   it('counts W–L from portfolio settlements and does not double a ticker', () => {
     const now = Date.now()
