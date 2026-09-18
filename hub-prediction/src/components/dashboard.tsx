@@ -6,6 +6,8 @@ import {
   KEY_PEM,
   TAPE_IDS,
   TAPE_META,
+  TAPE_CLOCKS,
+  CLOCK_LABELS,
   GOLD_RECIPES,
   applyBetsFilter,
   askInBand,
@@ -34,6 +36,7 @@ import {
   releaseClaim,
   saveHits,
   setLiveBets,
+  setTapeClock,
   tabIsOpen,
   tapeLean,
   ticketStatus,
@@ -43,6 +46,7 @@ import {
   type DeskSettings,
   type DeskTicket,
   type SendClaim,
+  type TapeClock,
   type TapeId,
   type TapeRecipe,
 } from '../lib/tapes'
@@ -131,8 +135,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }, [])
 
   const boardQuery = useQuery({
-    queryKey: ['desk-board'],
-    queryFn: () => getDeskBoard(),
+    queryKey: ['desk-board', settings.clocks],
+    queryFn: () => getDeskBoard({ data: { clocks: settings.clocks } }),
     refetchInterval: 2000,
     placeholderData: keepPreviousData,
     initialData: seedBoard ?? undefined,
@@ -403,8 +407,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               ticket={ticketFor(tickets, id, board?.tapes[id]?.ticker)}
               hits={hits.tapes[id]}
               recipe={settings.tapes[id]}
+              clock={settings.clocks[id]}
               liveBets={settings.liveBets}
               recipeLocked={chasingLosses(book) || book.killed}
+              onClock={(next) => setSettings(setTapeClock(settings, id, next))}
               onTape={(patch) => {
                 if (book.killed && patch.botOn) {
                   setMsg('KILL on — bots stay off')
@@ -545,8 +551,10 @@ function TapeRow({
   ticket,
   hits,
   recipe,
+  clock,
   liveBets,
   recipeLocked,
+  onClock,
   onTape,
 }: {
   id: TapeId
@@ -554,8 +562,10 @@ function TapeRow({
   ticket: DeskTicket | undefined
   hits: { w: number; l: number }
   recipe: TapeRecipe
+  clock: TapeClock
   liveBets: boolean
   recipeLocked: boolean
+  onClock: (clock: TapeClock) => void
   onTape: (patch: Partial<TapeRecipe>) => void
 }) {
   const status = ticketStatus(ticket)
@@ -579,7 +589,7 @@ function TapeRow({
   }
 
   return (
-    <article className="tape" data-testid={`tape-${id}`}>
+    <article className={`tape tape-${id}`} data-testid={`tape-${id}`} data-tape={id}>
       <div className="tape-row">
         <div className="hit-chip" data-testid={`hit-${id}`}>
           <span className="hit-k">24H</span>
@@ -591,6 +601,21 @@ function TapeRow({
         <p className="tape-name">
           {TAPE_META[id].label} · {quote?.clock || '—'}
         </p>
+        <label className="clock-field glyph-plate">
+          Clock
+          <select
+            className="clock-select"
+            data-testid={`clock-${id}`}
+            value={clock}
+            onChange={(e) => onClock(e.target.value as TapeClock)}
+          >
+            {TAPE_CLOCKS.map((c) => (
+              <option key={c} value={c}>
+                {CLOCK_LABELS[c]}
+              </option>
+            ))}
+          </select>
+        </label>
         <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
           {status}
         </p>
@@ -630,7 +655,15 @@ function TapeRow({
         </div>
       </div>
 
-      <RaceChart id={id} beat={beat} live={live} points={quote?.points} />
+      <RaceChart
+        id={id}
+        beat={beat}
+        live={live}
+        points={quote?.points}
+        clock={clock}
+        openAt={quote?.openAt}
+        closeAt={quote?.closeAt}
+      />
 
       {paper || ticket ? (
         <p className="tape-banner glyph-plate" data-testid={`banner-${id}`}>

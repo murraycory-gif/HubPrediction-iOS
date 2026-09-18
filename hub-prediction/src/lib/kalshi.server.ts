@@ -1,12 +1,17 @@
 import { formatClock } from './chicago-time'
 import {
+  CLOCK_LIVE_RANGE,
+  DEFAULT_CLOCK,
   TAPE_IDS,
-  TAPE_META,
   askCentsFromMarket,
+  defaultClocks,
+  hydrateClock,
   lastPrintFromLiveData,
   marketTradingActive,
   num,
+  seriesForTape,
   seriesToTape,
+  type TapeClock,
   type TapeId,
 } from './tapes'
 import type { DeskBoard, Point, Settled, TapeQuote } from './types'
@@ -21,7 +26,8 @@ type Market = Record<string, unknown>
 
 let lastBoard: DeskBoard | null = null
 let lastBoardAt = 0
-const settledCache: Partial<Record<TapeId, { at: number; past: Settled[] }>> = {}
+let lastClocksKey = ''
+const settledCache: Record<string, { at: number; past: Settled[] }> = {}
 let warming = false
 
 function ua() {
@@ -40,7 +46,11 @@ async function fetchJson<T>(url: string, ms: number): Promise<T> {
   }
 }
 
-function pickOpen(markets: Market[], now: number) {
+function strikeOf(m: Market) {
+  return num(m.floor_strike) ?? num(m.strike_price) ?? num(m.cap_strike)
+}
+
+function pickOpen(markets: Market[], now: number, hintPx?: number | null) {
   const list = Array.isArray(markets) ? markets : []
   const live = list.filter((m) => {
     const open = Date.parse(String(m.open_time ?? ''))
@@ -48,6 +58,14 @@ function pickOpen(markets: Market[], now: number) {
     return Number.isFinite(open) && Number.isFinite(close) && open <= now && now < close
   })
   const pool = live.length ? live : list
+  if (hintPx != null && Number.isFinite(hintPx) && pool.length > 1) {
+    pool.sort((a, b) => {
+      const da = Math.abs((strikeOf(a) ?? hintPx) - hintPx)
+      const db = Math.abs((strikeOf(b) ?? hintPx) - hintPx)
+      return da - db
+    })
+    return pool[0] ?? null
+  }
   pool.sort((a, b) => Date.parse(String(a.close_time ?? '')) - Date.parse(String(b.close_time ?? '')))
   return pool[0] ?? null
 }
@@ -82,7 +100,15 @@ function pointsFromLive(payload: unknown): Point[] {
   }
   const sticks = details.candlesticks
   const groups = sticks && typeof sticks === 'object' ? (sticks as Record<string, unknown>) : null
-  const series = Array.isArray(groups?.['1M']) ? groups!['1M'] : Array.isArray(groups?.['1m']) ? groups!['1m'] : []
+  const series = Array.isArray(groups?.['1S'])
+    ? groups!['1S']
+    : Array.isArray(groups?.['1M'])
+      ? groups!['1M']
+      : Array.isArray(groups?.['1m'])
+        ? groups!['1m']
+        : Array.isArray(groups?.['15M'])
+          ? groups!['15M']
+          : []
   if (Array.isArray(series)) {
     for (const row of series) {
       if (!row || typeof row !== 'object') continue
@@ -95,29 +121,34 @@ function pointsFromLive(payload: unknown): Point[] {
   return out.slice(-240)
 }
 
-async function loadTape(id: TapeId, now: number): Promise<TapeQuote | null> {
-  const meta = TAPE_META[id]
+function clocksKey(clocks: Record<TapeId, TapeClock>) {
+  return TAPE_IDS.map((id) => clocks[id]).join(',')
+}
+
+async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<TapeQuote | null> {
+  const series = seriesForTape(id, clock)
   const prev = lastBoard?.tapes[id] ?? null
   let listed: Market | null = null
+  const sameSeries = prev?.series === series
 
-  const reuse = Boolean(prev?.ticker && stillOpen(prev.openAt, prev.closeAt, now))
+  const reuse = Boolean(sameSeries && prev?.ticker && stillOpen(prev.openAt, prev.closeAt, now))
   if (!reuse) {
     const markets = await fetchJson<{ markets?: Market[] }>(
-      `${KALSHI}/markets?series_ticker=${meta.series}&status=open&limit=4`,
+      `${KALSHI}/markets?series_ticker=${series}&status=open&limit=${clock === '1h' ? 32 : 4}`,
       LIST_ABORT,
     ).catch(() => ({ markets: [] as Market[] }))
-    listed = pickOpen(markets.markets ?? [], now)
+    listed = pickOpen(markets.markets ?? [], now, sameSeries ? prev?.live ?? prev?.beat : null)
   }
 
-  const ticker = String(listed?.ticker ?? prev?.ticker ?? '')
-  const eventTicker = String(listed?.event_ticker ?? prev?.eventTicker ?? '')
-  if (!ticker) return prev
+  const ticker = String(listed?.ticker ?? (sameSeries ? prev?.ticker : '') ?? '')
+  const eventTicker = String(listed?.event_ticker ?? (sameSeries ? prev?.eventTicker : '') ?? '')
+  if (!ticker) return sameSeries ? prev : null
 
   const [freshPayload, livePayload] = await Promise.all([
     fetchJson<unknown>(`${KALSHI}/markets/${encodeURIComponent(ticker)}`, TICKER_ABORT).catch(() => null),
     eventTicker
       ? fetchJson<unknown>(
-          `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=15min`,
+          `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=${CLOCK_LIVE_RANGE[clock]}`,
           LIVE_ABORT,
         ).catch(() => null)
       : Promise.resolve(null),
@@ -152,7 +183,7 @@ async function loadTape(id: TapeId, now: number): Promise<TapeQuote | null> {
 
   return {
     id,
-    series: meta.series,
+    series,
     ticker,
     eventTicker,
     yesAsk,
@@ -165,6 +196,7 @@ async function loadTape(id: TapeId, now: number): Promise<TapeQuote | null> {
     closeAt,
     fetchedAt: now,
     clock: closeAt ? formatClock(closeAt) : '—',
+    clockId: clock,
     tradingActive: marketTradingActive(m, now),
   }
 }
@@ -176,19 +208,26 @@ export function peekDeskBoard(): DeskBoard | null {
 export function resetDeskBoardForTests() {
   lastBoard = null
   lastBoardAt = 0
+  lastClocksKey = ''
 }
 
-export async function loadDeskBoard(): Promise<DeskBoard> {
+export async function loadDeskBoard(clocks: Record<TapeId, TapeClock> = defaultClocks()): Promise<DeskBoard> {
   const now = Date.now()
-  if (lastBoard && now - lastBoardAt < QUOTE_FRESH_MS) return lastBoard
+  const key = clocksKey(clocks)
+  if (lastBoard && lastClocksKey === key && now - lastBoardAt < QUOTE_FRESH_MS) return lastBoard
 
-  const rows = await Promise.all(TAPE_IDS.map((id) => loadTape(id, now).catch(() => lastBoard?.tapes[id] ?? null)))
+  const rows = await Promise.all(
+    TAPE_IDS.map((id) => loadTape(id, now, hydrateClock(clocks[id])).catch(() => lastBoard?.tapes[id] ?? null)),
+  )
   const tapes = {} as DeskBoard['tapes']
   TAPE_IDS.forEach((id, i) => {
-    tapes[id] = rows[i] ?? lastBoard?.tapes[id] ?? null
+    const want = seriesForTape(id, clocks[id])
+    const row = rows[i]
+    tapes[id] = row?.series === want ? row : lastBoard?.tapes[id]?.series === want ? lastBoard.tapes[id] : null
   })
   lastBoard = { tapes, fetchedAt: now }
   lastBoardAt = now
+  lastClocksKey = key
   return lastBoard
 }
 
@@ -208,17 +247,19 @@ function settledFromMarkets(markets: Market[]): Settled[] {
   return out.filter((s) => s.closeAt >= floor).slice(0, 100)
 }
 
-export async function loadSettledTape(id: TapeId): Promise<Settled[]> {
+export async function loadSettledTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK): Promise<Settled[]> {
   const now = Date.now()
-  const hit = settledCache[id]
+  const series = seriesForTape(id, clock)
+  const key = `${id}:${hydrateClock(clock)}`
+  const hit = settledCache[key]
   if (hit && now - hit.at < 20_000) return hit.past
   try {
     const j = await fetchJson<{ markets?: Market[] }>(
-      `${KALSHI}/markets?series_ticker=${TAPE_META[id].series}&status=settled&limit=100`,
+      `${KALSHI}/markets?series_ticker=${series}&status=settled&limit=100`,
       2200,
     )
     const past = settledFromMarkets(j.markets ?? [])
-    settledCache[id] = { at: now, past }
+    settledCache[key] = { at: now, past }
     return past
   } catch {
     return hit?.past ?? []

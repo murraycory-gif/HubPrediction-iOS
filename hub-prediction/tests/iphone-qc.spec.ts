@@ -85,6 +85,7 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
     await expect(page.getByTestId(`hit-${id}`)).toContainText(/24H/)
     await expect(page.getByTestId(`race-${id}`)).toBeVisible()
     await expect(page.getByTestId(`save-${id}`)).toBeVisible()
+    await expect(page.getByTestId(`clock-${id}`)).toHaveValue('15m')
     await expect(page.getByTestId(`bot-${id}`)).not.toBeChecked()
   }
 
@@ -188,6 +189,12 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   await page.reload({ waitUntil: 'networkidle' })
   await expect(page.getByTestId('contracts-btc')).toHaveValue('17')
   await expect(page.getByTestId('tape-btc')).toBeVisible()
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await page.getByTestId('clock-btc').selectOption('5m')
+  await expect(page.getByTestId('clock-btc')).toHaveValue('5m')
+  await page.reload({ waitUntil: 'networkidle' })
+  await expect(page.getByTestId('clock-btc')).toHaveValue('5m')
+  await expect(page.getByTestId('clock-ng')).toHaveValue('15m')
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
 
   const serious = errors.filter(

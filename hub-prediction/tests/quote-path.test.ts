@@ -109,6 +109,8 @@ describe('one fast quote path Soft KEEP same ticker/second', () => {
 
     const board = await loadDeskBoard()
     expect(board.tapes.cu?.tradingActive).toBe(true)
+    expect(board.tapes.cu?.series).toBe('KXCOPPER15M')
+    expect(board.tapes.btc?.series).toBe('KXBTC15M')
     expect(board.tapes.cu?.yesAsk).toBe(29)
     expect(board.tapes.cu?.noAsk).toBe(72)
     expect(board.tapes.cu?.yesAsk).not.toBe(41)
@@ -168,5 +170,60 @@ describe('one fast quote path Soft KEEP same ticker/second', () => {
     const board = await loadDeskBoard()
     expect(board.tapes.btc?.tradingActive).toBe(true)
     expect(board.tapes.ng?.tradingActive).toBe(true)
+  })
+
+  it('1h BTC uses KXBTCD and 1h live_data range', async () => {
+    const now = Date.now()
+    const open = new Date(now - 20 * 60_000).toISOString()
+    const close = new Date(now + 40 * 60_000).toISOString()
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      async (url: string) => {
+        const u = String(url)
+        calls.push(u)
+        if (u.includes('/markets?series_ticker=KXBTCD')) {
+          return json({
+            markets: [
+              {
+                ticker: 'KXBTCD-ATM',
+                event_ticker: 'KXBTCD-E',
+                status: 'active',
+                yes_ask: 51,
+                no_ask: 50,
+                floor_strike: 77200,
+                open_time: open,
+                close_time: close,
+              },
+            ],
+          })
+        }
+        if (u.includes('/markets?')) return json({ markets: [] })
+        if (u.includes('/markets/KXBTCD-ATM')) {
+          return json({
+            market: {
+              ticker: 'KXBTCD-ATM',
+              event_ticker: 'KXBTCD-E',
+              status: 'active',
+              yes_ask: 51,
+              no_ask: 50,
+              floor_strike: 77200,
+              open_time: open,
+              close_time: close,
+            },
+          })
+        }
+        if (u.includes('/live_data/')) return json({ live_data: { details: { last: 77205 } } })
+        throw new Error(u)
+      },
+    )
+    const { defaultClocks } = await import('../src/lib/tapes')
+    const board = await loadDeskBoard({ ...defaultClocks(), btc: '1h' })
+    expect(board.tapes.btc?.series).toBe('KXBTCD')
+    expect(board.tapes.btc?.beat).toBe(77200)
+    expect(board.tapes.btc?.live).toBeCloseTo(77205)
+    expect(calls.some((u) => u.includes('series_ticker=KXBTCD'))).toBe(true)
+    expect(calls.some((u) => u.includes('range=1h'))).toBe(true)
+    expect(calls.some((u) => /events\/orders/.test(u))).toBe(false)
   })
 })

@@ -387,6 +387,29 @@ body {
   font-size: 14px;
 }
 
+.clock-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.clock-select {
+  min-height: 44px;
+  min-width: 6.4rem;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: #0c1110;
+  color: var(--ink);
+  border: 1px solid rgba(0, 229, 122, 0.16);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
 .tape-ticket {
   margin: 0;
   font-family: var(--mono);
@@ -471,6 +494,13 @@ body {
 .race-path {
   stroke: #00e57a;
   stroke-width: 2;
+}
+
+.tape-btc .race,
+.tape-ng .race,
+.tape-cu .race,
+.tape-gld .race {
+  background: #070a0b;
 }
 
 .race-empty {

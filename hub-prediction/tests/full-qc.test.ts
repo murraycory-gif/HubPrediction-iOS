@@ -56,7 +56,7 @@ describe('QC2 wires', () => {
   it('quotes poll + send require an OPEN tab — Soft FAIL hidden-tab-only', async () => {
     const dash = await readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8')
     expect(dash).toMatch(/refetchInterval:\s*2000/)
-    expect(dash).toMatch(/queryFn:\s*\(\)\s*=>\s*getDeskBoard\(\)/)
+    expect(dash).toMatch(/queryFn:\s*\(\)\s*=>\s*getDeskBoard\(\{ data: \{ clocks: settings\.clocks \} \}\)/)
     expect(dash).toMatch(/if \(!tabIsOpen\(\)\)/)
     expect(dash).toMatch(/if \(!board \|\| !tabIsOpen\(\) \|\| book\.killed\) return/)
     expect(tabIsOpen()).toBe(true)

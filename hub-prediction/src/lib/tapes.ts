@@ -14,10 +14,64 @@ export type TapeRecipe = {
   centHi: number
 }
 
+export const TAPE_CLOCKS = ['5m', '15m', '1h'] as const
+export type TapeClock = (typeof TAPE_CLOCKS)[number]
+export const DEFAULT_CLOCK: TapeClock = '15m'
+
+export const CLOCK_LABELS: Record<TapeClock, string> = {
+  '5m': '5 min',
+  '15m': '15 min',
+  '1h': '1 hr',
+}
+
+export const CLOCK_MS: Record<TapeClock, number> = {
+  '5m': 5 * 60_000,
+  '15m': 15 * 60_000,
+  '1h': 60 * 60_000,
+}
+
+export const CLOCK_LIVE_RANGE: Record<TapeClock, string> = {
+  '5m': '5min',
+  '15m': '15min',
+  '1h': '1h',
+}
+
+/** Kalshi series per tape clock. 15m is gold. 5m/1h use the listed Kalshi ticker when it exists. */
+export const TAPE_SERIES: Record<TapeId, Record<TapeClock, string>> = {
+  btc: { '5m': 'KXBTC5M', '15m': 'KXBTC15M', '1h': 'KXBTCD' },
+  ng: { '5m': 'KXNATGAS5M', '15m': 'KXNATGAS15M', '1h': 'KXNATGAS1H' },
+  cu: { '5m': 'KXCOPPER5M', '15m': 'KXCOPPER15M', '1h': 'KXCOPPER1H' },
+  gld: { '5m': 'KXGOLD5M', '15m': 'KXGOLD15M', '1h': 'KXGOLDH' },
+}
+
+export function isTapeClock(v: unknown): v is TapeClock {
+  return typeof v === 'string' && (TAPE_CLOCKS as readonly string[]).includes(v)
+}
+
+export function hydrateClock(raw: unknown): TapeClock {
+  return isTapeClock(raw) ? raw : DEFAULT_CLOCK
+}
+
+export function defaultClocks(): Record<TapeId, TapeClock> {
+  return { btc: DEFAULT_CLOCK, ng: DEFAULT_CLOCK, cu: DEFAULT_CLOCK, gld: DEFAULT_CLOCK }
+}
+
+export function hydrateClocks(raw: unknown): Record<TapeId, TapeClock> {
+  const o = raw && typeof raw === 'object' ? (raw as Partial<Record<TapeId, unknown>>) : {}
+  const next = defaultClocks()
+  for (const id of TAPE_IDS) next[id] = hydrateClock(o[id])
+  return next
+}
+
+export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
+  return TAPE_SERIES[id][hydrateClock(clock)]
+}
+
 export type DeskSettings = {
   liveBets: boolean
   tapes: Record<TapeId, TapeRecipe>
   betsFilter: TapeId[]
+  clocks: Record<TapeId, TapeClock>
 }
 
 export const TAPE_META: Record<
@@ -47,6 +101,7 @@ export const DEFAULT_SETTINGS: DeskSettings = {
     gld: { ...GOLD_RECIPES.gld },
   },
   betsFilter: allBetsFilter(),
+  clocks: defaultClocks(),
 }
 
 export const SETTINGS_KEY = 'hub.desk.settings.v1'
@@ -122,6 +177,7 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     liveBets: o.liveBets === true,
     tapes,
     betsFilter: hydrateBetsFilter((o as { betsFilter?: unknown }).betsFilter),
+    clocks: hydrateClocks((o as { clocks?: unknown }).clocks),
   }
 }
 
@@ -157,6 +213,13 @@ export function patchTape(settings: DeskSettings, id: TapeId, patch: Partial<Tap
 
 export function setLiveBets(settings: DeskSettings, liveBets: boolean): DeskSettings {
   return saveSettings({ ...settings, liveBets })
+}
+
+export function setTapeClock(settings: DeskSettings, id: TapeId, clock: TapeClock): DeskSettings {
+  return saveSettings({
+    ...settings,
+    clocks: { ...hydrateClocks(settings.clocks), [id]: hydrateClock(clock) },
+  })
 }
 
 export function applyBetsFilter(settings: DeskSettings, chip: 'all' | TapeId): DeskSettings {

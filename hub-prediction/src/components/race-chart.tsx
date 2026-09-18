@@ -1,14 +1,21 @@
 import { useMemo } from 'react'
-import { TAPE_META, type TapeId } from '../lib/tapes'
+import { CLOCK_MS, DEFAULT_CLOCK, TAPE_META, type TapeClock, type TapeId } from '../lib/tapes'
 import type { Point } from '../lib/types'
 
 const MAX_DOTS = 48
 
-/** Downsample live prints so the race is a path, not a 1s scribble. */
-export function cleanRacePoints(points: Point[] | undefined, now = Date.now()): Point[] {
-  const from = now - 15 * 60_000
+/** Downsample live prints for the selected Kalshi window. Soft FAIL a hard-coded 15m clip on 1h. */
+export function cleanRacePoints(
+  points: Point[] | undefined,
+  now = Date.now(),
+  windowMs = CLOCK_MS[DEFAULT_CLOCK],
+  openAt?: number,
+  closeAt?: number,
+): Point[] {
+  const from = Number.isFinite(openAt) && (openAt as number) > 0 ? (openAt as number) : now - windowMs
+  const to = Number.isFinite(closeAt) && (closeAt as number) > 0 ? Math.min(now, closeAt as number) : now
   const raw = (points ?? []).filter(
-    (p) => p && Number.isFinite(p.t) && Number.isFinite(p.px) && p.px > 0 && p.t >= from - 2000,
+    (p) => p && Number.isFinite(p.t) && Number.isFinite(p.px) && p.px > 0 && p.t >= from - 2000 && p.t <= to + 2000,
   )
   if (raw.length <= MAX_DOTS) return raw
   const step = Math.ceil(raw.length / MAX_DOTS)
@@ -47,19 +54,29 @@ export function RaceChart({
   beat,
   live,
   points,
+  clock = DEFAULT_CLOCK,
+  openAt,
+  closeAt,
 }: {
   id: TapeId
   beat: number
   live: number | null
   points?: Point[]
+  clock?: TapeClock
+  openAt?: number
+  closeAt?: number
 }) {
   const now = points?.length ? points[points.length - 1]!.t : Date.now()
-  const pts = useMemo(() => cleanRacePoints(points, now), [points, now])
+  const windowMs = CLOCK_MS[clock]
+  const pts = useMemo(
+    () => cleanRacePoints(points, now, windowMs, openAt, closeAt),
+    [points, now, windowMs, openAt, closeAt],
+  )
   const { lo, hi } = raceDomain(id, beat, live, pts)
   const w = 320
   const h = 72
-  const start = pts[0]?.t ?? now - 15 * 60_000
-  const end = Math.max(now, pts[pts.length - 1]?.t ?? now)
+  const start = Number.isFinite(openAt) && (openAt as number) > 0 ? (openAt as number) : (pts[0]?.t ?? now - windowMs)
+  const end = Number.isFinite(closeAt) && (closeAt as number) > 0 ? (closeAt as number) : Math.max(now, pts[pts.length - 1]?.t ?? now)
   const span = Math.max(1, end - start)
   const range = Math.max(1e-9, hi - lo)
 
@@ -76,7 +93,7 @@ export function RaceChart({
     live != null && Number.isFinite(live) ? h - ((live - lo) / range) * h : null
 
   return (
-    <div className="race" data-testid={`race-${id}`} aria-label={`${TAPE_META[id].label} race`}>
+    <div className={`race race-${id}`} data-testid={`race-${id}`} aria-label={`${TAPE_META[id].label} race`}>
       <svg viewBox={`0 0 ${w} ${h}`} className="race-svg" role="img">
         <line x1="0" y1={beatY} x2={w} y2={beatY} className="race-beat" />
         {path ? (

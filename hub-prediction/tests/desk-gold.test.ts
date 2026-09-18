@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanRacePoints, raceDomain } from '../src/components/race-chart'
 import {
+  DEFAULT_CLOCK,
   DEFAULT_SETTINGS,
   GOLD_RECIPES,
   SETTINGS_KEY,
+  seriesForTape,
+  setTapeClock,
   askInBand,
   cashGates,
   askCentsFromMarket,
@@ -120,11 +123,31 @@ describe('settings persist', () => {
         ng: { ...GOLD_RECIPES.ng, contracts: 4, botOn: true },
       },
       betsFilter: DEFAULT_SETTINGS.betsFilter,
+      clocks: DEFAULT_SETTINGS.clocks,
     })
     const again = loadSettings()
     expect(again.tapes.ng.contracts).toBe(4)
     expect(again.tapes.ng.botOn).toBe(true)
     expect(again.liveBets).toBe(false)
+  })
+
+  it('persists per-tape 5m / 15m / 1h clocks — 15m gold default', () => {
+    const first = loadSettings()
+    expect(first.clocks.btc).toBe(DEFAULT_CLOCK)
+    expect(first.clocks.ng).toBe('15m')
+    expect(seriesForTape('btc', '15m')).toBe('KXBTC15M')
+    expect(seriesForTape('btc', '5m')).toBe('KXBTC5M')
+    expect(seriesForTape('btc', '1h')).toBe('KXBTCD')
+    expect(seriesForTape('gld', '1h')).toBe('KXGOLDH')
+    expect(seriesForTape('ng', '15m')).toBe('KXNATGAS15M')
+    const saved = setTapeClock(first, 'btc', '5m')
+    expect(saved.clocks.btc).toBe('5m')
+    expect(saved.clocks.ng).toBe('15m')
+    expect(saved.tapes.btc.armFromMin).toBe(8)
+    expect(saved.tapes.btc.through).toBe(40)
+    expect(loadSettings().clocks.btc).toBe('5m')
+    expect(hydrateSettings(loadSettings()).liveBets).toBe(false)
+    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69 })
   })
 })
 
@@ -338,6 +361,10 @@ describe('gold race path', () => {
     const cleaned = cleanRacePoints(dense, now)
     expect(cleaned.length).toBeLessThanOrEqual(50)
     expect(cleaned[cleaned.length - 1]?.px).toBeCloseTo(dense[dense.length - 1]!.px)
+    const hour = Array.from({ length: 40 }, (_, i) => ({ t: now - (39 - i) * 90_000, px: 4358 + i * 0.05 }))
+    const hourPts = cleanRacePoints(hour, now, 60 * 60_000)
+    expect(hourPts.length).toBeGreaterThan(20)
+    expect(cleanRacePoints(hour, now, 15 * 60_000).length).toBeLessThan(hourPts.length)
     const gold = raceDomain('gld', 4358, 4360, cleaned)
     expect(gold.hi - gold.lo).toBeLessThan(40)
     const btc = raceDomain('btc', 76500, 76540, [{ t: now, px: 76520 }])
