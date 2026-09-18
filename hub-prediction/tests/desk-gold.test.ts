@@ -35,6 +35,7 @@ import {
   weThink,
   weThinkPair,
 } from '../src/lib/tapes'
+import { emptyFinance, last24hBets } from '../src/lib/finance'
 
 afterEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.clear()
@@ -451,6 +452,42 @@ describe('Kalshi-settled 24h latch', () => {
     })
     expect(desk.cash.cash).toBe(200)
     expect(desk.hits.tapes.ng.w).toBe(1)
+    expect(hydrateSettings(null).liveBets).toBe(false)
+  })
+
+  it('Last 24H strip uses settlement spent / P&L when the phone book is empty', () => {
+    const now = Date.now()
+    const ev = eventsFromKalshiSettlements(
+      {
+        settlements: [
+          {
+            ticker: 'KXBTC15M-CASH',
+            market_result: 'yes',
+            yes_count_fp: '1',
+            no_count_fp: '0',
+            yes_total_cost_dollars: 0.72,
+            revenue_dollars: 1,
+            settled_time: new Date(now - 1000).toISOString(),
+          },
+          {
+            ticker: 'KXGOLD15M-CASH',
+            market_result: 'yes',
+            yes_count_fp: '0',
+            no_count_fp: '1',
+            no_total_cost_dollars: 0.4,
+            revenue_dollars: 0,
+            settled_time: new Date(now - 2000).toISOString(),
+          },
+        ],
+      },
+      now,
+    )
+    const hits = latchFromEvents(ev, now)
+    const strip = last24hBets(emptyFinance(), hits, now)
+    expect(strip.w).toBe(1)
+    expect(strip.l).toBe(1)
+    expect(strip.placed).toBeCloseTo(1.12)
+    expect(strip.pnl).toBeCloseTo(-0.12)
     expect(hydrateSettings(null).liveBets).toBe(false)
   })
 

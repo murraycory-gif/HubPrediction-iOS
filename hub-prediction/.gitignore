@@ -8,3 +8,9 @@ test-results
 blob-report
 *.local
 .DS_Store
+.secrets/
+**/.secrets/
+*.pem
+.env
+.env.*
+!.env.example

@@ -3,10 +3,6 @@ import { TAPE_IDS, TAPE_META } from '../lib/tapes'
 
 export function SettingsPanel(props: {
   settings: DeskSettings
-  keyId: string
-  pem: string
-  onKeyId: (v: string) => void
-  onPem: (v: string) => void
   onLiveBets: (on: boolean) => void
   onTape: (id: TapeId, patch: Partial<TapeRecipe>) => void
   onRefreshCash: () => void
@@ -17,35 +13,19 @@ export function SettingsPanel(props: {
     <section className="settings" data-testid="settings">
       <p className="hud-label">Settings · same desk on phone</p>
       <p className="settings-note">
-        Bot, live cash, and contracts sit on each tape card. Keys stay on this PC/phone — never in git. Live
-        bets stay OFF unless you confirm Live.
+        Bot, live cash, and contracts sit on each tape card. Kalshi keys live on the Windows host (env or
+        .secrets) — Soft FAIL paste PEM in the browser. Live bets stay OFF unless you confirm Live.
         {props.recipeLocked ? ' Recipe lock on — Soft FAIL chase retune after a loss / KILL.' : ''}
       </p>
 
       <div className="settings-master">
-        <button type="button" className="chip-btn" onClick={props.onRefreshCash}>
+        <button type="button" className="chip-btn glyph-plate" onClick={props.onRefreshCash}>
           Refresh cash
         </button>
         <span className="settings-cash" data-testid="settings-cash">
           {props.cashLabel}
         </span>
       </div>
-
-      <input
-        className="field"
-        placeholder="Kalshi API Key ID (runtime only)"
-        value={props.keyId}
-        autoComplete="off"
-        data-testid="key-id"
-        onChange={(e) => props.onKeyId(e.target.value)}
-      />
-      <textarea
-        className="field field-pem"
-        placeholder="PEM private key (runtime only)"
-        value={props.pem}
-        data-testid="key-pem"
-        onChange={(e) => props.onPem(e.target.value)}
-      />
 
       {TAPE_IDS.map((id) => (
         <TapeRecipeLock key={id} id={id} recipe={props.settings.tapes[id]} />

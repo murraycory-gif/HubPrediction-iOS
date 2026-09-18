@@ -141,12 +141,11 @@ function AccountPanel({
     [cash, ask, call.pWin],
   )
 
-  async function refreshCash(nextKey = keyId, nextPem = pem) {
-    if (!nextKey || !nextPem) return
+  async function refreshCash() {
     try {
-      const r = await getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
+      const r = await getKalshiCash()
       setCash(r.cash)
-      setMsg('')
+      setMsg(r.hostCreds ? '' : 'Kalshi host keys missing on Windows')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'balance failed')
     }
@@ -159,8 +158,8 @@ function AccountPanel({
   }
 
   async function buy(side: 'up' | 'down') {
-    if (!quote?.ticker || !keyId || !pem) {
-      setMsg('Paste API Key ID + PEM first')
+    if (!quote?.ticker) {
+      setMsg('Kalshi host keys missing on Windows')
       return
     }
     const count = Math.max(1, size)
@@ -168,8 +167,6 @@ function AccountPanel({
     try {
       await placeKalshi({
         data: {
-          keyId,
-          pem,
           ticker: quote.ticker,
           side,
           count,

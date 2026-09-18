@@ -154,14 +154,13 @@ export function bookRealizedPnl(state: FinanceState) {
 
 export function last24hBets(
   state: FinanceState,
-  hits: { tapes: Record<TapeId, { w: number; l: number }> },
+  hits: { tapes: Record<TapeId, { w: number; l: number }>; events?: Array<{ tape: TapeId; at: number; spent?: number; pnl?: number }> },
   now = Date.now(),
   tapes: readonly TapeId[] = TAPE_IDS,
 ) {
   const allow = new Set(hydrateBetsFilter([...tapes]))
   const from = now - 24 * 60 * 60 * 1000
   const recent = state.bets.filter((b) => allow.has(b.tape) && (b.filledAt || b.settledAt || 0) >= from)
-  const placed = Math.round(recent.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
   const settled = recent.filter((b) => b.status === 'settled')
   const bookW = settled.filter((b) => (b.pnl ?? 0) > 0).length
   const bookL = settled.filter((b) => (b.pnl ?? 0) < 0).length
@@ -170,7 +169,15 @@ export function last24hBets(
   const hitL = selected.reduce((s, id) => s + (hits.tapes[id]?.l ?? 0), 0)
   const w = hitW + hitL > 0 ? hitW : bookW
   const l = hitW + hitL > 0 ? hitL : bookL
-  const pnl = Math.round(settled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
+  const ev = (hits.events ?? []).filter((e) => allow.has(e.tape) && e.at >= from)
+  const placed =
+    recent.length > 0
+      ? Math.round(recent.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
+      : Math.round(ev.reduce((s, e) => s + (Number(e.spent) || 0), 0) * 100) / 100
+  const pnl =
+    recent.length > 0
+      ? Math.round(settled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
+      : Math.round(ev.reduce((s, e) => s + (Number(e.pnl) || 0), 0) * 100) / 100
   return { placed, w, l, pnl }
 }
 

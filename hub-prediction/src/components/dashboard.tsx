@@ -2,8 +2,6 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { getDeskBoard, getKalshiBalance, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
 import {
-  KEY_ID,
-  KEY_PEM,
   TAPE_IDS,
   TAPE_META,
   TAPE_CLOCKS,
@@ -67,28 +65,18 @@ import {
   syncTicketsIntoBook,
   type FinanceState,
 } from '../lib/finance'
-import { deskStorage } from '../lib/desk-storage'
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
 import { RaceChart } from './race-chart'
 import { SettingsPanel } from './settings-panel'
 
-function readLocal(key: string) {
-  return deskStorage()?.getItem(key) ?? ''
-}
-
-function writeLocal(key: string, value: string) {
-  deskStorage()?.setItem(key, value)
-}
-
 export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [settings, setSettings] = useState<DeskSettings>(() => hydrateSettings(null))
   const [tickets, setTickets] = useState<DeskTicket[]>(() => loadTickets())
   const [hits, setHits] = useState(() => loadHits())
   const [cash, setCash] = useState(() => loadCash())
-  const [keyId, setKeyId] = useState(() => readLocal(KEY_ID))
-  const [pem, setPem] = useState(() => readLocal(KEY_PEM))
+  const [hostCreds, setHostCreds] = useState(false)
   const [msg, setMsg] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [book, setBook] = useState<FinanceState>(() => loadFinance())
@@ -97,10 +85,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [financeOpen, setFinanceOpen] = useState(false)
   const sentRef = useRef<Record<string, SendClaim>>({})
 
-  function applyCashAndSettlements(r: { cash?: number | null; deposits?: unknown; settlements?: unknown }) {
+  function applyCashAndSettlements(r: {
+    cash?: number | null
+    deposits?: unknown
+    settlements?: unknown
+    hostCreds?: boolean
+  }) {
     const next = hydrateCashFromKalshi(r, loadCash())
     setCash(next.cash)
     setHits(next.hits)
+    if (r.hostCreds === true) setHostCreds(true)
   }
 
   useLayoutEffect(() => {
@@ -109,10 +103,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     setTickets(nextTickets)
     setHits(loadHits())
     setCash(loadCash())
-    const nextKey = readLocal(KEY_ID)
-    const nextPem = readLocal(KEY_PEM)
-    setKeyId(nextKey)
-    setPem(nextPem)
     setBook(
       syncTicketsIntoBook(loadFinance(), nextTickets, () => ({
         clock: '',
@@ -120,18 +110,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask: 50,
       })),
     )
-    if (nextKey && nextPem) {
-      void getKalshiBalance({ data: { keyId: nextKey, pem: nextPem } })
-        .then((r) => applyCashAndSettlements(r))
-        .catch(() => {
-          /* keys present but balance miss — latch stays */
-        })
-      void getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
-        .then((r) => applyCashAndSettlements(r))
-        .catch(() => {
-          /* settlements follow cash — latch stays */
-        })
-    }
+    void getKalshiBalance()
+      .then((r) => applyCashAndSettlements(r))
+      .catch(() => {
+        /* host keys missing or balance miss — latch stays */
+      })
+    void getKalshiCash()
+      .then((r) => applyCashAndSettlements(r))
+      .catch(() => {
+        /* settlements follow cash — latch stays */
+      })
   }, [])
 
   const boardQuery = useQuery({
@@ -145,17 +133,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const board = boardQuery.data ?? seedBoard
 
-  async function refreshCash(nextKey = keyId, nextPem = pem) {
-    if (!nextKey || !nextPem) return
+  async function refreshCash() {
     try {
-      const fast = await getKalshiBalance({ data: { keyId: nextKey, pem: nextPem } })
+      const fast = await getKalshiBalance()
       applyCashAndSettlements(fast)
-      setMsg('')
+      setMsg(fast.hostCreds ? '' : 'Kalshi host keys missing on Windows')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'balance failed')
     }
     try {
-      const r = await getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
+      const r = await getKalshiCash()
       applyCashAndSettlements(r)
     } catch {
       /* cash already painted — settlements optional */
@@ -163,18 +150,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }
 
   const cashQuery = useQuery({
-    queryKey: ['kalshi-balance', keyId, pem],
-    enabled: Boolean(keyId && pem),
-    queryFn: () => getKalshiBalance({ data: { keyId, pem } }),
+    queryKey: ['kalshi-balance'],
+    queryFn: () => getKalshiBalance(),
     refetchInterval: 15_000,
     staleTime: 2_000,
     refetchOnMount: 'always',
   })
 
   const cashHitsQuery = useQuery({
-    queryKey: ['kalshi-cash-hits', keyId, pem],
-    enabled: Boolean(keyId && pem),
-    queryFn: () => getKalshiCash({ data: { keyId, pem } }),
+    queryKey: ['kalshi-cash-hits'],
+    queryFn: () => getKalshiCash(),
     refetchInterval: 30_000,
     staleTime: 8_000,
     refetchOnMount: 'always',
@@ -222,10 +207,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       )
       return
     }
-    if (!keyId || !pem) {
-      setMsg('Paste API Key ID + PEM to send live')
-      return
-    }
     if (!quote.ticker) return
     if (quote.tradingActive === false) {
       setMsg(`${TAPE_META[tape].label} Kalshi window closed — sit`)
@@ -248,8 +229,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     try {
       const raw = await placeKalshi({
         data: {
-          keyId,
-          pem,
           ticker: quote.ticker,
           side,
           count: settings.tapes[tape].contracts,
@@ -326,7 +305,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           </div>
           <div className="rain" data-testid="rain" aria-hidden="true" />
           <div className="brand-actions">
-            <label className={`toggle ${settings.liveBets ? 'toggle-hot' : ''}`}>
+            <label className={`toggle glyph-plate ${settings.liveBets ? 'toggle-hot' : ''}`}>
               <input
                 type="checkbox"
                 data-testid="live-bets"
@@ -343,7 +322,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             </label>
             <button
               type="button"
-              className="chip-btn"
+              className="chip-btn glyph-plate"
               data-testid="settings-toggle"
               onClick={() => setSettingsOpen((v) => !v)}
             >
@@ -376,7 +355,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                 const gate = liveArmGate(book, {
                   cash: cash.cash,
                   deposits: cash.deposits,
-                  hasKeys: Boolean(keyId && pem),
+                  hasKeys: hostCreds,
                 })
                 setLiveConfirm(false)
                 if (!gate.ok) {
@@ -478,17 +457,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         {settingsOpen ? (
           <SettingsPanel
             settings={settings}
-            keyId={keyId}
-            pem={pem}
             cashLabel={`Cash ${formatCash(cash.cash)}`}
-            onKeyId={(v) => {
-              setKeyId(v)
-              writeLocal(KEY_ID, v)
-            }}
-            onPem={(v) => {
-              setPem(v)
-              writeLocal(KEY_PEM, v)
-            }}
             onLiveBets={(on) => {
               if (on) setLiveConfirm(true)
               else {
@@ -672,7 +641,7 @@ function TapeRow({
       ) : null}
 
       <div className="tape-controls">
-        <label className={`toggle tap ${recipe.botOn ? 'toggle-on' : ''}`}>
+        <label className={`toggle tap glyph-plate ${recipe.botOn ? 'toggle-on' : ''}`}>
           <input
             type="checkbox"
             data-testid={`bot-${id}`}
@@ -681,7 +650,7 @@ function TapeRow({
           />
           Bot {recipe.botOn ? 'ON' : 'OFF'}
         </label>
-        <label className={`toggle tap ${recipe.liveOn ? 'toggle-hot' : ''}`}>
+        <label className={`toggle tap glyph-plate ${recipe.liveOn ? 'toggle-hot' : ''}`}>
           <input
             type="checkbox"
             data-testid={`live-cash-${id}`}
