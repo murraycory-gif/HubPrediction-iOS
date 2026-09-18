@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { getDeskBoard, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
 import {
   KEY_ID,
@@ -25,6 +25,7 @@ import {
   inArmWindow,
   loadCash,
   loadHits,
+  hydrateSettings,
   loadSettings,
   loadTickets,
   makeTicket,
@@ -80,7 +81,7 @@ function writeLocal(key: string, value: string) {
 }
 
 export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
-  const [settings, setSettings] = useState<DeskSettings>(() => loadSettings())
+  const [settings, setSettings] = useState<DeskSettings>(() => hydrateSettings(null))
   const [tickets, setTickets] = useState<DeskTicket[]>(() => loadTickets())
   const [hits, setHits] = useState(() => loadHits())
   const [cash, setCash] = useState(() => loadCash())
@@ -94,7 +95,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [financeOpen, setFinanceOpen] = useState(false)
   const sentRef = useRef<Record<string, SendClaim>>({})
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setSettings(loadSettings())
     const nextTickets = loadTickets()
     setTickets(nextTickets)
