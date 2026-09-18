@@ -82,11 +82,12 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   for (const id of ['btc', 'ng', 'cu', 'gld']) {
     await expect(page.getByTestId(`tape-${id}`)).toBeVisible()
     await expect(page.getByTestId(`status-${id}`)).toHaveText('WAIT')
-    await expect(page.getByTestId(`hit-${id}`)).toContainText(/24H/)
+    await expect(page.getByTestId(`hit-${id}`)).toContainText(/Hit percent/i)
+    await expect(page.getByTestId(`wl-${id}`)).toContainText(/W–L|W-L|\d+W/)
+    await expect(page.getByTestId(`bot-${id}`)).toBeChecked()
     await expect(page.getByTestId(`race-${id}`)).toBeVisible()
     await expect(page.getByTestId(`save-${id}`)).toBeVisible()
     await expect(page.getByTestId(`clock-${id}`)).toHaveValue('15m')
-    await expect(page.getByTestId(`bot-${id}`)).not.toBeChecked()
   }
 
   await expect(page.getByTestId('scoreboard')).toBeVisible()

@@ -857,8 +857,8 @@ function TapeRow({
 
       <div className="tape-row">
         <div className="hit-chip" data-testid={`hit-${id}`}>
-          <span className="hit-k">24H</span>
-          <span className="tape-hit">{pct}% / {HIT_FLOOR}</span>
+          <span className="hit-k">Hit percent</span>
+          <span className="tape-hit">{pct}%</span>
           <span className="tape-wl" data-testid={`wl-${id}`}>
             {hits.w}W–{hits.l}L
           </span>
