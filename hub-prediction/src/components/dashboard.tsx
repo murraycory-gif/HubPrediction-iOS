@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getDeskBoard, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
 import {
   KEY_ID,
@@ -31,7 +31,6 @@ import {
   mergeHitEvents,
   patchTape,
   releaseClaim,
-  pulseTone,
   saveCash,
   saveHits,
   setLiveBets,
@@ -54,6 +53,7 @@ import {
   clearKill,
   engageKill,
   chasingLosses,
+  last24hBets,
   liveArmGate,
   liveSendGate,
   loadFinance,
@@ -279,12 +279,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }, [board?.fetchedAt, settings, tickets, book.killed])
 
   const ttl = ttlFromHits(hits)
-  const liveTicket = tickets.find((t) => {
-    const q = board?.tapes[t.tape]
-    return q?.ticker === t.ticker
-  })
-  const pulseQuote = liveTicket ? board?.tapes[liveTicket.tape] : board?.tapes.btc
-  const pulse = pulseTone(liveTicket, pulseQuote?.live ?? null)
+  const bets24 = last24hBets(book, hits)
 
   return (
     <div className="desk">
@@ -392,11 +387,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           ))}
         </div>
 
-        <PulseCard
-          ticket={liveTicket}
-          quote={pulseQuote ?? null}
-          tone={pulse}
-        />
+        <Bets24Strip placed={bets24.placed} w={bets24.w} l={bets24.l} pnl={bets24.pnl} />
 
         <div className="under-desk" data-testid="under-desk">
           <button
@@ -660,72 +651,29 @@ function TapeRow({
   )
 }
 
-function PulseCard({
-  ticket,
-  quote,
-  tone,
+function Bets24Strip({
+  placed,
+  w,
+  l,
+  pnl,
 }: {
-  ticket: DeskTicket | undefined
-  quote: TapeQuote | null
-  tone: 'quiet' | 'green' | 'red'
+  placed: number
+  w: number
+  l: number
+  pnl: number
 }) {
-  const think = useMemo(
-    () => weThinkPair(quote?.live ?? null, quote?.beat ?? 0, quote?.points ?? []),
-    [quote?.live, quote?.beat, quote?.fetchedAt],
-  )
-  const vs = quote?.live != null && quote.beat ? quote.live - quote.beat : null
-  const vsLabel = quote
-    ? `${TAPE_META[quote.id].short} VS LINE`
-    : 'VS LINE'
-  if (tone === 'quiet' || !ticket) {
-    return (
-      <section className="pulse pulse-quiet" data-testid="pulse">
-        <p className="pulse-title">{quote ? TAPE_META[quote.id].pulseName : 'PULSE'}</p>
-        <div className="pulse-grid">
-          <div>
-            <p className="hud-label">LINE TO BEAT</p>
-            <p>{quote ? formatLive(quote.id, quote.beat) : '—'}</p>
-          </div>
-          <div>
-            <p className="hud-label">WE THINK</p>
-            <p data-testid="we-think">{quote ? formatWeThink(quote.id, think.live, think.ahead) : '—'}</p>
-          </div>
-          <div>
-            <p className="hud-label">{vsLabel}</p>
-            <p>
-              {quote && vs != null
-                ? `${vs >= 0 ? '+' : ''}${formatLive(quote.id, Math.abs(vs))}`
-                : '—'}
-            </p>
-          </div>
-        </div>
-      </section>
-    )
-  }
-  const side = ticket.side === 'up' ? 'UP' : 'DOWN'
   return (
-    <section className={`pulse pulse-${tone}`} data-testid="pulse">
-      <p className="hud-label">Pulse · live ticket {ticket.orderId}</p>
-      <p className="pulse-title">
-        {TAPE_META[ticket.tape].pulseName} · {side}
-      </p>
-      <div className="pulse-grid">
-        <div>
-          <p className="hud-label">LINE TO BEAT</p>
-          <p>{formatLive(ticket.tape, ticket.beat)}</p>
-        </div>
-        <div>
-          <p className="hud-label">WE THINK</p>
-          <p data-testid="we-think">{formatWeThink(ticket.tape, think.live, think.ahead)}</p>
-        </div>
-        <div>
-          <p className="hud-label">{TAPE_META[ticket.tape].short} VS LINE</p>
-          <p>
-            {quote?.live != null
-              ? `${quote.live - ticket.beat >= 0 ? '+' : ''}${formatLive(ticket.tape, Math.abs(quote.live - ticket.beat))}`
-              : '—'}
-          </p>
-        </div>
+    <section className="bets-24h" data-testid="bets-24h">
+      <p className="hud-label">Last 24H bets</p>
+      <div className="scoreboard-row">
+        <Stat label="PLACED" value={placed > 0 ? formatCash(placed) : '—'} testId="bets-placed" />
+        <Stat label="WINS–LOSSES" value={`${w}W–${l}L`} testId="bets-wl" />
+        <Stat
+          label="P&L 24H"
+          value={w + l === 0 && placed === 0 ? '—' : formatPnl(pnl)}
+          testId="bets-pnl"
+          tone={pnl < 0 ? 'down' : pnl > 0 ? 'up' : undefined}
+        />
       </div>
     </section>
   )

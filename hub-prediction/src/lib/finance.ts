@@ -110,6 +110,25 @@ export function bookRealizedPnl(state: FinanceState) {
   ) / 100
 }
 
+export function last24hBets(
+  state: FinanceState,
+  hits: { tapes: Record<TapeId, { w: number; l: number }> },
+  now = Date.now(),
+) {
+  const from = now - 24 * 60 * 60 * 1000
+  const recent = state.bets.filter((b) => (b.filledAt || b.settledAt || 0) >= from)
+  const placed = Math.round(recent.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
+  const settled = recent.filter((b) => b.status === 'settled')
+  const bookW = settled.filter((b) => (b.pnl ?? 0) > 0).length
+  const bookL = settled.filter((b) => (b.pnl ?? 0) < 0).length
+  const hitW = (['btc', 'ng', 'cu', 'gld'] as TapeId[]).reduce((s, id) => s + (hits.tapes[id]?.w ?? 0), 0)
+  const hitL = (['btc', 'ng', 'cu', 'gld'] as TapeId[]).reduce((s, id) => s + (hits.tapes[id]?.l ?? 0), 0)
+  const w = hitW + hitL > 0 ? hitW : bookW
+  const l = hitW + hitL > 0 ? hitL : bookL
+  const pnl = Math.round(settled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
+  return { placed, w, l, pnl }
+}
+
 export function dailyRealizedPnl(state: FinanceState, now = Date.now()) {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)

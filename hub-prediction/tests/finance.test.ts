@@ -13,6 +13,7 @@ import {
   paperCashFloor,
   pnlVsDeposits,
   chasingLosses,
+  last24hBets,
   recipeRetuneGate,
   recommendSize,
 } from '../src/lib/finance'
@@ -113,5 +114,52 @@ describe('finance Soft KEEP', () => {
     expect(recipeRetuneGate(chasing, { botOn: true }, now).ok).toBe(true)
     expect(recipeRetuneGate(emptyFinance(), { contracts: 3 }, now).ok).toBe(true)
     expect(recipeRetuneGate({ ...emptyFinance(), killed: true }, { through: 1 }, now).ok).toBe(false)
+  })
+
+  it('Last 24H bets strip uses placed cost, settled W–L, and 24h P&L', () => {
+    const now = Date.now()
+    const hits = { tapes: { btc: { w: 3, l: 1 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 1, l: 1 } } }
+    const state = {
+      ...emptyFinance(),
+      bets: [
+        {
+          betId: 'bet_a',
+          tape: 'btc' as const,
+          ticker: 'KXBTC15M-A',
+          clock: '9:00 PM',
+          closeAt: now,
+          side: 'up' as const,
+          count: 1,
+          ask: 72,
+          spent: 0.72,
+          orderId: 'ord-win-12345',
+          status: 'settled' as const,
+          pnl: 0.28,
+          filledAt: now - 1000,
+          settledAt: now,
+        },
+        {
+          betId: 'bet_old',
+          tape: 'ng' as const,
+          ticker: 'KXNATGAS15M-OLD',
+          clock: '8:00 PM',
+          closeAt: now - 30 * 60 * 60 * 1000,
+          side: 'down' as const,
+          count: 1,
+          ask: 40,
+          spent: 9.99,
+          orderId: 'ord-old-99999',
+          status: 'settled' as const,
+          pnl: 0.6,
+          filledAt: now - 30 * 60 * 60 * 1000,
+          settledAt: now - 30 * 60 * 60 * 1000,
+        },
+      ],
+    }
+    const strip = last24hBets(state, hits, now)
+    expect(strip.placed).toBeCloseTo(0.72)
+    expect(strip.w).toBe(4)
+    expect(strip.l).toBe(2)
+    expect(strip.pnl).toBeCloseTo(0.28)
   })
 })

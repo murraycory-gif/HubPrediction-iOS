@@ -167,6 +167,19 @@ body {
   overflow-wrap: anywhere;
 }
 
+.bets-24h {
+  position: relative;
+  z-index: 1;
+  padding: 12px 14px 14px;
+  background: linear-gradient(180deg, rgba(16, 24, 20, 0.96), rgba(8, 10, 11, 0.96));
+  border: 1px solid rgba(0, 229, 122, 0.16);
+  border-radius: 16px;
+}
+
+.bets-24h > .hud-label {
+  margin-bottom: 2px;
+}
+
 .tone-up { color: var(--up); }
 .tone-down { color: var(--down); }
 
