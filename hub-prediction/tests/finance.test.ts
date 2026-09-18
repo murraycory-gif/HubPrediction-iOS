@@ -12,6 +12,8 @@ import {
   paper48hPassed,
   paperCashFloor,
   pnlVsDeposits,
+  chasingLosses,
+  recipeRetuneGate,
   recommendSize,
 } from '../src/lib/finance'
 import { GOLD_RECIPES, DEFAULT_SETTINGS, hydrateSettings } from '../src/lib/tapes'
@@ -78,5 +80,38 @@ describe('finance Soft KEEP', () => {
 
   it('does not send Kalshi orders', () => {
     expect(() => financeSendsOrders()).toThrow(/must not send Kalshi orders/)
+  })
+
+  it('Soft FAIL mid-session through/window/¢/size retune after a loss; bot toggle still ok', () => {
+    const now = Date.now()
+    const chasing = {
+      ...emptyFinance(),
+      bets: [
+        {
+          betId: 'bet_1',
+          tape: 'btc' as const,
+          ticker: 'KXBTC15M-1',
+          clock: '9:15 PM',
+          closeAt: now,
+          side: 'up' as const,
+          count: 1,
+          ask: 72,
+          spent: 0.72,
+          orderId: 'ord-loss-12345',
+          status: 'settled' as const,
+          pnl: -0.72,
+          filledAt: now - 1000,
+          settledAt: now,
+        },
+      ],
+    }
+    expect(chasingLosses(chasing, now)).toBe(true)
+    expect(recipeRetuneGate(chasing, { through: 10 }, now).ok).toBe(false)
+    expect(recipeRetuneGate(chasing, { contracts: 8 }, now).ok).toBe(false)
+    expect(recipeRetuneGate(chasing, { armFromMin: 12 }, now).ok).toBe(false)
+    expect(recipeRetuneGate(chasing, { centLo: 20 }, now).ok).toBe(false)
+    expect(recipeRetuneGate(chasing, { botOn: true }, now).ok).toBe(true)
+    expect(recipeRetuneGate(emptyFinance(), { contracts: 3 }, now).ok).toBe(true)
+    expect(recipeRetuneGate({ ...emptyFinance(), killed: true }, { through: 1 }, now).ok).toBe(false)
   })
 })

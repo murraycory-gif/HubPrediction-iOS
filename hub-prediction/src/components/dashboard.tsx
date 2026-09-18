@@ -45,9 +45,13 @@ import {
   bookFill,
   clearKill,
   engageKill,
+  chasingLosses,
   liveArmGate,
+  liveCashFloor,
   liveSendGate,
   loadFinance,
+  paperCashFloor,
+  recipeRetuneGate,
   settleBook,
   syncTicketsIntoBook,
   type FinanceState,
@@ -276,6 +280,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         <p className="mode-line" data-testid="host-line">
           HUB · Windows local · not grok.me
         </p>
+        <p className="mode-line" data-testid="finance-strip">
+          Paper floor {formatCash(paperCashFloor())} · Live floor {formatCash(liveCashFloor(cash.deposits))} · KILL{' '}
+          {book.killed ? 'ON' : 'off'}
+          {chasingLosses(book) ? ' · recipe lock' : ''}
+        </p>
         {liveConfirm ? (
           <div className="live-banner" data-testid="live-banner">
             <p>Confirm LIVE — keys + paper 48h + cash floor. Soft FAIL silent Paper→Live.</p>
@@ -366,7 +375,19 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                 setSettings(setLiveBets(settings, false))
               }
             }}
-            onTape={(id, patch) => setSettings(patchTape(settings, id, patch))}
+            recipeLocked={chasingLosses(book) || book.killed}
+            onTape={(id, patch) => {
+              if (book.killed && patch.botOn) {
+                setMsg('KILL on — bots stay off')
+                return
+              }
+              const gate = recipeRetuneGate(book, patch)
+              if (!gate.ok) {
+                setMsg(gate.reason)
+                return
+              }
+              setSettings(patchTape(settings, id, patch))
+            }}
             onRefreshCash={() => void refreshCash()}
           />
         ) : null}

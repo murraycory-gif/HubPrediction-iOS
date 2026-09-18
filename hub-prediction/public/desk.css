@@ -285,6 +285,10 @@ button {
   box-shadow: 0 0 0 3px rgba(0, 229, 122, 0.12);
 }
 
+.field:disabled {
+  opacity: 0.55;
+}
+
 .field-pem {
   min-height: 96px;
   font-size: 12px;

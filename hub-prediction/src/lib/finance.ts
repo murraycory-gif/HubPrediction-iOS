@@ -1,12 +1,12 @@
 import { ticketCost } from './size-cash'
 import {
   GOLD_RECIPES,
-  TAPE_IDS,
   TAPE_META,
   isRealOrderId,
   isTapeId,
   type DeskTicket,
   type TapeId,
+  type TapeRecipe,
 } from './tapes'
 
 export const FINANCE_KEY = 'hub.desk.finance.v1'
@@ -292,6 +292,27 @@ export function clearKill(state: FinanceState) {
 export function recipeLine(id: TapeId) {
   const r = GOLD_RECIPES[id]
   return `${TAPE_META[id].label} ×${r.contracts} · ${r.armFromMin}–${r.armToMin} / $${r.through} / ${r.centLo}–${r.centHi}¢`
+}
+
+const RECIPE_KEYS = ['contracts', 'armFromMin', 'armToMin', 'through', 'centLo', 'centHi'] as const
+
+export function isRecipeRetune(patch: Partial<TapeRecipe>) {
+  return RECIPE_KEYS.some((k) => k in patch)
+}
+
+/** Session is chasing if KILL is on or today's booked P/L is red. */
+export function chasingLosses(state: FinanceState, now = Date.now()) {
+  if (state.killed) return true
+  return dailyRealizedPnl(state, now) < 0
+}
+
+export function recipeRetuneGate(state: FinanceState, patch: Partial<TapeRecipe>, now = Date.now()): Gate {
+  if (!isRecipeRetune(patch)) return { ok: true }
+  if (state.killed) return { ok: false, reason: 'KILL on — recipe lock' }
+  if (chasingLosses(state, now)) {
+    return { ok: false, reason: 'Soft FAIL mid-session recipe retune to chase losses' }
+  }
+  return { ok: true }
 }
 
 export function financeSendsOrders(): never {

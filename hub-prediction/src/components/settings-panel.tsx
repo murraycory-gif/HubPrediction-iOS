@@ -11,13 +11,15 @@ export function SettingsPanel(props: {
   onTape: (id: TapeId, patch: Partial<TapeRecipe>) => void
   onRefreshCash: () => void
   cashLabel: string
+  recipeLocked?: boolean
 }) {
   return (
     <section className="settings" data-testid="settings">
       <p className="hud-label">Settings · same desk on phone</p>
       <p className="settings-note">
         Contracts, bots, live cash, and recipes save on this device. Refresh keeps them. Live bets stay OFF
-        unless you flip them. Keys stay on this PC/phone — never in git.
+        unless you confirm Live. Keys stay on this PC/phone — never in git.
+        {props.recipeLocked ? ' Recipe lock on — Soft FAIL chase retune after a loss / KILL.' : ''}
       </p>
 
       <div className="settings-master">
@@ -59,6 +61,7 @@ export function SettingsPanel(props: {
           key={id}
           id={id}
           recipe={props.settings.tapes[id]}
+          recipeLocked={props.recipeLocked === true}
           onChange={(patch) => props.onTape(id, patch)}
         />
       ))}
@@ -69,10 +72,12 @@ export function SettingsPanel(props: {
 function TapeSettings({
   id,
   recipe,
+  recipeLocked,
   onChange,
 }: {
   id: TapeId
   recipe: TapeRecipe
+  recipeLocked: boolean
   onChange: (patch: Partial<TapeRecipe>) => void
 }) {
   const meta = TAPE_META[id]
@@ -90,6 +95,7 @@ function TapeSettings({
             max={99}
             data-testid={`contracts-${id}`}
             value={recipe.contracts}
+            disabled={recipeLocked}
             onChange={(e) => onChange({ contracts: clampContracts(Number(e.target.value)) })}
           />
         </label>
@@ -101,6 +107,7 @@ function TapeSettings({
             inputMode="decimal"
             data-testid={`arm-from-${id}`}
             value={recipe.armFromMin}
+            disabled={recipeLocked}
             onChange={(e) => onChange({ armFromMin: Number(e.target.value) })}
           />
         </label>
@@ -112,6 +119,7 @@ function TapeSettings({
             inputMode="decimal"
             data-testid={`arm-to-${id}`}
             value={recipe.armToMin}
+            disabled={recipeLocked}
             onChange={(e) => onChange({ armToMin: Number(e.target.value) })}
           />
         </label>
@@ -124,6 +132,7 @@ function TapeSettings({
             step="any"
             data-testid={`through-${id}`}
             value={recipe.through}
+            disabled={recipeLocked}
             onChange={(e) => onChange({ through: Number(e.target.value) })}
           />
         </label>
@@ -135,6 +144,7 @@ function TapeSettings({
             inputMode="numeric"
             data-testid={`cent-lo-${id}`}
             value={recipe.centLo}
+            disabled={recipeLocked}
             onChange={(e) => onChange({ centLo: Number(e.target.value) })}
           />
         </label>
@@ -146,6 +156,7 @@ function TapeSettings({
             inputMode="numeric"
             data-testid={`cent-hi-${id}`}
             value={recipe.centHi}
+            disabled={recipeLocked}
             onChange={(e) => onChange({ centHi: Number(e.target.value) })}
           />
         </label>
