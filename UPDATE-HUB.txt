@@ -29,8 +29,9 @@ In PowerShell, one line (Ctrl+C the old desk window first):
 
 cd C:\Users\Cory\Developer\HubPrediction-iOS; git fetch origin cursor/desk-pnl-bets-charts-be4f; git checkout -B cursor/desk-pnl-bets-charts-be4f FETCH_HEAD; cd hub-prediction; npm.cmd install; npm.cmd run dev
 
-Then open the Local URL it prints (http://localhost:8080 or 8081) and press Ctrl+Shift+R.
+Then wait until that window prints Local: http://localhost:8080. Open that URL and press Ctrl+Shift+R.
+Do not refresh Chrome until that line appears. Refreshing a stopped desk shows "localhost refused to connect".
 
-Already pulled and just want to start without git:
+Already pulled and just want to start without git (fixes refused-to-connect):
 
    double-click start-desk.bat

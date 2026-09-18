@@ -71,10 +71,10 @@ if errorlevel 1 (
 )
 
 echo.
-echo Desk starting. On this PC open:
-echo   http://localhost:8080
-echo If it says port 8080 is in use, use the Local URL it prints (often 8081).
-echo Hard-refresh the tab (Ctrl+Shift+R). Leave this window open.
+echo Desk starting. Leave THIS window open.
+echo When you see Local: http://localhost:8080 open that URL and press Ctrl+Shift+R.
+echo If Chrome says localhost refused to connect, the desk window is closed — run start-desk.bat.
+echo If port 8080 is already in use, Ctrl+C the other npm window first.
 echo.
 
 call npm.cmd run dev
