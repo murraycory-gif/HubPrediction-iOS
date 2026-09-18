@@ -62,6 +62,7 @@ import {
   syncTicketsIntoBook,
   type FinanceState,
 } from '../lib/finance'
+import { deskStorage } from '../lib/desk-storage'
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
@@ -69,13 +70,11 @@ import { RaceChart } from './race-chart'
 import { SettingsPanel } from './settings-panel'
 
 function readLocal(key: string) {
-  if (typeof localStorage === 'undefined') return ''
-  return localStorage.getItem(key) ?? ''
+  return deskStorage()?.getItem(key) ?? ''
 }
 
 function writeLocal(key: string, value: string) {
-  if (typeof localStorage === 'undefined') return
-  localStorage.setItem(key, value)
+  deskStorage()?.setItem(key, value)
 }
 
 export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
@@ -514,13 +513,16 @@ function TapeRow({
   const think = weThinkPair(live, beat, quote?.points ?? [])
   const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)
   const [draft, setDraft] = useState(recipe.contracts)
+  const contractsRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     setDraft(recipe.contracts)
   }, [recipe.contracts])
 
-  function saveContracts(raw: number = draft) {
-    const n = clampContracts(Number(raw))
+  function saveContracts(raw?: number) {
+    const fromDom = contractsRef.current ? Number(contractsRef.current.value) : draft
+    const n = clampContracts(Number(raw ?? fromDom))
     setDraft(n)
+    patchTape(loadSettings(), id, { contracts: n })
     onTape({ contracts: n })
   }
 
@@ -611,8 +613,14 @@ function TapeRow({
             data-testid={`contracts-${id}`}
             value={draft}
             disabled={recipeLocked}
+            ref={contractsRef}
             onChange={(e) => {
               const n = clampContracts(Number(e.target.value))
+              setDraft(n)
+              onTape({ contracts: n })
+            }}
+            onInput={(e) => {
+              const n = clampContracts(Number((e.target as HTMLInputElement).value))
               setDraft(n)
               onTape({ contracts: n })
             }}

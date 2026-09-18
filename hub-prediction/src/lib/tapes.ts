@@ -1,3 +1,5 @@
+import { deskStorage } from './desk-storage'
+
 export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
 export type TapeId = (typeof TAPE_IDS)[number]
 
@@ -95,9 +97,10 @@ export function hydrateSettings(raw: unknown): DeskSettings {
 }
 
 export function loadSettings(): DeskSettings {
-  if (typeof localStorage === 'undefined') return hydrateSettings(null)
+  const ls = deskStorage()
+  if (!ls) return hydrateSettings(null)
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY)
+    const raw = ls.getItem(SETTINGS_KEY)
     return hydrateSettings(raw ? JSON.parse(raw) : null)
   } catch {
     return hydrateSettings(null)
@@ -105,10 +108,11 @@ export function loadSettings(): DeskSettings {
 }
 
 export function saveSettings(settings: DeskSettings) {
-  if (typeof localStorage === 'undefined') return settings
   const next = hydrateSettings(settings)
+  const ls = deskStorage()
+  if (!ls) return next
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next))
+    ls.setItem(SETTINGS_KEY, JSON.stringify(next))
   } catch {
     /* quota */
   }
@@ -257,9 +261,10 @@ export function makeTicket(input: {
 }
 
 export function loadTickets(): DeskTicket[] {
-  if (typeof localStorage === 'undefined') return []
+  const ls = deskStorage()
+  if (!ls) return []
   try {
-    const raw = localStorage.getItem(TICKETS_KEY)
+    const raw = ls.getItem(TICKETS_KEY)
     const list = raw ? (JSON.parse(raw) as DeskTicket[]) : []
     if (!Array.isArray(list)) return []
     return list.filter((t) => t && isRealOrderId(t.orderId) && (t.side === 'up' || t.side === 'down'))
@@ -269,10 +274,11 @@ export function loadTickets(): DeskTicket[] {
 }
 
 export function saveTickets(tickets: DeskTicket[]) {
-  if (typeof localStorage === 'undefined') return tickets
   const next = tickets.filter((t) => isRealOrderId(t.orderId))
+  const ls = deskStorage()
+  if (!ls) return next
   try {
-    localStorage.setItem(TICKETS_KEY, JSON.stringify(next))
+    ls.setItem(TICKETS_KEY, JSON.stringify(next))
   } catch {
     /* quota */
   }
@@ -380,9 +386,10 @@ export function eventsFromTickets(
 }
 
 export function loadHits(): HitLatch {
-  if (typeof localStorage === 'undefined') return emptyHits()
+  const ls = deskStorage()
+  if (!ls) return emptyHits()
   try {
-    const raw = localStorage.getItem(HITS_KEY)
+    const raw = ls.getItem(HITS_KEY)
     if (!raw) return emptyHits()
     const parsed = JSON.parse(raw) as HitLatch
     if (Array.isArray(parsed.events) && parsed.events.length) {
@@ -404,9 +411,10 @@ export function loadHits(): HitLatch {
 }
 
 export function saveHits(hits: HitLatch) {
-  if (typeof localStorage === 'undefined') return hits
+  const ls = deskStorage()
+  if (!ls) return hits
   try {
-    localStorage.setItem(HITS_KEY, JSON.stringify(hits))
+    ls.setItem(HITS_KEY, JSON.stringify(hits))
   } catch {
     /* quota */
   }
@@ -432,9 +440,10 @@ export function hitPct(cell: HitCell) {
 export type CashLatch = { cash: number | null; pnl: number | null; deposits: number | null; asOf: number }
 
 export function loadCash(): CashLatch {
-  if (typeof localStorage === 'undefined') return { cash: null, pnl: null, deposits: null, asOf: 0 }
+  const ls = deskStorage()
+  if (!ls) return { cash: null, pnl: null, deposits: null, asOf: 0 }
   try {
-    const raw = localStorage.getItem(CASH_KEY)
+    const raw = ls.getItem(CASH_KEY)
     if (!raw) return { cash: null, pnl: null, deposits: null, asOf: 0 }
     const o = JSON.parse(raw) as CashLatch
     return {
@@ -449,9 +458,10 @@ export function loadCash(): CashLatch {
 }
 
 export function saveCash(cash: CashLatch) {
-  if (typeof localStorage === 'undefined') return cash
+  const ls = deskStorage()
+  if (!ls) return cash
   try {
-    localStorage.setItem(CASH_KEY, JSON.stringify(cash))
+    ls.setItem(CASH_KEY, JSON.stringify(cash))
   } catch {
     /* quota */
   }

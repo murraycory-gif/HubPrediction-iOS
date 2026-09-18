@@ -1,3 +1,4 @@
+import { deskStorage } from './desk-storage'
 import { ticketCost } from './size-cash'
 import {
   GOLD_RECIPES,
@@ -67,9 +68,10 @@ export function hydrateFinance(raw: unknown): FinanceState {
 }
 
 export function loadFinance(): FinanceState {
-  if (typeof localStorage === 'undefined') return emptyFinance()
+  const ls = deskStorage()
+  if (!ls) return emptyFinance()
   try {
-    const raw = localStorage.getItem(FINANCE_KEY)
+    const raw = ls.getItem(FINANCE_KEY)
     return hydrateFinance(raw ? JSON.parse(raw) : null)
   } catch {
     return emptyFinance()
@@ -78,9 +80,10 @@ export function loadFinance(): FinanceState {
 
 export function saveFinance(state: FinanceState): FinanceState {
   const next = hydrateFinance(state)
-  if (typeof localStorage === 'undefined') return next
+  const ls = deskStorage()
+  if (!ls) return next
   try {
-    localStorage.setItem(FINANCE_KEY, JSON.stringify(next))
+    ls.setItem(FINANCE_KEY, JSON.stringify(next))
   } catch {
     /* quota */
   }

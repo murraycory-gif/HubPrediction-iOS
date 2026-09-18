@@ -20,6 +20,7 @@ function stubNodeAsyncHooks(): Plugin {
   enterWith() {}
   disable() {}
 }
+export default { AsyncLocalStorage };
 `
       }
     },
@@ -38,9 +39,9 @@ export default defineConfig({
     include: [
       '@tanstack/react-query',
       '@tanstack/react-router',
-      '@tanstack/react-start',
       'recharts',
     ],
+    exclude: ['@tanstack/react-start'],
   },
   plugins: [stubNodeAsyncHooks(), tailwindcss(), tanstackStart(), viteReact()],
 })

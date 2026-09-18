@@ -1,3 +1,4 @@
+import './lib/async-hooks-stub'
 import { StartClient } from '@tanstack/react-start/client'
 import { StrictMode, startTransition } from 'react'
 import { hydrateRoot } from 'react-dom/client'
