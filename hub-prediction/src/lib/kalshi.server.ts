@@ -173,7 +173,8 @@ function settledFromMarkets(markets: Market[]): Settled[] {
     })
   }
   out.sort((a, b) => b.closeAt - a.closeAt)
-  return out.slice(0, 96)
+  const floor = Date.now() - 24 * 60 * 60 * 1000
+  return out.filter((s) => s.closeAt >= floor).slice(0, 100)
 }
 
 export async function loadSettledTape(id: TapeId): Promise<Settled[]> {
@@ -182,8 +183,8 @@ export async function loadSettledTape(id: TapeId): Promise<Settled[]> {
   if (hit && now - hit.at < 20_000) return hit.past
   try {
     const j = await fetchJson<{ markets?: Market[] }>(
-      `${KALSHI}/markets?series_ticker=${TAPE_META[id].series}&status=settled&limit=96`,
-      1600,
+      `${KALSHI}/markets?series_ticker=${TAPE_META[id].series}&status=settled&limit=100`,
+      2200,
     )
     const past = settledFromMarkets(j.markets ?? [])
     settledCache[id] = { at: now, past }

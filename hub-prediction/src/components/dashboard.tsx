@@ -120,27 +120,44 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const board = boardQuery.data ?? seedBoard
 
+  function applyCashAndSettlements(r: Awaited<ReturnType<typeof getKalshiCash>>) {
+    const deposits = depositsFromPayload(r.deposits) ?? cash.deposits
+    const next = saveCash({
+      cash: r.cash,
+      deposits,
+      pnl: r.cash != null && deposits != null ? r.cash - deposits : cash.pnl,
+      asOf: Date.now(),
+    })
+    setCash(next)
+    if (r.settlements) {
+      const ev = eventsFromKalshiSettlements(r.settlements)
+      if (ev.length) setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
+    }
+  }
+
   async function refreshCash(nextKey = keyId, nextPem = pem) {
     if (!nextKey || !nextPem) return
     try {
       const r = await getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
-      const deposits = depositsFromPayload(r.deposits) ?? cash.deposits
-      const next = saveCash({
-        cash: r.cash,
-        deposits,
-        pnl: r.cash != null && deposits != null ? r.cash - deposits : cash.pnl,
-        asOf: Date.now(),
-      })
-      setCash(next)
-      if (r.settlements) {
-        const ev = eventsFromKalshiSettlements(r.settlements)
-        setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
-      }
+      applyCashAndSettlements(r)
       setMsg('')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'balance failed')
     }
   }
+
+  const cashQuery = useQuery({
+    queryKey: ['kalshi-cash-hits', keyId],
+    enabled: Boolean(keyId && pem),
+    queryFn: () => getKalshiCash({ data: { keyId, pem } }),
+    refetchInterval: 30_000,
+    staleTime: 8_000,
+  })
+
+  useEffect(() => {
+    if (!cashQuery.data) return
+    applyCashAndSettlements(cashQuery.data)
+  }, [cashQuery.data])
 
   const settledQuery = useQuery({
     queryKey: ['settled-desk'],
@@ -152,9 +169,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   useEffect(() => {
     const settled = settledQuery.data
     if (!settled?.length) return
-    const ev = eventsFromTickets(tickets, settled)
+    const recent = settled.filter((s) => !s.closeAt || s.closeAt >= Date.now() - 24 * 60 * 60 * 1000)
+    const ev = eventsFromTickets(tickets, recent)
     if (ev.length) setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
-    setBook((prev) => settleBook(prev, settled))
+    setBook((prev) => settleBook(prev, recent))
   }, [settledQuery.data, tickets])
 
   async function sendLive(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
@@ -306,7 +324,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             </button>
           </div>
         </div>
-        <div className="stat-row" data-testid="scoreboard">
+        <div className="stat-row scoreboard-row" data-testid="scoreboard">
           <Stat
             label="P&L VS DEPOSITS"
             value={`${formatPnl(cash.pnl)} from ${formatCash(cash.deposits)}`}

@@ -76,7 +76,7 @@ function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe):
   }
 }
 
-/** Merge stored settings. Soft FAIL Live ON / bots ON by default — those always boot off. */
+/** Live boots OFF unless stored true. Bots may persist ON if stored (night paper). Soft FAIL live-cash ON by default. */
 export function hydrateSettings(raw: unknown): DeskSettings {
   const o = raw && typeof raw === 'object' ? (raw as Partial<DeskSettings> & { tapes?: Partial<Record<TapeId, Partial<TapeRecipe>>> }) : {}
   const tapes = {} as Record<TapeId, TapeRecipe>
@@ -335,32 +335,43 @@ export function mergeHitEvents(latch: HitLatch, incoming: HitEvent[], now = Date
   return latchFromEvents([...(latch.events ?? []), ...incoming], now)
 }
 
+function settlementAt(s: Record<string, unknown>, now: number) {
+  const raw = s.settled_time ?? s.settled_ts ?? s.ts ?? s.settled_time_ts
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw < 1e12 ? raw * 1000 : raw
+  const parsed = Date.parse(String(raw ?? ''))
+  return Number.isFinite(parsed) ? parsed : now
+}
+
 export function eventsFromKalshiSettlements(raw: unknown, now = Date.now()): HitEvent[] {
-  const list = Array.isArray((raw as { settlements?: unknown })?.settlements)
-    ? (raw as { settlements: Record<string, unknown>[] }).settlements
-    : Array.isArray(raw)
-      ? (raw as Record<string, unknown>[])
-      : []
+  const root = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  const nested = root && typeof root.data === 'object' ? (root.data as Record<string, unknown>) : null
+  const list = Array.isArray(root?.settlements)
+    ? (root!.settlements as Record<string, unknown>[])
+    : Array.isArray(nested?.settlements)
+      ? (nested!.settlements as Record<string, unknown>[])
+      : Array.isArray(raw)
+        ? (raw as Record<string, unknown>[])
+        : []
   const out: HitEvent[] = []
   for (const s of list) {
+    if (!s || typeof s !== 'object') continue
     const ticker = String(s.ticker ?? '')
     const tape = seriesToTape(ticker)
     if (!tape) continue
-    const at = Date.parse(String(s.settled_time ?? s.settled_ts ?? '')) || now
+    const at = settlementAt(s, now)
     if (at < now - TTL_MS) continue
-    const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? 0
-    const no = num(s.no_count_fp) ?? num(s.no_count) ?? 0
-    if (yes <= 0 && no <= 0) continue
+    const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? num(s.yes_total_cost_fp) ?? 0
+    const no = num(s.no_count_fp) ?? num(s.no_count) ?? num(s.no_total_cost_fp) ?? 0
     const result = String(s.market_result ?? s.result ?? '').toLowerCase()
+    const revenue = num(s.revenue) ?? num(s.revenue_fp) ?? 0
+    const yesCost = num(s.yes_total_cost_dollars) ?? (num(s.yes_total_cost) != null ? Number(s.yes_total_cost) / 100 : 0)
+    const noCost = num(s.no_total_cost_dollars) ?? (num(s.no_total_cost) != null ? Number(s.no_total_cost) / 100 : 0)
+    const hasFill = yes > 0 || no > 0 || yesCost > 0 || noCost > 0 || revenue > 0
+    if (!hasFill) continue
     let win = false
     if (yes > 0 && no <= 0) win = result === 'yes'
     else if (no > 0 && yes <= 0) win = result === 'no'
-    else {
-      const revenue = num(s.revenue) ?? 0
-      const yesCost = num(s.yes_total_cost_dollars) ?? 0
-      const noCost = num(s.no_total_cost_dollars) ?? 0
-      win = revenue / 100 > yesCost + noCost
-    }
+    else win = revenue / 100 > yesCost + noCost || (result === 'yes' && yesCost > noCost) || (result === 'no' && noCost > yesCost)
     out.push({ tape, ticker, win, at })
   }
   return out

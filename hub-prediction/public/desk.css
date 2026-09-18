@@ -46,7 +46,7 @@ body {
   overflow: hidden;
   background: #020403;
   border-bottom: 1px solid rgba(0, 229, 122, 0.22);
-  padding: 0 16px 12px;
+  padding: 0 14px 6px;
 }
 
 .desk-head::before {
@@ -83,8 +83,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  height: 52px;
+  gap: 10px;
+  height: 36px;
   padding-top: env(safe-area-inset-top, 0px);
 }
 
@@ -118,8 +118,8 @@ body {
   margin: 0;
   flex: 1;
   font-family: var(--mono);
-  font-size: clamp(20px, 4.6vw, 34px);
-  letter-spacing: 0.22em;
+  font-size: clamp(15px, 2.8vw, 22px);
+  letter-spacing: 0.16em;
   line-height: 1;
   color: var(--up);
   text-shadow: 0 0 18px rgba(0, 229, 122, 0.45);
@@ -154,11 +154,41 @@ body {
   margin-top: 8px;
 }
 
+.desk-head .scoreboard-row,
+.scoreboard-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 18px;
+  margin-top: 4px;
+  overflow-x: auto;
+}
+
+.scoreboard-row .stat {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.scoreboard-row .hud-label {
+  flex: 0 0 auto;
+}
+
 .stat-value {
   margin: 4px 0 0;
   font-family: var(--mono);
   font-size: 15px;
   letter-spacing: 0.02em;
+}
+
+.scoreboard-row .stat-value {
+  margin: 0;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .tone-up { color: var(--up); }
@@ -577,23 +607,23 @@ button {
 
 @media (min-width: 720px) {
   .brand-bar {
-    height: 64px;
+    height: 40px;
   }
 }
 
 @media (min-width: 1100px) {
   .brand-bar {
-    height: 76px;
+    height: 44px;
   }
   .desk-head h1 {
-    font-size: 34px;
-    letter-spacing: 0.28em;
+    font-size: 22px;
+    letter-spacing: 0.18em;
   }
   .tape-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .stat-value {
-    font-size: 18px;
+  .scoreboard-row .stat-value {
+    font-size: 15px;
   }
 }
 
@@ -609,13 +639,16 @@ button {
 }
 
 @media (max-width: 520px) {
-  .stat-row,
   .pulse-grid,
   .tape-reads {
     grid-template-columns: 1fr;
   }
+  .desk-head .scoreboard-row,
+  .scoreboard-row {
+    flex-wrap: nowrap;
+  }
   .desk-head h1 {
-    letter-spacing: 0.12em;
-    font-size: 20px;
+    letter-spacing: 0.1em;
+    font-size: 16px;
   }
 }

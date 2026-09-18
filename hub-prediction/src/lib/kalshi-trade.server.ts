@@ -62,7 +62,16 @@ export async function fetchBalance(keyId: string, pem: string) {
 
 export async function fetchSettlements(keyId: string, pem: string) {
   const minTs = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000)
-  return signed(keyId, pem, 'GET', `${ROOT}/portfolio/settlements?limit=200&min_ts=${minTs}`)
+  const settlements: unknown[] = []
+  let cursor = ''
+  for (let i = 0; i < 5; i++) {
+    const path = `${ROOT}/portfolio/settlements?limit=200&min_ts=${minTs}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
+    const json = (await signed(keyId, pem, 'GET', path)) as { settlements?: unknown[]; cursor?: string }
+    if (Array.isArray(json?.settlements)) settlements.push(...json.settlements)
+    if (!json?.cursor) break
+    cursor = json.cursor
+  }
+  return { settlements }
 }
 
 export async function fetchDeposits(keyId: string, pem: string) {

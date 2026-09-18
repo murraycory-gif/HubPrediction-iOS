@@ -22,6 +22,12 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   }
 
   await expect(page.getByTestId('scoreboard')).toBeVisible()
+  const pnlBox = await page.getByTestId('pnl').boundingBox()
+  const ttlBox = await page.getByTestId('ttl').boundingBox()
+  const cashBox = await page.getByTestId('kalshi-cash').boundingBox()
+  expect(Math.abs((pnlBox?.y ?? 0) - (ttlBox?.y ?? 0))).toBeLessThan(14)
+  expect(Math.abs((ttlBox?.y ?? 0) - (cashBox?.y ?? 0))).toBeLessThan(14)
+  expect((ttlBox?.x ?? 0)).toBeGreaterThan((pnlBox?.x ?? 0))
   await expect(page.getByTestId('ttl')).toContainText(/TTL|%/)
   await expect(page.getByTestId('pulse')).toContainText(/PULSE|BITCOIN|LINE/i)
   await expect(page.getByTestId('live-bets')).not.toBeChecked()

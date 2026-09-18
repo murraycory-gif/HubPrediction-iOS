@@ -291,6 +291,32 @@ describe('Kalshi-settled 24h latch', () => {
     expect(again.tapes.btc.w).toBe(1)
   })
 
+  it('hydrates last-24h fills from portfolio shapes Kalshi actually sends', () => {
+    const now = Date.now()
+    const ev = eventsFromKalshiSettlements({
+      data: {
+        settlements: [
+          { ticker: 'KXBTC15M-A', market_result: 'yes', yes_count: 2, no_count: 0, settled_ts: Math.floor((now - 1000) / 1000) },
+          { ticker: 'KXNATGAS15M-B', result: 'no', no_count_fp: '1.00', settled_time: new Date(now - 2000).toISOString() },
+          { ticker: 'KXCOPPER15M-OPEN', market_result: 'yes', yes_count: 1, settled_time: new Date(now + 60_000).toISOString() },
+        ],
+      },
+    }, now)
+    const latch = latchFromEvents(ev, now)
+    expect(latch.tapes.btc.w + latch.tapes.ng.w).toBeGreaterThan(0)
+    expect(ttlFromHits(latch).w + ttlFromHits(latch).l).toBeGreaterThan(0)
+  })
+
+  it('keeps a stored bot ON and live-cash OFF unless stored true', () => {
+    const s = hydrateSettings({
+      liveBets: false,
+      tapes: { btc: { contracts: 2, botOn: true } },
+    })
+    expect(s.liveBets).toBe(false)
+    expect(s.tapes.btc.botOn).toBe(true)
+    expect(s.tapes.btc.liveOn).toBe(false)
+  })
+
   it('drops settlements older than 24h', () => {
     const now = Date.now()
     const ev = eventsFromKalshiSettlements({
