@@ -396,5 +396,10 @@ describe('one fast quote path Soft KEEP same ticker/second', () => {
     expect(merged?.tapes.btc?.live).toBeCloseTo(80910)
     expect(merged?.tapes.btc?.yesAsk).toBe(70)
     expect(mergeLiveOntoBoard(board, { ...prints, tapes: { ...prints.tapes, btc: { ...prints.tapes.btc!, eventTicker: 'OTHER' } } })?.tapes.btc?.live).toBeCloseTo(80800)
+    const same = mergeLiveOntoBoard(merged, {
+      fetchedAt: now,
+      tapes: { btc: { ...prints.tapes.btc!, live: 80910, points: [] }, ng: null, cu: null, gld: null },
+    })
+    expect(same).toBe(merged)
   })
 })

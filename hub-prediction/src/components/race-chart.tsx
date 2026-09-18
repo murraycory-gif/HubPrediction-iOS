@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { formatChartTick } from '../lib/chicago-time'
 import {
   cleanRacePoints,
   mergeRaceTrail,
   raceLinePath,
+  smoothDrawPoints,
 } from '../lib/race-path'
 import {
   CHART_LABELS,
@@ -54,35 +55,39 @@ export function raceDomain(id: TapeId, beat: number, live: number | null, pts: P
   return { lo, hi }
 }
 
-/** Ease the on-screen NOW print toward the latest Kalshi last. Logic still uses raw live. */
-export function useSmoothedLive(live: number | null, ms = 360) {
+/** Ease NOW toward the latest Kalshi last without restarting on each print. */
+export function useSmoothedLive(live: number | null, ms = 700) {
   const [shown, setShown] = useState(live)
   const shownRef = useRef(live)
+  const targetRef = useRef(live)
+  targetRef.current = live
   useEffect(() => {
-    shownRef.current = shown
-  }, [shown])
-  useEffect(() => {
-    if (live == null || !Number.isFinite(live) || live <= 0) {
-      setShown(live)
-      return
-    }
-    const from = shownRef.current
-    if (from == null || !Number.isFinite(from)) {
-      setShown(live)
-      return
-    }
-    if (from === live) return
-    const t0 = performance.now()
     let raf = 0
+    let lastT = performance.now()
+    let lastPaint = 0
     const tick = (t: number) => {
-      const p = Math.min(1, (t - t0) / ms)
-      const e = 1 - (1 - p) * (1 - p)
-      setShown(from + (live - from) * e)
-      if (p < 1) raf = requestAnimationFrame(tick)
+      const target = targetRef.current
+      const cur = shownRef.current
+      const dt = Math.max(0, t - lastT)
+      lastT = t
+      let next = cur
+      if (target == null || !Number.isFinite(target) || target <= 0) next = target
+      else if (cur == null || !Number.isFinite(cur) || (cur as number) <= 0) next = target
+      else {
+        const k = 1 - Math.exp(-dt / ms)
+        next = (cur as number) + (target - (cur as number)) * k
+        if (Math.abs(next - target) <= Math.max(Math.abs(target) * 1e-7, 1e-6)) next = target
+      }
+      shownRef.current = next
+      if (t - lastPaint >= 32 || next === target) {
+        lastPaint = t
+        setShown(next)
+      }
+      raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [live, ms])
+  }, [ms])
   return shown
 }
 
@@ -105,7 +110,7 @@ function useWallClock(on: boolean) {
   return now
 }
 
-export function RaceChart({
+export const RaceChart = memo(function RaceChart({
   id,
   beat,
   live,
@@ -139,8 +144,13 @@ export function RaceChart({
 
   useEffect(() => {
     const next = mergeRaceTrail(trailRef.current, points, live, Date.now())
+    const prev = trailRef.current
+    const same =
+      prev.length === next.length &&
+      prev[prev.length - 1]?.t === next[next.length - 1]?.t &&
+      prev[prev.length - 1]?.px === next[next.length - 1]?.px
     trailRef.current = next
-    setTrail(next)
+    if (!same) setTrail(next)
   }, [points, live])
 
   const shown =
@@ -152,12 +162,27 @@ export function RaceChart({
     [trail, points, now, windowMs, openAt, closeAt],
   )
   const drawPts = useMemo(() => {
-    if (shown == null || !Number.isFinite(shown) || !pts.length) return pts
-    const last = pts[pts.length - 1]!
-    if (last.px === shown) return pts
-    return [...pts.slice(0, -1), { t: last.t, px: shown }]
+    const smoothed = smoothDrawPoints(pts)
+    if (shown == null || !Number.isFinite(shown) || !smoothed.length) return smoothed
+    const last = smoothed[smoothed.length - 1]!
+    if (last.px === shown) return smoothed
+    return [...smoothed.slice(0, -1), { t: last.t, px: shown }]
   }, [pts, shown])
-  const { lo, hi } = raceDomain(id, beat, shown, drawPts)
+  const domainRef = useRef({ lo: 0, hi: 1 })
+  const rawDomain = raceDomain(id, beat, live, pts)
+  const mid = (rawDomain.lo + rawDomain.hi) / 2
+  const pad = (rawDomain.hi - rawDomain.lo) * 0.1
+  const inside =
+    shown != null &&
+    Number.isFinite(shown) &&
+    shown >= domainRef.current.lo + pad &&
+    shown <= domainRef.current.hi - pad &&
+    beat > 0 &&
+    beat >= domainRef.current.lo &&
+    beat <= domainRef.current.hi &&
+    Math.abs((domainRef.current.lo + domainRef.current.hi) / 2 - mid) < (rawDomain.hi - rawDomain.lo) * 0.35
+  const { lo, hi } = inside && domainRef.current.hi > domainRef.current.lo ? domainRef.current : rawDomain
+  domainRef.current = { lo, hi }
   const w = 640
   const h = 220
   const innerW = w - PAD.l - PAD.r
@@ -193,7 +218,7 @@ export function RaceChart({
       <svg viewBox={`0 0 ${w} ${h}`} className="race-svg" role="img">
         <defs>
           <linearGradient id={`fill-${id}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={stroke} stopOpacity="0.38" />
+            <stop offset="0%" stopColor={stroke} stopOpacity="0.16" />
             <stop offset="100%" stopColor={stroke} stopOpacity="0" />
           </linearGradient>
         </defs>
@@ -212,8 +237,8 @@ export function RaceChart({
           </g>
         ))}
         {xTicks.map((t) => (
-          <text key={`x-${t}`} x={xOf(t)} y={h - 6} className="race-axis" textAnchor="middle">
-            {formatChartTick(t, windowMs)}
+          <text key={`x-${Math.round(t / 1000)}`} x={xOf(t)} y={h - 6} className="race-axis" textAnchor="middle">
+            {formatChartTick(Math.round(t / 1000) * 1000, windowMs)}
           </text>
         ))}
         <line x1={PAD.l} y1={beatY} x2={PAD.l + innerW} y2={beatY} className="race-beat" />
@@ -270,4 +295,4 @@ export function RaceChart({
       </div>
     </div>
   )
-}
+})

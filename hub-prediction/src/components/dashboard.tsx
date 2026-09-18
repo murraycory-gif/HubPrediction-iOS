@@ -630,7 +630,7 @@ function TapeRow({
   const status = ticketStatus(ticket)
   const pct = hitPct(hits)
   const live = quote?.live ?? null
-  const shownLive = useSmoothedLive(live, 360)
+  const shownLive = useSmoothedLive(live)
   const beat = quote?.beat ?? 0
   const think = weThinkPair(live, beat, quote?.points ?? [])
   const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)

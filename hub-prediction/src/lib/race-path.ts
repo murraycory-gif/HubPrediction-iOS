@@ -74,6 +74,20 @@ function bucketExtrema(pts: Point[], maxDots: number): Point[] {
   return slim
 }
 
+/** Light 3-point average for draw only. Keeps the last print exact. */
+export function smoothDrawPoints(pts: Point[]): Point[] {
+  if (pts.length < 4) return pts
+  const out: Point[] = [pts[0]!]
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i - 1]!.px
+    const b = pts[i]!.px
+    const c = pts[i + 1]!.px
+    out.push({ t: pts[i]!.t, px: (a + b + b + c) / 4 })
+  }
+  out.push(pts[pts.length - 1]!)
+  return out
+}
+
 /** Window the trail, hold the last print to now (Kalshi LIVE), keep shape when downsampling. */
 export function cleanRacePoints(
   points: Point[] | undefined,

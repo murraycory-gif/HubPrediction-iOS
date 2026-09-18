@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanRacePoints, raceDomain } from '../src/components/race-chart'
-import { mergeRaceTrail, pointTime, raceLinePath, MAX_RACE_DOTS } from '../src/lib/race-path'
+import { mergeRaceTrail, pointTime, raceLinePath, smoothDrawPoints, MAX_RACE_DOTS } from '../src/lib/race-path'
 import {
   DEFAULT_CLOCK,
   DEFAULT_SETTINGS,
@@ -403,13 +403,23 @@ describe('gold race path', () => {
     expect(cleanRacePoints(hour, now, 15 * 60_000).length).toBeLessThan(hourPts.length)
     const gold = raceDomain('gld', 4358, 4360, cleaned)
     expect(gold.hi - gold.lo).toBeLessThan(40)
+    const jagged = [
+      { t: now - 3000, px: 4358 },
+      { t: now - 2000, px: 4362 },
+      { t: now - 1000, px: 4357 },
+      { t: now, px: 4358.2 },
+    ]
+    const drawn = smoothDrawPoints(jagged)
+    expect(drawn[0]?.px).toBe(4358)
+    expect(drawn[drawn.length - 1]?.px).toBeCloseTo(4358.2)
+    expect(drawn[1]!.px).toBeLessThan(4362)
     const btc = raceDomain('btc', 76500, 76540, [{ t: now, px: 76520 }])
     expect(btc.hi - btc.lo).toBeGreaterThan(70)
   })
 
   it('LIVE chart eases NOW and ticks the wall on rAF — Soft FAIL 250ms hop', async () => {
     const src = await readFile(new URL('../src/components/race-chart.tsx', import.meta.url), 'utf8')
-    expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 360\)/)
+    expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 700\)/)
     expect(src).toMatch(/t - last >= 48/)
     expect(src).toMatch(/requestAnimationFrame\(tick\)/)
     expect(src).toMatch(/displayLive/)
