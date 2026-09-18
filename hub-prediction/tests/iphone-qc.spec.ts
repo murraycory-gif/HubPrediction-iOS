@@ -198,21 +198,23 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
   })
 
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await page.goto('/', { waitUntil: 'networkidle' })
 
   await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
   await expect(page.getByTestId('pulse')).toHaveCount(0)
   await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
   await expect(page.getByTestId('bets-24h')).toBeVisible()
+  await expect(page.getByTestId('save-btc')).toBeVisible()
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
 
-  await page.getByTestId('live-bets').click()
+  const liveLabel = page.locator('label.toggle').filter({ has: page.getByTestId('live-bets') })
+  await liveLabel.click()
   await expect(page.getByTestId('live-banner')).toBeVisible()
   await page.getByTestId('cancel-live').click()
   await expect(page.getByTestId('live-banner')).toHaveCount(0)
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
 
-  await page.getByTestId('live-bets').click()
+  await liveLabel.click()
   await expect(page.getByTestId('live-banner')).toBeVisible()
   await page.getByTestId('confirm-live').click()
   await expect(page.getByTestId('live-banner')).toHaveCount(0)
