@@ -61,6 +61,8 @@ describe('QC2 wires', () => {
     expect(dash).toMatch(/getLivePrints/)
     expect(dash).toMatch(/mergeLiveOntoBoard/)
     expect(dash).toMatch(/refetchInterval:\s*LIVE_PRINT_MS/)
+    expect(dash).toMatch(/liveEventKey/)
+    expect(dash).not.toMatch(/queryKey: \['live-prints', liveEvents, settings\.charts\][\s\S]{0,80}fetchedAt/)
     const data = await readFile(new URL('../src/lib/btc-data.ts', import.meta.url), 'utf8')
     expect(data).toMatch(/export const getLivePrints/)
     expect(dash).toMatch(/if \(!tabIsOpen\(\)\)/)

@@ -165,16 +165,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   })
 
   const structure = boardQuery.data ?? seedBoard
-  const liveEvents = useMemo(
-    () => boardEventTickers(structure),
-    [
-      structure?.fetchedAt,
-      structure?.tapes.btc?.eventTicker,
-      structure?.tapes.ng?.eventTicker,
-      structure?.tapes.cu?.eventTicker,
-      structure?.tapes.gld?.eventTicker,
-    ],
-  )
+  const liveEventKey = TAPE_IDS.map((id) => structure?.tapes[id]?.eventTicker ?? '').join('|')
+  const liveEvents = useMemo(() => boardEventTickers(structure), [liveEventKey])
 
   const printsQuery = useQuery({
     queryKey: ['live-prints', liveEvents, settings.charts],
@@ -633,7 +625,7 @@ function TapeRow({
   const status = ticketStatus(ticket)
   const pct = hitPct(hits)
   const live = quote?.live ?? null
-  const shownLive = useSmoothedLive(live, 160)
+  const shownLive = useSmoothedLive(live, 360)
   const beat = quote?.beat ?? 0
   const think = weThinkPair(live, beat, quote?.points ?? [])
   const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)

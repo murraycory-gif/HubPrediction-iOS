@@ -55,7 +55,7 @@ export function raceDomain(id: TapeId, beat: number, live: number | null, pts: P
 }
 
 /** Ease the on-screen NOW print toward the latest Kalshi last. Logic still uses raw live. */
-export function useSmoothedLive(live: number | null, ms = 160) {
+export function useSmoothedLive(live: number | null, ms = 360) {
   const [shown, setShown] = useState(live)
   const shownRef = useRef(live)
   useEffect(() => {

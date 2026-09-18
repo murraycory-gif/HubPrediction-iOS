@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadDeskBoard, loadLivePrints, pickOpen, resetDeskBoardForTests } from '../src/lib/kalshi.server'
-import { BOARD_STRUCTURE_MS, boardPollMs, liveRangeFromCharts, mergeLiveOntoBoard } from '../src/lib/tapes'
+import { BOARD_STRUCTURE_MS, LIVE_TRAIL_DOTS, boardPollMs, liveRangeFromCharts, mergeLiveOntoBoard, slimLivePoints } from '../src/lib/tapes'
 import type { DeskBoard } from '../src/lib/types'
 
 afterEach(() => {
@@ -361,6 +361,8 @@ describe('one fast quote path Soft KEEP same ticker/second', () => {
     const prints = await loadLivePrints({ btc: 'KXBTC15M-E' }, '5min')
     expect(prints.tapes.btc?.live).toBeCloseTo(80910)
     expect(prints.tapes.btc?.eventTicker).toBe('KXBTC15M-E')
+    expect((prints.tapes.btc?.points.length ?? 0) <= LIVE_TRAIL_DOTS).toBe(true)
+    expect(slimLivePoints(Array.from({ length: 400 }, (_, i) => ({ t: now - (399 - i) * 1000, px: 80_000 + i }))).length).toBeLessThanOrEqual(LIVE_TRAIL_DOTS)
     expect(calls.every((u) => u.includes('/live_data/events/'))).toBe(true)
     expect(calls.some((u) => u.includes('range=5min'))).toBe(true)
     expect(liveRangeFromCharts({ btc: 'live', ng: '5m', cu: 'live', gld: 'live' })).toBe('5min')

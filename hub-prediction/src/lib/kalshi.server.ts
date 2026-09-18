@@ -9,6 +9,7 @@ import {
   lastPrintFromLiveData,
   marketTradingActive,
   pointsFromLiveData,
+  slimLivePoints,
   num,
   seriesForTape,
   seriesToTape,
@@ -239,15 +240,12 @@ export async function loadLivePrints(
           return prev?.eventTicker === eventTicker ? prev : null
         }
         const print = lastPrintFromLiveData(livePayload)
-        const incoming = pointsFromLiveData(livePayload)
+        const incoming = slimLivePoints(pointsFromLiveData(livePayload))
         const prev = lastPrints?.tapes[id]
-        const live = print?.px ?? prev?.live ?? null
-        const liveSource = print?.source ?? prev?.liveSource ?? null
-        const points = mergeRaceTrail(
-          prev?.eventTicker === eventTicker ? prev.points : [],
-          incoming,
-          live,
-          Date.now(),
+        const live = print?.px ?? prev?.live ?? incoming[incoming.length - 1]?.px ?? null
+        const liveSource = print?.source ?? prev?.liveSource ?? (incoming.length ? 'kalshi-timeseries' : null)
+        const points = slimLivePoints(
+          mergeRaceTrail(prev?.eventTicker === eventTicker ? prev.points : [], incoming, live, Date.now()),
         )
         return { eventTicker, live, liveSource, points, fetchedAt: Date.now() }
       }),

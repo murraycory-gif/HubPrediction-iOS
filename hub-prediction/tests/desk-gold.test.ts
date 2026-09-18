@@ -409,7 +409,7 @@ describe('gold race path', () => {
 
   it('LIVE chart eases NOW and ticks the wall on rAF — Soft FAIL 250ms hop', async () => {
     const src = await readFile(new URL('../src/components/race-chart.tsx', import.meta.url), 'utf8')
-    expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 160\)/)
+    expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 360\)/)
     expect(src).toMatch(/t - last >= 48/)
     expect(src).toMatch(/requestAnimationFrame\(tick\)/)
     expect(src).toMatch(/displayLive/)

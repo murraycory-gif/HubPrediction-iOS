@@ -113,8 +113,24 @@ export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
 
 /** Structure board only. Prints ride LIVE_PRINT_MS. Fast near close so the next clock latches. */
 export const LIVE_PRINT_MS = 200
+export const LIVE_TRAIL_MS = 90_000
+export const LIVE_TRAIL_DOTS = 90
 export const BOARD_STRUCTURE_MS = 2500
 export const BOARD_ROLLOVER_MS = 350
+
+export function slimLivePoints(
+  points: { t: number; px: number }[] | undefined,
+  now = Date.now(),
+  keepMs = LIVE_TRAIL_MS,
+  maxDots = LIVE_TRAIL_DOTS,
+) {
+  const from = now - keepMs
+  const cut: { t: number; px: number }[] = []
+  for (const p of points ?? []) {
+    if (p.t >= from && Number.isFinite(p.px) && p.px > 0) cut.push(p)
+  }
+  return cut.length <= maxDots ? cut : cut.slice(-maxDots)
+}
 
 export function boardPollMs(
   board:
@@ -170,7 +186,10 @@ export function mergeLiveOntoBoard(
       ...q,
       live: p.live ?? q.live,
       liveSource: p.liveSource ?? q.liveSource,
-      points: mergeRaceTrail(q.points, p.points, p.live ?? q.live, p.fetchedAt),
+      points: slimLivePoints(
+        mergeRaceTrail(slimLivePoints(q.points, p.fetchedAt), p.points, p.live ?? q.live, p.fetchedAt),
+        p.fetchedAt,
+      ),
       fetchedAt: Math.max(q.fetchedAt, p.fetchedAt),
     }
     changed = true
