@@ -78,6 +78,7 @@ import {
   isAllBetsFilter,
   HIT_FLOOR,
   last24hBets,
+  tapeHitCell,
   liveArmGate,
   mergeKalshiHistoryToBook,
   liveSendGate,
@@ -108,7 +109,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [book, setBook] = useState<FinanceState>(() => loadFinance())
   const [liveConfirm, setLiveConfirm] = useState(false)
-  const [analystOpen, setAnalystOpen] = useState(false)
+  const [analystOpen, setAnalystOpen] = useState(true)
   const [financeOpen, setFinanceOpen] = useState(false)
   const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
   const sentRef = useRef<Record<string, SendClaim>>({})
@@ -543,7 +544,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               id={id}
               quote={board?.tapes[id] ?? null}
               ticket={ticketFor(tickets, id, board?.tapes[id]?.ticker)}
-              hits={hits.tapes[id]}
+              hits={tapeHitCell(id, hits, book.bets)}
               recipe={settings.tapes[id]}
               clock={settings.clocks[id]}
               chart={settings.charts?.[id] ?? DEFAULT_CHART}

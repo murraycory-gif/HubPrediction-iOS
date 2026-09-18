@@ -205,12 +205,17 @@ export function hydrateFinance(raw: unknown): FinanceState {
   const bets = Array.isArray(o.bets)
     ? o.bets
         .filter((b): b is BookedBet => {
+          if (!b || !isTapeId(b.tape) || (b.side !== 'up' && b.side !== 'down') || typeof b.ticker !== 'string') {
+            return false
+          }
+          const id = typeof b.betId === 'string' ? b.betId : ''
+          const ord = typeof b.orderId === 'string' ? b.orderId : ''
           return (
-            !!b &&
-            isTapeId(b.tape) &&
-            (isRealOrderId(b.orderId) || (typeof b.betId === 'string' && b.betId.startsWith('kalshi:'))) &&
-            (b.side === 'up' || b.side === 'down') &&
-            typeof b.ticker === 'string'
+            isRealOrderId(ord) ||
+            id.startsWith('kalshi:') ||
+            id.startsWith('paper:') ||
+            id.startsWith('bet_') ||
+            /^deskfill-/i.test(ord)
           )
         })
         .map((b) => ({ ...b, kind: betKind(b) }))
@@ -301,6 +306,32 @@ export function last24hBets(
   const n = w + l
   const pct = n ? Math.round((w / n) * 100) : 0
   return { placed, w, l, pnl, open, pct }
+}
+
+/** Tape chip W–L: latch first, else last-24h booked rows so a miss does not paint 0. */
+export function tapeHitCell(
+  id: TapeId,
+  hits: { tapes: Record<TapeId, { w: number; l: number }> },
+  bets: Array<{
+    tape: TapeId
+    status: 'open' | 'settled'
+    pnl: number | null
+    settledAt?: number | null
+    closeAt?: number
+    filledAt?: number
+  }>,
+  now = Date.now(),
+) {
+  const cell = hits.tapes[id] ?? { w: 0, l: 0 }
+  if (cell.w + cell.l > 0) return cell
+  const from = now - 24 * 60 * 60 * 1000
+  const settled = bets.filter(
+    (b) => b.tape === id && b.status === 'settled' && b.pnl != null && betStamp(b) >= from,
+  )
+  return {
+    w: settled.filter((b) => (b.pnl ?? 0) > 0).length,
+    l: settled.filter((b) => (b.pnl ?? 0) < 0).length,
+  }
 }
 
 export function dailyRealizedPnl(state: FinanceState, now = Date.now()) {
@@ -721,6 +752,7 @@ export function mergeKalshiHistoryToBook(
   const kalshi = [...byTicker.values()].map((b) => ({ ...b, kind: betKind(b) }))
   if (!kalshi.length) return state
   const desk = state.bets.filter((b) => !isImportedKalshiRow(b))
+  const imported = state.bets.filter((b) => isImportedKalshiRow(b))
   const deskTickers = new Set(desk.map((b) => b.ticker))
   const deskNext = desk.map((b) => {
     const k = kalshi.find((row) => row.ticker === b.ticker)
@@ -736,7 +768,9 @@ export function mergeKalshiHistoryToBook(
     }
   })
   const extra = kalshi.filter((b) => !deskTickers.has(b.ticker))
-  return saveFinance({ ...state, bets: [...deskNext, ...extra] })
+  const incomingTickers = new Set(kalshi.map((b) => b.ticker))
+  const keptImported = imported.filter((b) => !incomingTickers.has(b.ticker) && !deskTickers.has(b.ticker))
+  return saveFinance({ ...state, bets: [...deskNext, ...extra, ...keptImported] })
 }
 
 export function settleBook(

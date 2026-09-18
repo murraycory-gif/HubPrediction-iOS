@@ -22,7 +22,7 @@ if not exist "node_modules\vite" (
 echo.
 echo HUB Predictions host stays on http://127.0.0.1:8080
 echo Leave THIS window open. Refresh is safe.
-echo If Chrome still says refused, use 127.0.0.1:8080 not another port.
+echo A tab on 18080 now redirects to 8080. Do not use Vite's inner port.
 echo.
 
 :loop

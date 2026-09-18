@@ -73,8 +73,12 @@ if errorlevel 1 (
 echo.
 echo Desk host starting. Leave THIS window open.
 echo Open http://127.0.0.1:8080  (refresh is safe — the host stays on 8080).
+echo If Chrome still has 18080 in the URL, it now redirects to 8080.
 echo If Chrome says refused, this window is closed. Double-click start-desk.bat.
 echo.
 
+:loop
 call npm.cmd run dev
-endlocal
+echo Desk host exited — restarting in 2 seconds...
+timeout /t 2 /nobreak >nul
+goto loop

@@ -16,6 +16,7 @@ import {
   pnlVsDeposits,
   chasingLosses,
   last24hBets,
+  tapeHitCell,
   betClockLabel,
   hydrateFinance,
   cashAfterEachBet,
@@ -477,6 +478,54 @@ describe('finance Soft KEEP', () => {
     expect(run['live-loss']).toBeCloseTo(499.48)
     expect(run['live-open']).toBeCloseTo(499.48)
     expect(betKind({ betId: 'kalshi:KXBTC15M-A', orderId: 'ord-kalshi-btc-hist-01', kind: 'live' })).toBe('paper')
+    const keptOld = mergeKalshiHistoryToBook(
+      {
+        ...emptyFinance(),
+        bets: [
+          {
+            betId: 'kalshi:KXBTC15M-OLDKEEP',
+            tape: 'btc',
+            ticker: 'KXBTC15M-OLDKEEP',
+            clock: '15m',
+            closeAt: now - 1000,
+            side: 'up',
+            count: 1,
+            ask: 50,
+            spent: 0.5,
+            orderId: 'settled-KXBTC15M-OLDKEEP',
+            status: 'settled',
+            pnl: 0.5,
+            filledAt: now - 1000,
+            settledAt: now - 1000,
+            kind: 'paper',
+          },
+        ],
+      },
+      {
+        settlements: {
+          settlements: [
+            {
+              ticker: 'KXCOPPER15M-NEW',
+              market_result: 'yes',
+              yes_count_fp: '1',
+              no_count_fp: '0',
+              yes_total_cost_dollars: 0.4,
+              revenue_dollars: 1,
+              settled_time: new Date(now).toISOString(),
+            },
+          ],
+        },
+      },
+      now,
+    )
+    expect(keptOld.bets.some((b) => b.ticker === 'KXBTC15M-OLDKEEP')).toBe(true)
+    expect(keptOld.bets.some((b) => b.ticker === 'KXCOPPER15M-NEW')).toBe(true)
+    const emptyLatch = { tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } } }
+    expect(tapeHitCell('btc', emptyLatch, live.bets, now)).toEqual({ w: 1, l: 0 })
+    expect(tapeHitCell('btc', { tapes: { ...emptyLatch.tapes, btc: { w: 3, l: 1 } } }, live.bets, now)).toEqual({
+      w: 3,
+      l: 1,
+    })
     expect(betKind({ betId: 'bet_ord-real-12345', orderId: 'ord-real-12345', kind: 'live' })).toBe('live')
     const importedCash = cashAfterEachBet(
       [

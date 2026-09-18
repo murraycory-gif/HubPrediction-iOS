@@ -1,6 +1,6 @@
 import { createServer } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import { createDeskHost, splashHtml } from '../desk-host.mjs'
+import { createAliasHost, createDeskHost, rewritePublicLocation, splashHtml } from '../desk-host.mjs'
 
 describe('desk-host Soft FAIL refresh refused', () => {
   it('serves a self-reloading splash when Vite is down so Chrome does not refuse 8080', async () => {
@@ -39,5 +39,26 @@ describe('desk-host Soft FAIL refresh refused', () => {
     expect(await res.text()).toBe('ok /desk')
     server.close()
     vite.close()
+  })
+
+  it('rewrites Vite Location hops off 18080 back to 8080', () => {
+    expect(rewritePublicLocation('http://127.0.0.1:18080/desk')).toBe('http://127.0.0.1:8080/desk')
+    expect(rewritePublicLocation('http://localhost:18081/')).toBe('http://127.0.0.1:8080/')
+  })
+
+  it('answers 18080 with a redirect so Chrome refresh cannot refuse that tab', async () => {
+    const { server, publicPort } = createAliasHost({ publicPort: 8080, aliasPort: 0 })
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, '127.0.0.1', () => resolve())
+      server.once('error', reject)
+    })
+    const addr = server.address()
+    const port = typeof addr === 'object' && addr ? addr.port : 0
+    const res = await fetch(`http://127.0.0.1:${port}/tape`, { redirect: 'manual' })
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toBe(`http://127.0.0.1:${publicPort}/tape`)
+    expect(await res.text()).toMatch(/HUB Predictions/)
+    server.close()
+    expect(port).toBeGreaterThan(0)
   })
 })
