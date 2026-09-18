@@ -20,9 +20,8 @@ if not exist "node_modules\vite" (
 )
 
 echo.
-echo HUB Predictions host stays on http://127.0.0.1:8080
-echo Leave THIS window open. Refresh is safe.
-echo A tab on 18080 or 18081 now redirects to 8080. Do not use Vite's inner port.
+echo HUB Predictions: http://127.0.0.1:8080
+echo Leave THIS window open. That is the only desk URL. Refresh is safe.
 echo.
 echo Off home Wi-Fi: our tunnel. Double-click start-tunnel.bat once.
 echo After WireGuard is Active on the phone open http://10.77.0.1:8080

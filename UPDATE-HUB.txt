@@ -30,8 +30,7 @@ Use a semicolon — PowerShell does not allow & as a command joiner:
 
 cd C:\Users\Cory\Developer\HubPrediction-iOS; .\update-desk.bat
 
-Then open http://127.0.0.1:8080 — refresh is safe. A host process stays on 8080 even while Vite restarts.
-If the address bar still says 18080 or 18081, that tab now redirects to 8080. Do not use Vite's inner port.
+Then open http://127.0.0.1:8080 — that is the only desk URL. Refresh is safe.
 If Chrome says refused, the desk window is closed. Double-click start-desk.bat.
 
 Same pull without the bat:

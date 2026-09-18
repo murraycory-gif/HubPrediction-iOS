@@ -72,8 +72,7 @@ if errorlevel 1 (
 
 echo.
 echo Desk host starting. Leave THIS window open.
-echo Open http://127.0.0.1:8080  (refresh is safe — the host stays on 8080).
-echo If Chrome still has 18080 or 18081 in the URL, it now redirects to 8080.
+echo Open http://127.0.0.1:8080  — that is the only desk URL. Refresh is safe.
 echo If Chrome says refused, this window is closed. Double-click start-desk.bat.
 echo Off home Wi-Fi: our tunnel. Double-click start-tunnel.bat once, then
 echo on the phone open http://10.77.0.1:8080

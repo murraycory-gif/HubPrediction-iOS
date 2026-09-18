@@ -198,14 +198,13 @@ export async function startDeskHost() {
   for (const alias of ALIAS_PORTS) {
     try {
       await bindPublic(() => createAliasHost({ aliasPort: alias }), alias)
-      console.log(`[desk-host] ${alias} redirects to port ${PUBLIC_PORT} on the same host`)
     } catch (e) {
       console.error(`[desk-host] could not bind ${alias} — 8080 still up`, e)
     }
   }
-  console.log(`[desk-host] This PC: http://127.0.0.1:${PUBLIC_PORT}`)
+  console.log(`[desk-host] Desk: http://127.0.0.1:${PUBLIC_PORT}`)
   console.log(`[desk-host] Our tunnel (phone / iPad / other PC): http://10.77.0.1:${PUBLIC_PORT}`)
-  console.log('[desk-host] Leave this window open. Browser refresh cannot refuse 8080, 18080, or 18081.')
+  console.log('[desk-host] Leave this window open. One URL. Refresh stays on 8080.')
   process.on('uncaughtException', (e) => {
     console.error('[desk-host] kept 8080 alive after error', e)
   })
