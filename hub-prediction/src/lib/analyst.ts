@@ -18,7 +18,7 @@ import {
   type TapeRecipe,
 } from './tapes'
 import { deskStorage } from './desk-storage'
-import { HIT_FLOOR, isPaperBet } from './finance'
+import { HIT_FLOOR, isLiveBet, isPaperBet } from './finance'
 import type { DeskBoard } from './types'
 
 export const PAPER_DRAFTS_KEY = 'hub.desk.analyst.paper.v1'
@@ -762,7 +762,7 @@ export function runAutoAnalyst(opts: {
 
   for (const note of opts.report.tapes) {
     const id = note.id
-    const streak = consecutiveLosses(opts.bets, id)
+    const streak = consecutiveLosses(opts.bets.filter((b) => isLiveBet(b)), id)
     const active = rehab.tapes[id]?.status === 'paper' ? rehab.tapes[id]! : null
     const sig = tapeBetSig(opts.bets, id)
 

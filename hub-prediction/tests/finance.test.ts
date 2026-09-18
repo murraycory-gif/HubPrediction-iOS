@@ -9,6 +9,7 @@ import {
   emptyFinance,
   financeSendsOrders,
   liveArmGate,
+  liveBotCall,
   liveCashFloor,
   liveSendGate,
   paper48hPassed,
@@ -377,9 +378,9 @@ describe('finance Soft KEEP', () => {
     expect(cu?.status).toBe('open')
     expect(cu?.side).toBe('up')
     expect(hydrateSettings(null).liveBets).toBe(false)
-    expect(btc?.kind).toBe('paper')
-    expect(ng?.kind).toBe('paper')
-    expect(cu?.kind).toBe('paper')
+    expect(btc?.kind).toBe('live')
+    expect(ng?.kind).toBe('live')
+    expect(cu?.kind).toBe('live')
   })
 
   it('counts paper in hit W–L only — live-only P&L and placed', () => {
@@ -477,7 +478,8 @@ describe('finance Soft KEEP', () => {
     expect(run['paper-win']).toBeCloseTo(500.48)
     expect(run['live-loss']).toBeCloseTo(499.48)
     expect(run['live-open']).toBeCloseTo(499.48)
-    expect(betKind({ betId: 'kalshi:KXBTC15M-A', orderId: 'ord-kalshi-btc-hist-01', kind: 'live' })).toBe('paper')
+    expect(betKind({ betId: 'kalshi:KXBTC15M-A', orderId: 'ord-kalshi-btc-hist-01', kind: 'live' })).toBe('live')
+    expect(betKind({ betId: 'paper:local', orderId: 'deskfill-btc-aaaaaaaa' })).toBe('paper')
     const keptOld = mergeKalshiHistoryToBook(
       {
         ...emptyFinance(),
@@ -536,5 +538,42 @@ describe('finance Soft KEEP', () => {
     )
     expect(importedCash['kalshi:KXBTC15M-A']).toBeCloseTo(292.89)
     expect(importedCash['bet_ord-live-1']).toBeCloseTo(293.37)
+    const walk = cashAfterEachBet(
+      [
+        { betId: 'win-50', kind: 'live', status: 'settled', pnl: 50, filledAt: 1, settledAt: 1 },
+        { betId: 'lose-10', kind: 'live', status: 'settled', pnl: -10, filledAt: 2, settledAt: 2 },
+        { betId: 'paper-skip', kind: 'paper', orderId: 'deskfill-btc-skip01', status: 'settled', pnl: 99, filledAt: 3, settledAt: 3 },
+      ],
+      540,
+    )
+    expect(walk['win-50']).toBeCloseTo(550)
+    expect(walk['lose-10']).toBeCloseTo(540)
+    expect(walk['paper-skip']).toBeCloseTo(540)
+  })
+})
+
+describe('liveBotCall instant Kalshi post', () => {
+  const ready = {
+    tabOpen: true,
+    killed: false,
+    botOn: true,
+    liveBets: true,
+    liveCash: true,
+    rehabPaper: false,
+    tradingActive: true,
+    inArm: true,
+    askOk: true,
+    lean: 'up' as const,
+    hitOk: true,
+  }
+
+  it('posts live the moment the bot calls — no extra wait', () => {
+    expect(liveBotCall(ready)).toBe('live')
+    expect(liveBotCall({ ...ready, liveBets: false })).toBe('paper')
+    expect(liveBotCall({ ...ready, liveCash: false })).toBe('paper')
+    expect(liveBotCall({ ...ready, rehabPaper: true })).toBe('paper')
+    expect(liveBotCall({ ...ready, lean: 'sit' })).toBe('sit')
+    expect(liveBotCall({ ...ready, hitOk: false })).toBe('sit')
+    expect(liveBotCall({ ...ready, tradingActive: false })).toBe('sit')
   })
 })

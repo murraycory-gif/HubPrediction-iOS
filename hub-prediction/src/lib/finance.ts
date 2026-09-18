@@ -99,14 +99,21 @@ export function isImportedKalshiRow(b: { betId?: unknown; orderId?: unknown }) {
   return false
 }
 
-/** LIVE only if this desk POSTed the order. Kalshi history stays paper until live cash sends. */
+/** Placed on Kalshi = LIVE. deskfill / paper: never hit Kalshi. */
 export function betKind(b: { kind?: unknown; orderId?: unknown; betId?: unknown }): BetKind {
   if (isPaperOrderId(b.orderId) || (typeof b.betId === 'string' && /^paper:/i.test(b.betId))) return 'paper'
-  if (isImportedKalshiRow(b)) return 'paper'
+  if (isImportedKalshiRow(b)) return 'live'
   if (b.kind === 'paper') return 'paper'
   if (b.kind === 'live') return 'live'
   if (typeof b.betId === 'string' && b.betId.startsWith('bet_') && isRealOrderId(b.orderId)) return 'live'
+  if (isRealOrderId(b.orderId)) return 'live'
   return 'paper'
+}
+
+/** This desk POSTed the order. Imported Kalshi history is live on Kalshi but not a desk-live streak. */
+export function isDeskLiveBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  if (isPaperBet(b) || isImportedKalshiRow(b)) return false
+  return betKind(b) === 'live'
 }
 
 export function isPaperBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
@@ -392,6 +399,36 @@ export function liveArmGate(
   return { ok: true }
 }
 
+/** Instant bot call: live POSTs now, paper stays local, sit does not send. */
+export function liveBotCall(opts: {
+  tabOpen: boolean
+  killed: boolean
+  botOn: boolean
+  liveBets: boolean
+  liveCash: boolean
+  rehabPaper: boolean
+  tradingActive: boolean
+  inArm: boolean
+  askOk: boolean
+  lean: 'up' | 'down' | 'sit'
+  hitOk: boolean
+}): 'live' | 'paper' | 'sit' {
+  if (
+    !opts.tabOpen ||
+    opts.killed ||
+    !opts.botOn ||
+    opts.tradingActive === false ||
+    !opts.inArm ||
+    !opts.askOk ||
+    opts.lean === 'sit'
+  ) {
+    return 'sit'
+  }
+  if (opts.rehabPaper || opts.liveBets !== true || opts.liveCash !== true) return 'paper'
+  if (!opts.hitOk) return 'sit'
+  return 'live'
+}
+
 /** Sit when the tape is under the 83% goal after enough settled results. */
 export function hitFloorGate(w: number, l: number): Gate {
   const n = Math.max(0, Math.round(w) + Math.round(l))
@@ -540,7 +577,7 @@ export function mergeSettlementEventsToBook(
       pnl: e.pnl ?? (e.win ? 0 : 0),
       filledAt: e.at,
       settledAt: e.at,
-      kind: 'paper',
+      kind: 'live',
     })
   }
   if (!extra.length) return state
@@ -661,7 +698,7 @@ export function betsFromKalshiFills(raw: unknown, fromMs = 0): BookedBet[] {
       pnl: null,
       filledAt: g.filledAt,
       settledAt: null,
-      kind: 'paper',
+      kind: 'live',
     })
   }
   return out
@@ -683,7 +720,7 @@ export function betsFromKalshiSettlements(raw: unknown, fromMs = 0, now = Date.n
     pnl: e.pnl ?? (e.win ? 0 : 0),
     filledAt: e.at,
     settledAt: e.at,
-    kind: 'paper' as const,
+    kind: 'live' as const,
   }))
 }
 
@@ -715,7 +752,7 @@ export function betsFromKalshiPositions(raw: unknown, fromMs = 0): BookedBet[] {
       pnl: null,
       filledAt: at,
       settledAt: null,
-      kind: 'paper',
+      kind: 'live',
     })
   }
   return out
@@ -743,7 +780,7 @@ export function mergeKalshiHistoryToBook(
       spent: cur.spent || b.spent,
       orderId: isRealOrderId(b.orderId) ? b.orderId : cur.orderId,
       filledAt: Math.min(cur.filledAt || b.filledAt, b.filledAt || cur.filledAt),
-      kind: 'paper',
+      kind: betKind(b),
     })
   }
   for (const b of betsFromKalshiPositions(input.positions, fromMs)) {

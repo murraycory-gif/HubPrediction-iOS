@@ -378,4 +378,40 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     expect(stay.settings.tapes.ng.liveOn).toBe(false)
     expect(stay.settings.liveBets).toBe(false)
   })
+
+  it('halts live cash from real Kalshi losses — Soft FAIL unlock during HALT', () => {
+    const now = 7_000_000
+    const losses = [0, 1, 2].map((i) => ({
+      betId: `kalshi:KXGOLD15M-L${i}`,
+      tape: 'gld' as const,
+      status: 'settled' as const,
+      pnl: -8,
+      filledAt: now - i * 1000,
+      settledAt: now - i * 1000,
+      closeAt: now - i * 1000,
+      kind: 'live' as const,
+      orderId: `settled-KXGOLD15M-L${i}`,
+    }))
+    const armed = hydrateSettings({
+      tapes: { gld: { ...GOLD_RECIPES.gld, botOn: true, liveOn: true } },
+    })
+    const halted = runAutoAnalyst({
+      settings: armed,
+      report: analyzeDesk(board(), emptyHits(), losses, armed.tapes),
+      bets: losses,
+      rehab: emptyAutoState(),
+      now,
+    })
+    expect(isRehabPaper(halted.rehab, 'gld')).toBe(true)
+    expect(halted.settings.tapes.gld.liveOn).toBe(false)
+    const stay = runAutoAnalyst({
+      settings: { ...halted.settings, tapes: { ...halted.settings.tapes, gld: { ...halted.settings.tapes.gld, liveOn: true } } },
+      report: analyzeDesk(board(), emptyHits(), losses, halted.settings.tapes),
+      bets: losses,
+      rehab: halted.rehab,
+      now: now + 1000,
+    })
+    expect(isRehabPaper(stay.rehab, 'gld')).toBe(true)
+    expect(stay.settings.tapes.gld.liveOn).toBe(false)
+  })
 })

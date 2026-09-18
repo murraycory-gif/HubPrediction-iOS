@@ -79,6 +79,7 @@ import {
   HIT_FLOOR,
   last24hBets,
   tapeHitCell,
+  liveBotCall,
   liveArmGate,
   mergeKalshiHistoryToBook,
   liveSendGate,
@@ -419,13 +420,26 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       const key = `${id}:${quote.ticker}`
       const gates = cashGates(settings, id)
       const paperRehab = isRehabPaper(rehab, id)
+      const recent = recentLiveTapeWL(book.bets, id, 12)
+      const call = liveBotCall({
+        tabOpen: true,
+        killed: book.killed,
+        botOn: recipe.botOn,
+        liveBets: settings.liveBets,
+        liveCash: gates.liveCash,
+        rehabPaper: paperRehab,
+        tradingActive: quote.tradingActive !== false,
+        inArm: true,
+        askOk: true,
+        lean,
+        hitOk: hitFloorGate(recent.w, recent.l).ok,
+      })
+      if (call === 'sit') continue
       if (claimSend(sentRef.current, key) !== 'send') continue
-      if (paperRehab || !gates.ok) {
+      if (call === 'paper') {
         sendPaper(id, lean, quote)
         continue
       }
-      const recent = recentLiveTapeWL(book.bets, id, 12)
-      if (!hitFloorGate(recent.w, recent.l).ok) continue
       void sendLive(id, lean, quote)
     }
   }, [board?.fetchedAt, settings, tickets, book.killed, hits, rehab])
@@ -1023,8 +1037,8 @@ function Bets24Strip({
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
       <p className="hud-label">
-        Bets since first deposit · P&L is desk live only · paper in hit · paper does not move CASH · WINDOW
-        date/time · MODE · {HIT_FLOOR}% win-ratio goal
+        Bets since first deposit · Kalshi fills are LIVE and walk CASH · deskfill is PAPER and does not
+        walk CASH · WINDOW date/time · MODE · {HIT_FLOOR}% win-ratio goal
       </p>
       <div className="bets-filter" data-testid="bets-filter">
         <button
