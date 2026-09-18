@@ -1,6 +1,6 @@
 import http from 'node:http'
 import net from 'node:net'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -29,18 +29,36 @@ export function splashHtml() {
 </html>`
 }
 
-export function publicDeskUrl(pathName = '/', publicPort = PUBLIC_PORT) {
-  const p = pathName.startsWith('/') ? pathName : `/${pathName}`
-  return `http://127.0.0.1:${publicPort}${p}`
+export function hostNamePort(reqHost, publicPort = PUBLIC_PORT) {
+  const raw = String(reqHost || `127.0.0.1:${publicPort}`).replace(/^https?:\/\//, '')
+  const hostname = raw.replace(/:\d+$/, '').replace(/^\[(.*)\]$/, '$1') || '127.0.0.1'
+  if (hostname.includes(':') && !hostname.startsWith('[')) return `[${hostname}]:${publicPort}`
+  return `${hostname}:${publicPort}`
 }
 
-/** Soft FAIL leaking Vite's inner port into Location / HMR so Chrome hops to 18080. */
-export function rewritePublicLocation(loc, publicPort = PUBLIC_PORT) {
+export function publicDeskUrl(pathName = '/', publicPort = PUBLIC_PORT, reqHost) {
+  const p = pathName.startsWith('/') ? pathName : `/${pathName}`
+  return `http://${hostNamePort(reqHost, publicPort)}${p}`
+}
+
+/** Soft FAIL leaking Vite's inner port. Keep the phone on the Tailscale / LAN host. */
+export function rewritePublicLocation(loc, publicPort = PUBLIC_PORT, reqHost) {
   if (typeof loc !== 'string' || !loc) return loc
+  const dest = `http://${hostNamePort(reqHost, publicPort)}`
   return loc
-    .replace(/127\.0\.0\.1:1808\d\b/g, `127.0.0.1:${publicPort}`)
-    .replace(/localhost:1808\d\b/g, `127.0.0.1:${publicPort}`)
-    .replace(/\[::1\]:1808\d\b/g, `127.0.0.1:${publicPort}`)
+    .replace(/https?:\/\/127\.0\.0\.1:1808\d\b/g, dest)
+    .replace(/https?:\/\/localhost:1808\d\b/g, dest)
+    .replace(/https?:\/\/\[::1\]:1808\d\b/g, dest)
+}
+
+export function listTailscaleDeskUrls(publicPort = PUBLIC_PORT, run = execFileSync) {
+  try {
+    const ip = String(run('tailscale', ['ip', '-4'], { encoding: 'utf8' })).trim().split(/\s+/)[0]
+    if (!ip || !/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return []
+    return [`http://${ip}:${publicPort}`]
+  } catch {
+    return []
+  }
 }
 
 function viteBin() {
@@ -100,7 +118,7 @@ export function createDeskHost(opts = {}) {
   const vitePort = opts.vitePort ?? VITE_PORT
   const server = http.createServer((req, res) => {
     const incomingHost = String(req.headers.host || `127.0.0.1:${publicPort}`)
-    const publicHost = /1808\d/.test(incomingHost) ? `127.0.0.1:${publicPort}` : incomingHost
+    const publicHost = /:1808\d\b/.test(incomingHost) ? hostNamePort(incomingHost, publicPort) : incomingHost
     const p = http.request(
       {
         host: '127.0.0.1',
@@ -112,7 +130,7 @@ export function createDeskHost(opts = {}) {
       (pr) => {
         const headers = { ...pr.headers }
         if (typeof headers.location === 'string') {
-          headers.location = rewritePublicLocation(headers.location, publicPort)
+          headers.location = rewritePublicLocation(headers.location, publicPort, publicHost)
         }
         res.writeHead(pr.statusCode || 502, headers)
         pr.pipe(res)
@@ -135,7 +153,7 @@ export function createAliasHost(opts = {}) {
   const publicPort = opts.publicPort ?? PUBLIC_PORT
   const aliasPort = opts.aliasPort ?? ALIAS_PORT
   const server = http.createServer((req, res) => {
-    const dest = publicDeskUrl(req.url || '/', publicPort)
+    const dest = publicDeskUrl(req.url || '/', publicPort, req.headers.host)
     res.writeHead(302, {
       location: dest,
       'cache-control': 'no-store',
@@ -177,11 +195,14 @@ export async function startDeskHost() {
   const server = await bindPublic(() => createDeskHost(), PUBLIC_PORT)
   try {
     await bindPublic(() => createAliasHost(), ALIAS_PORT)
-    console.log(`[desk-host] ${ALIAS_PORT} redirects to http://127.0.0.1:${PUBLIC_PORT}`)
+    console.log(`[desk-host] ${ALIAS_PORT} redirects to port ${PUBLIC_PORT} on the same host`)
   } catch (e) {
     console.error(`[desk-host] could not bind ${ALIAS_PORT} (old Vite still there?) — 8080 still up`, e)
   }
-  console.log(`[desk-host] http://127.0.0.1:${PUBLIC_PORT}  and  http://localhost:${PUBLIC_PORT}`)
+  console.log(`[desk-host] This PC: http://127.0.0.1:${PUBLIC_PORT}`)
+  for (const url of listTailscaleDeskUrls()) {
+    console.log(`[desk-host] Phone / iPad / other PC (off home Wi-Fi): ${url}`)
+  }
   console.log('[desk-host] Leave this window open. Browser refresh cannot refuse 8080 or 18080.')
   process.on('uncaughtException', (e) => {
     console.error('[desk-host] kept 8080 alive after error', e)

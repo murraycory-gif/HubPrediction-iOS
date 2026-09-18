@@ -75,6 +75,12 @@ echo Desk host starting. Leave THIS window open.
 echo Open http://127.0.0.1:8080  (refresh is safe — the host stays on 8080).
 echo If Chrome still has 18080 in the URL, it now redirects to 8080.
 echo If Chrome says refused, this window is closed. Double-click start-desk.bat.
+echo Off home Wi-Fi use Tailscale — same account on this PC and the phone / iPad.
+where tailscale >nul 2>&1
+if not errorlevel 1 (
+  echo Tailscale desk URL:
+  for /f %%I in ('tailscale ip -4') do echo   http://%%I:8080
+)
 echo.
 
 :loop

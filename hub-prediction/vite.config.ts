@@ -36,10 +36,8 @@ export default defineConfig({
     strictPort: true,
     host: process.env.DESK_VITE_HOST || true,
     allowedHosts: true,
-    origin: `http://127.0.0.1:${publicPort}`,
     hmr: {
       protocol: 'ws',
-      host: '127.0.0.1',
       clientPort: publicPort,
     },
   },
