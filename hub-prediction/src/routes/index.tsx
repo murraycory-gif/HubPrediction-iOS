@@ -1,9 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Dashboard } from '../components/dashboard'
-import { peekDesk } from '../lib/btc-data'
+import { getDeskBoard } from '../lib/btc-data'
 
 export const Route = createFileRoute('/')({
-  loader: async () => peekDesk(),
+  loader: async () => getDeskBoard(),
   component: Home,
 })
 
