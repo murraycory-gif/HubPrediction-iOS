@@ -23,15 +23,6 @@ export function SettingsPanel(props: {
       </p>
 
       <div className="settings-master">
-        <label className={`toggle ${props.settings.liveBets ? 'toggle-hot' : ''}`}>
-          <input
-            type="checkbox"
-            data-testid="live-bets"
-            checked={props.settings.liveBets}
-            onChange={(e) => props.onLiveBets(e.target.checked)}
-          />
-          Live bets {props.settings.liveBets ? 'ON' : 'OFF'}
-        </label>
         <button type="button" className="chip-btn" onClick={props.onRefreshCash}>
           Refresh cash
         </button>

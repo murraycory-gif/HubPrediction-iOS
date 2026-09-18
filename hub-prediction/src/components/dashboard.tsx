@@ -88,7 +88,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [keyId, setKeyId] = useState(() => readLocal(KEY_ID))
   const [pem, setPem] = useState(() => readLocal(KEY_PEM))
   const [msg, setMsg] = useState('')
-  const [settingsOpen, setSettingsOpen] = useState(true)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [book, setBook] = useState<FinanceState>(() => loadFinance())
   const [liveConfirm, setLiveConfirm] = useState(false)
   const [bets, setBets] = useState<TapeId[] | 'all'>('all')
@@ -275,15 +275,39 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     <div className="desk">
       <header className="desk-head" data-testid="desk-head">
         <div className="brand-bar">
+          <div className="rain" aria-hidden="true">
+            {Array.from({ length: 22 }, (_, i) => (
+              <span key={i} className="rain-col" style={{ animationDelay: `${(i % 8) * 0.35}s` }}>
+                010011010111001001101001011100100110
+              </span>
+            ))}
+          </div>
           <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
-          <button
-            type="button"
-            className="chip-btn"
-            data-testid="settings-toggle"
-            onClick={() => setSettingsOpen((v) => !v)}
-          >
-            {settingsOpen ? 'Hide settings' : 'Settings'}
-          </button>
+          <div className="brand-actions">
+            <label className={`toggle ${settings.liveBets ? 'toggle-hot' : ''}`}>
+              <input
+                type="checkbox"
+                data-testid="live-bets"
+                checked={settings.liveBets}
+                onChange={(e) => {
+                  if (e.target.checked) setLiveConfirm(true)
+                  else {
+                    setLiveConfirm(false)
+                    setSettings(setLiveBets(settings, false))
+                  }
+                }}
+              />
+              Live bets {settings.liveBets ? 'ON' : 'OFF'}
+            </label>
+            <button
+              type="button"
+              className="chip-btn"
+              data-testid="settings-toggle"
+              onClick={() => setSettingsOpen((v) => !v)}
+            >
+              {settingsOpen ? 'Hide settings' : 'Settings'}
+            </button>
+          </div>
         </div>
         <div className="stat-row">
           <Stat

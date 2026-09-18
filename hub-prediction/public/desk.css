@@ -88,8 +88,35 @@ body {
   padding-top: env(safe-area-inset-top, 0px);
 }
 
+.rain {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-between;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.28;
+}
+
+.rain-col {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.15;
+  color: #00e57a;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: 0.18em;
+  animation: fall 7.5s linear infinite;
+}
+
+@keyframes fall {
+  from { transform: translateY(-40%); }
+  to { transform: translateY(40%); }
+}
+
 .desk-head h1 {
   margin: 0;
+  flex: 1;
   font-family: var(--mono);
   font-size: clamp(20px, 4.6vw, 34px);
   letter-spacing: 0.22em;
@@ -97,6 +124,16 @@ body {
   color: var(--up);
   text-shadow: 0 0 18px rgba(0, 229, 122, 0.45);
   white-space: nowrap;
+  z-index: 1;
+}
+
+.brand-actions {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .stat-row,
