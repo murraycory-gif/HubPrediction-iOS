@@ -62,6 +62,36 @@ export function formatDayLabel(ms: number) {
   }).format(new Date(ms))
 }
 
+/** Kalshi-style window: September 18, 11:30 – 11:45 AM CDT */
+export function formatWindowRange(openAt?: number, closeAt?: number) {
+  if (!openAt || !closeAt || !Number.isFinite(openAt) || !Number.isFinite(closeAt)) return '—'
+  const open = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(new Date(openAt))
+  const close = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(new Date(closeAt))
+  return `${open} – ${close} CDT`
+}
+
+export function formatChartTick(ms: number, windowMs = 15 * 60_000) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    hour: 'numeric',
+    minute: '2-digit',
+    second: windowMs <= 5 * 60_000 ? '2-digit' : undefined,
+    hour12: true,
+  }).format(new Date(ms))
+}
+
 export function startOfChicagoDay(ms: number) {
   const p = parts(ms)
   const guess = Date.UTC(p.year, p.month - 1, p.day, 6, 0, 0)

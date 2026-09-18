@@ -98,6 +98,15 @@ function pointsFromLive(payload: unknown): Point[] {
       if (t != null && px != null && px > 0) out.push({ t, px })
     }
   }
+  const ticks = details.ticks ?? details.trades ?? live?.ticks
+  if (Array.isArray(ticks)) {
+    for (const row of ticks) {
+      if (!row || typeof row !== 'object') continue
+      const t = num((row as { t?: unknown; ts?: unknown }).t ?? (row as { ts?: unknown }).ts)
+      const px = num((row as { v?: unknown; px?: unknown; price?: unknown }).v ?? (row as { px?: unknown }).px ?? (row as { price?: unknown }).price)
+      if (t != null && px != null && px > 0) out.push({ t: t < 1e12 ? t * 1000 : t, px })
+    }
+  }
   const sticks = details.candlesticks
   const groups = sticks && typeof sticks === 'object' ? (sticks as Record<string, unknown>) : null
   const series = Array.isArray(groups?.['1S'])
@@ -118,7 +127,7 @@ function pointsFromLive(payload: unknown): Point[] {
     }
   }
   out.sort((a, b) => a.t - b.t)
-  return out.slice(-240)
+  return out.slice(-480)
 }
 
 function clocksKey(clocks: Record<TapeId, TapeClock>) {

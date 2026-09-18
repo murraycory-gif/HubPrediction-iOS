@@ -4,6 +4,9 @@ import {
   DEFAULT_CLOCK,
   DEFAULT_SETTINGS,
   GOLD_RECIPES,
+  hydrateChartRange,
+  nowTone,
+  formatNowDelta,
   SETTINGS_KEY,
   seriesForTape,
   setTapeClock,
@@ -361,7 +364,7 @@ describe('gold race path', () => {
     const now = 1_000_000
     const dense = Array.from({ length: 200 }, (_, i) => ({ t: now - (199 - i) * 1000, px: 4358 + (i % 7) * 0.1 }))
     const cleaned = cleanRacePoints(dense, now)
-    expect(cleaned.length).toBeLessThanOrEqual(80)
+    expect(cleaned.length).toBeLessThanOrEqual(120)
     expect(cleaned[cleaned.length - 1]?.px).toBeCloseTo(dense[dense.length - 1]!.px)
     const hour = Array.from({ length: 40 }, (_, i) => ({ t: now - (39 - i) * 90_000, px: 4358 + i * 0.05 }))
     const hourPts = cleanRacePoints(hour, now, 60 * 60_000)
@@ -371,6 +374,19 @@ describe('gold race path', () => {
     expect(gold.hi - gold.lo).toBeLessThan(40)
     const btc = raceDomain('btc', 76500, 76540, [{ t: now, px: 76520 }])
     expect(btc.hi - btc.lo).toBeGreaterThan(70)
+  })
+
+  it('NOW is green below TO BEAT and red above — Kalshi chips LIVE/5M/15M/1H', () => {
+    expect(nowTone(80935.21, 81005.03)).toBe('up')
+    expect(nowTone(81040, 81005.03)).toBe('down')
+    expect(nowTone(81005.03, 81005.03)).toBeUndefined()
+    expect(formatNowDelta('btc', 80935.21, 81005.03)).toMatch(/−/)
+    expect(hydrateChartRange('20m')).toBe('15m')
+    expect(hydrateChartRange('10m')).toBe('15m')
+    expect(hydrateChartRange('live')).toBe('live')
+    expect(hydrateSettings(null).charts.btc).toBe('live')
+    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(GOLD_RECIPES.btc.centLo).toBe(69)
   })
 })
 

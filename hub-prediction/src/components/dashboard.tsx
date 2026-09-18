@@ -5,7 +5,9 @@ import {
   TAPE_IDS,
   TAPE_META,
   TAPE_CLOCKS,
+  CLOCK_CALLOUT,
   CLOCK_LABELS,
+  DEFAULT_CHART,
   GOLD_RECIPES,
   applyBetsFilter,
   askInBand,
@@ -17,8 +19,10 @@ import {
   extractOrderId,
   formatCash,
   formatLive,
+  formatNowDelta,
   formatPnl,
   formatWeThink,
+  nowTone,
   hitPct,
   hydrateCashFromKalshi,
   inArmWindow,
@@ -73,8 +77,10 @@ import {
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
+import { formatWindowRange } from '../lib/chicago-time'
 import { RaceChart } from './race-chart'
 import { SettingsPanel } from './settings-panel'
+import { TapeIcon } from './tape-icon'
 
 export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [settings, setSettings] = useState<DeskSettings>(() => hydrateSettings(null))
@@ -430,7 +436,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               hits={hits.tapes[id]}
               recipe={settings.tapes[id]}
               clock={settings.clocks[id]}
-              chart={settings.charts?.[id] ?? '20m'}
+              chart={settings.charts?.[id] ?? DEFAULT_CHART}
               liveBets={settings.liveBets}
               recipeLocked={chasingLosses(book) || book.killed}
               onClock={(next) => setSettings(setTapeClock(settings, id, next))}
@@ -599,6 +605,9 @@ function TapeRow({
   const beat = quote?.beat ?? 0
   const think = weThinkPair(live, beat, quote?.points ?? [])
   const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)
+  const callout = CLOCK_CALLOUT[clock]
+  const tone = nowTone(live, beat)
+  const liveOn = quote?.tradingActive === true
   const [draft, setDraft] = useState(recipe.contracts)
   const contractsRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -615,56 +624,84 @@ function TapeRow({
 
   return (
     <article className={`tape tape-${id}`} data-testid={`tape-${id}`} data-tape={id}>
-      <div className="tape-row">
-        <div className="hit-chip" data-testid={`hit-${id}`}>
-          <span className="hit-k">24H</span>
-          <span className="tape-hit">{pct}%</span>
-          <span className="tape-wl" data-testid={`wl-${id}`}>
-            {hits.w}W–{hits.l}L
-          </span>
+      <header className="tape-head">
+        <div className="tape-identity">
+          <TapeIcon id={id} />
+          <div className="tape-callout">
+            <p className="tape-kicker glyph-plate">
+              {TAPE_META[id].label} / {callout.kicker}
+            </p>
+            <h2 className="tape-title glyph-plate" data-testid={`name-${id}`}>
+              {TAPE_META[id].label} {callout.title}
+            </h2>
+            <p className="tape-window glyph-plate">
+              <span className="tape-name">
+                {formatWindowRange(quote?.openAt, quote?.closeAt)}
+              </span>
+              {liveOn ? (
+                <span className="tape-live-flag">
+                  <span className="live-dot" /> LIVE
+                </span>
+              ) : null}
+            </p>
+          </div>
         </div>
-        <p className="tape-name">
-          {TAPE_META[id].label} · {quote?.clock || '—'}
-        </p>
-        <label className="clock-field glyph-plate">
-          Clock
-          <select
-            className="clock-select"
-            data-testid={`clock-${id}`}
-            value={clock}
-            onChange={(e) => onClock(e.target.value as TapeClock)}
-          >
-            {TAPE_CLOCKS.map((c) => (
-              <option key={c} value={c}>
-                {CLOCK_LABELS[c]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
-          {status}
-        </p>
-        <p className="tape-ticket" data-testid={`ticket-${id}`}>
-          {ticket
-            ? `${status} · ${ticket.contracts} · ${ticket.orderId}`
-            : 'No ticket this clock'}
-        </p>
-        <CloseClock closeAt={quote?.closeAt} />
-        <p className="tape-num glyph-plate" data-testid={`beat-${id}`}>
-          <span className="beat-k" data-testid={`beat-label-${id}`}>
-            BEAT
-          </span>{' '}
-          <span data-testid={`beat-value-${id}`}>{formatLive(id, beat || null)}</span>
-        </p>
-      </div>
-
-      <div className="tape-reads">
-        <div className="live-read glyph-plate" data-testid={`live-plate-${id}`}>
-          <p className="hud-label">LIVE</p>
-          <p className="tape-num" data-testid={`live-${id}`}>
-            {formatLive(id, live)}
+        <div className="tape-head-tools">
+          <div className="hit-chip" data-testid={`hit-${id}`}>
+            <span className="hit-k">24H</span>
+            <span className="tape-hit">{pct}%</span>
+            <span className="tape-wl" data-testid={`wl-${id}`}>
+              {hits.w}W–{hits.l}L
+            </span>
+          </div>
+          <label className="clock-field glyph-plate">
+            Clock
+            <select
+              className="clock-select"
+              data-testid={`clock-${id}`}
+              value={clock}
+              onChange={(e) => onClock(e.target.value as TapeClock)}
+            >
+              {TAPE_CLOCKS.map((c) => (
+                <option key={c} value={c}>
+                  {CLOCK_LABELS[c]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <CloseClock closeAt={quote?.closeAt} />
+          <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
+            {status}
           </p>
         </div>
+      </header>
+
+      <div className="tape-marks">
+        <div className="mark-beat glyph-plate" data-testid={`beat-${id}`}>
+          <p className="hud-label beat-k" data-testid={`beat-label-${id}`}>
+            TO BEAT
+          </p>
+          <p className="tape-num" data-testid={`beat-value-${id}`}>
+            {formatLive(id, beat || null)}
+          </p>
+          <p className="mark-sub">{quote?.clock || '—'}</p>
+        </div>
+        <div className="mark-now live-read glyph-plate" data-testid={`live-plate-${id}`}>
+          <p className="hud-label">NOW</p>
+          <p className={`tape-num${tone ? ` tone-${tone}` : ''}`} data-testid={`live-${id}`}>
+            {formatLive(id, live)}
+          </p>
+          <p className={`mark-sub now-delta${tone ? ` tone-${tone}` : ''}`} data-testid={`now-delta-${id}`}>
+            {formatNowDelta(id, live, beat)}
+          </p>
+        </div>
+      </div>
+
+      <p className="tape-ticket" data-testid={`ticket-${id}`}>
+        {ticket ? `${status} · ${ticket.contracts} · ${ticket.orderId}` : 'No ticket this clock'}
+      </p>
+
+      <div className="tape-reads">
         <div>
           <p className="hud-label">WE THINK</p>
           <p className="tape-think" data-testid={`we-think-${id}`}>

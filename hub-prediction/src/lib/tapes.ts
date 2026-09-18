@@ -36,22 +36,26 @@ export const CLOCK_LIVE_RANGE: Record<TapeClock, string> = {
   '1h': '1h',
 }
 
-export const CHART_RANGES = ['live', '5m', '10m', '20m', '1h'] as const
+export const CHART_RANGES = ['live', '5m', '15m', '1h'] as const
 export type ChartRange = (typeof CHART_RANGES)[number]
-export const DEFAULT_CHART: ChartRange = '20m'
+export const DEFAULT_CHART: ChartRange = 'live'
 export const CHART_LABELS: Record<ChartRange, string> = {
-  live: 'Live',
-  '5m': '5m',
-  '10m': '10m',
-  '20m': '20m',
-  '1h': '1h',
+  live: 'LIVE',
+  '5m': '5M',
+  '15m': '15M',
+  '1h': '1H',
 }
 export const CHART_MS: Record<ChartRange, number> = {
   live: 90_000,
   '5m': 5 * 60_000,
-  '10m': 10 * 60_000,
-  '20m': 20 * 60_000,
+  '15m': 15 * 60_000,
   '1h': 60 * 60_000,
+}
+
+export const CLOCK_CALLOUT: Record<TapeClock, { kicker: string; title: string }> = {
+  '5m': { kicker: '5 MIN', title: '5 min' },
+  '15m': { kicker: '15 MIN', title: '15 min' },
+  '1h': { kicker: '1 HR', title: '1 hr' },
 }
 
 export function isChartRange(v: unknown): v is ChartRange {
@@ -59,6 +63,7 @@ export function isChartRange(v: unknown): v is ChartRange {
 }
 
 export function hydrateChartRange(raw: unknown): ChartRange {
+  if (raw === '10m' || raw === '20m') return '15m'
   return isChartRange(raw) ? raw : DEFAULT_CHART
 }
 
@@ -903,6 +908,27 @@ export function formatPnl(n: number | null | undefined) {
   if (v > 0) return `+${core}`
   if (v < 0) return `−${core}`
   return core
+}
+
+/** NOW vs TO BEAT. Soft KEEP: below target is green, above is red. */
+export function nowTone(live: number | null | undefined, beat: number | null | undefined): 'up' | 'down' | undefined {
+  if (!Number.isFinite(live ?? NaN) || !Number.isFinite(beat ?? NaN) || (beat as number) <= 0) return undefined
+  if ((live as number) < (beat as number)) return 'up'
+  if ((live as number) > (beat as number)) return 'down'
+  return undefined
+}
+
+export function nowDelta(live: number | null | undefined, beat: number | null | undefined) {
+  if (!Number.isFinite(live ?? NaN) || !Number.isFinite(beat ?? NaN) || (beat as number) <= 0) return null
+  const d = (live as number) - (beat as number)
+  return { d, pct: (d / (beat as number)) * 100 }
+}
+
+export function formatNowDelta(id: TapeId, live: number | null | undefined, beat: number | null | undefined) {
+  const delta = nowDelta(live, beat)
+  if (!delta) return '—'
+  const sign = delta.d > 0 ? '+' : delta.d < 0 ? '−' : ''
+  return `${sign}${formatLive(id, Math.abs(delta.d))} (${sign}${Math.abs(delta.pct).toFixed(3)}%)`
 }
 
 export function weThink(live: number | null, beat: number, points: { t: number; px: number }[], now = Date.now()) {
