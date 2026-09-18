@@ -212,7 +212,7 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
     ([ts]) => {
       localStorage.setItem(
         'hub.desk.cash.v1',
-        JSON.stringify({ cash: 500, deposits: 500, pnl: 0, firstDepositAt: ts, asOf: ts }),
+        JSON.stringify({ cash: 485, deposits: 500, pnl: -15, firstDepositAt: ts - 60_000, asOf: ts }),
       )
       localStorage.setItem(
         'hub.desk.finance.v1',
@@ -284,6 +284,7 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.getByTestId('bets-placed')).toContainText('$30.00')
   await expect(page.getByTestId('bets-wl')).toContainText('1W–2L')
   await expect(page.getByTestId('bets-pnl')).toContainText('−$15.00')
+  await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-bets-all.png' })
   await expect(page.getByTestId('bets-log')).toContainText('LIVE')
   await expect(page.getByTestId('bets-log')).toContainText('PAPER')
   await expect(page.getByTestId('bets-log')).toContainText('Sep 18')
@@ -317,6 +318,96 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
 })
 
+test('desktop desk: full bets log + auto analyst, no Accept/Deny', async ({ page }) => {
+  const now = Date.now()
+  await page.addInitScript(
+    ([ts]) => {
+      localStorage.setItem(
+        'hub.desk.cash.v1',
+        JSON.stringify({ cash: 485, deposits: 500, pnl: -15, firstDepositAt: ts - 60_000, asOf: ts }),
+      )
+      localStorage.setItem(
+        'hub.desk.finance.v1',
+        JSON.stringify({
+          killed: false,
+          paperStartedAt: ts,
+          bets: [
+            {
+              betId: 'bet_btc',
+              tape: 'btc',
+              ticker: 'KXBTC15M-A',
+              clock: '15m',
+              closeAt: Date.parse('2026-09-18T16:45:00-05:00'),
+              side: 'up',
+              count: 1,
+              ask: 70,
+              spent: 10,
+              orderId: 'ord-btc-aaaaaa',
+              status: 'settled',
+              pnl: 5,
+              filledAt: ts - 1000,
+              settledAt: ts,
+              kind: 'live',
+            },
+            {
+              betId: 'bet_ng',
+              tape: 'ng',
+              ticker: 'KXNATGAS15M-A',
+              clock: '15m',
+              closeAt: Date.parse('2026-09-18T16:30:00-05:00'),
+              side: 'down',
+              count: 1,
+              ask: 40,
+              spent: 20,
+              orderId: 'ord-ng-bbbbbb',
+              status: 'settled',
+              pnl: -20,
+              filledAt: ts - 2000,
+              settledAt: ts,
+              kind: 'live',
+            },
+            {
+              betId: 'bet_cu_paper',
+              tape: 'cu',
+              ticker: 'KXCOPPER15M-A',
+              clock: '15m',
+              closeAt: Date.parse('2026-09-18T16:15:00-05:00'),
+              side: 'up',
+              count: 1,
+              ask: 40,
+              spent: 8,
+              orderId: 'deskfill-cu-aaaaaaaa',
+              status: 'settled',
+              pnl: -8,
+              filledAt: ts - 3000,
+              settledAt: ts,
+              kind: 'paper',
+            },
+          ],
+        }),
+      )
+    },
+    [now],
+  )
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('bets-log')).toContainText('Sep 18')
+  await expect(page.getByTestId('bets-log')).toContainText('CDT')
+  await expect(page.getByTestId('bets-log')).toContainText('15m')
+  await expect(page.getByTestId('bets-mode').first()).toHaveClass(/mode-live|mode-paper/)
+  await expect(page.locator('.bets-log-head')).toContainText('CLOCK')
+  await expect(page.locator('.result-win, .result-loss').first()).toBeVisible()
+  await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/desktop-bets-all.png' })
+  await page.getByTestId('analyst-toggle').click()
+  await expect(page.getByTestId('analyst')).toBeVisible()
+  await expect(page.getByTestId('analyst-lock')).toContainText(/No Accept/)
+  await expect(page.locator('.rec-accept')).toHaveCount(0)
+  await expect(page.locator('.rec-deny')).toHaveCount(0)
+  await expect(page.getByTestId('analyst-auto-btc')).toBeVisible()
+  await page.getByTestId('analyst').screenshot({ path: '/opt/cursor/artifacts/screenshots/desktop-analyst-auto.png' })
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+})
+
 test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async ({ page }) => {
   const livePosts: string[] = []
   page.on('request', (req) => {
@@ -326,7 +417,7 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
   })
 
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/', { waitUntil: 'networkidle' })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
   await expect(page.getByTestId('pulse')).toHaveCount(0)
@@ -394,6 +485,9 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
   await expect(page.getByTestId('analyst-rules-btc')).toContainText(/Current rules/)
   await expect(page.getByTestId('analyst-proposed-btc')).toContainText(/Proposed/)
   await expect(page.getByTestId('analyst-profit-btc')).toContainText(/Profit dollars/)
+  await expect(page.getByTestId('analyst-lock')).toContainText(/No Accept/)
+  await expect(page.locator('.rec-accept')).toHaveCount(0)
+  await expect(page.locator('.rec-deny')).toHaveCount(0)
   await expect(page.locator('.bets-log-head')).toContainText('WINDOW')
   await expect(page.locator('.bets-log-head')).toContainText('CLOCK')
   await expect(page.locator('.bets-log-head')).toContainText('CASH')

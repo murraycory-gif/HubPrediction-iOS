@@ -269,7 +269,7 @@ export function last24hBets(
 ) {
   const allow = new Set(hydrateBetsFilter([...tapes]))
   const from = Number.isFinite(fromMs) ? Number(fromMs) : now - 24 * 60 * 60 * 1000
-  const recent = state.bets.filter((b) => allow.has(b.tape) && (b.filledAt || b.settledAt || 0) >= from)
+  const recent = state.bets.filter((b) => allow.has(b.tape) && betStamp(b) >= from)
   const settled = recent.filter((b) => b.status === 'settled')
   const liveRecent = recent.filter((b) => isLiveBet(b))
   const liveSettled = settled.filter((b) => isLiveBet(b))
