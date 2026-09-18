@@ -443,6 +443,40 @@ button {
   touch-action: manipulation;
 }
 
+.tap {
+  min-height: 52px;
+  min-width: 52px;
+}
+
+.tape-controls .toggle.tap {
+  min-width: 7.6rem;
+  padding: 0 16px;
+}
+
+.tape-controls .chip-btn.tap {
+  min-width: 5.5rem;
+  padding: 0 18px;
+}
+
+.field-contracts {
+  min-height: 52px;
+}
+
+.tape-banner {
+  margin: 8px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.under-desk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .chip-btn,
 .toggle {
   display: inline-flex;

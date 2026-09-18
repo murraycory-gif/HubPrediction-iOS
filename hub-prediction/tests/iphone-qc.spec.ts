@@ -21,11 +21,21 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
     await expect(page.getByTestId(`bot-${id}`)).not.toBeChecked()
   }
 
+  await expect(page.getByTestId('scoreboard')).toBeVisible()
   await expect(page.getByTestId('ttl')).toContainText(/TTL|%/)
-  await expect(page.getByTestId('pulse')).toContainText(/quiet|PULSE|BITCOIN|LINE/i)
-  await expect(page.getByTestId('mode-line')).toContainText(/Live bets OFF/i)
+  await expect(page.getByTestId('pulse')).toContainText(/PULSE|BITCOIN|LINE/i)
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
   await expect(page.getByTestId('bot-btc')).not.toBeChecked()
+  await expect(page.getByTestId('analyst-toggle')).toBeVisible()
+  await expect(page.getByTestId('finance-toggle')).toBeVisible()
+  await expect(page.getByTestId('analyst')).toHaveCount(0)
+  await expect(page.getByTestId('finance')).toHaveCount(0)
+  await expect(page.getByTestId('desk-title')).not.toHaveText(/HUBPREDICTIONS/)
+
+  const saveBox = await page.getByTestId('save-btc').boundingBox()
+  const botBox = await page.getByTestId('bot-btc').locator('xpath=ancestor::label[1]').boundingBox()
+  expect((saveBox?.height ?? 0)).toBeGreaterThanOrEqual(48)
+  expect((botBox?.height ?? saveBox?.height ?? 0)).toBeGreaterThanOrEqual(48)
 
   const css = await page.evaluate(() => {
     const hrefs = [...document.querySelectorAll('link[rel="stylesheet"]')].map((el) => (el as HTMLLinkElement).href)

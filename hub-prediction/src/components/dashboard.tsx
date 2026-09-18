@@ -55,10 +55,8 @@ import {
   engageKill,
   chasingLosses,
   liveArmGate,
-  liveCashFloor,
   liveSendGate,
   loadFinance,
-  paperCashFloor,
   recipeRetuneGate,
   settleBook,
   syncTicketsIntoBook,
@@ -91,7 +89,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [book, setBook] = useState<FinanceState>(() => loadFinance())
   const [liveConfirm, setLiveConfirm] = useState(false)
-  const [bets, setBets] = useState<TapeId[] | 'all'>('all')
+  const [analystOpen, setAnalystOpen] = useState(false)
+  const [financeOpen, setFinanceOpen] = useState(false)
   const sentRef = useRef<Record<string, SendClaim>>({})
 
   useEffect(() => {
@@ -269,7 +268,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   })
   const pulseQuote = liveTicket ? board?.tapes[liveTicket.tape] : board?.tapes.btc
   const pulse = pulseTone(liveTicket, pulseQuote?.live ?? null)
-  const visible = bets === 'all' ? TAPE_IDS : TAPE_IDS.filter((id) => bets.includes(id))
 
   return (
     <div className="desk">
@@ -309,7 +307,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             </button>
           </div>
         </div>
-        <div className="stat-row">
+        <div className="stat-row" data-testid="scoreboard">
           <Stat
             label="P&L VS DEPOSITS"
             value={`${formatPnl(cash.pnl)} from ${formatCash(cash.deposits)}`}
@@ -319,18 +317,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           <Stat label="TTL 24H" value={`${ttl.pct}% ${ttl.w}W–${ttl.l}L`} testId="ttl" />
           <Stat label="KALSHI CASH" value={formatCash(cash.cash)} testId="kalshi-cash" />
         </div>
-        <p className="mode-line" data-testid="mode-line">
-          {settings.liveBets ? 'LIVE BETS ON' : 'Live bets OFF'} · paper only unless you flip Live · bots{' '}
-          {TAPE_IDS.every((id) => !settings.tapes[id].botOn) ? 'OFF' : 'armed'}
-        </p>
-        <p className="mode-line" data-testid="host-line">
-          HUB · Windows local · not grok.me
-        </p>
-        <p className="mode-line" data-testid="finance-strip">
-          Paper floor {formatCash(paperCashFloor())} · Live floor {formatCash(liveCashFloor(cash.deposits))} · KILL{' '}
-          {book.killed ? 'ON' : 'off'}
-          {chasingLosses(book) ? ' · recipe lock' : ''}
-        </p>
         {liveConfirm ? (
           <div className="live-banner" data-testid="live-banner">
             <p>Confirm LIVE — keys + paper 48h + cash floor. Soft FAIL silent Paper→Live.</p>
@@ -364,36 +350,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       </header>
 
       <main className="desk-main">
-        <div className="bets-filter" data-testid="bets-filter">
-          <button
-            type="button"
-            className={`chip-btn ${bets === 'all' ? 'toggle-on' : ''}`}
-            data-testid="filter-all"
-            onClick={() => setBets('all')}
-          >
-            All
-          </button>
-          {TAPE_IDS.map((id) => (
-            <button
-              key={id}
-              type="button"
-              className={`chip-btn ${bets !== 'all' && bets.includes(id) ? 'toggle-on' : ''}`}
-              data-testid={`filter-${id}`}
-              onClick={() => {
-                setBets((prev) => {
-                  if (prev === 'all') return [id]
-                  const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-                  return next.length === 0 || next.length === TAPE_IDS.length ? 'all' : next
-                })
-              }}
-            >
-              {TAPE_META[id].label}
-            </button>
-          ))}
-        </div>
-
         <div className="tape-grid">
-          {visible.map((id) => (
+          {TAPE_IDS.map((id) => (
             <TapeRow
               key={id}
               id={id}
@@ -425,23 +383,42 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           tone={pulse}
         />
 
-        <AnalystPanel board={board ?? null} hits={hits} />
-
-        <FinancePanel
-          book={book}
-          cash={cash}
-          board={board ?? null}
-          onKill={() => {
-            setBook(engageKill(book))
-            setSettings(disarmAllBots(settings))
-            setLiveConfirm(false)
-            setMsg('KILL on — bots disarmed, Place blocked')
-          }}
-          onClearKill={() => {
-            setBook(clearKill(book))
-            setMsg('KILL cleared')
-          }}
-        />
+        <div className="under-desk" data-testid="under-desk">
+          <button
+            type="button"
+            className="chip-btn tap"
+            data-testid="analyst-toggle"
+            onClick={() => setAnalystOpen((v) => !v)}
+          >
+            {analystOpen ? 'Hide Analyst' : 'Analyst'}
+          </button>
+          <button
+            type="button"
+            className="chip-btn tap"
+            data-testid="finance-toggle"
+            onClick={() => setFinanceOpen((v) => !v)}
+          >
+            {financeOpen ? 'Hide Finance' : 'Finance'}
+          </button>
+        </div>
+        {analystOpen ? <AnalystPanel board={board ?? null} hits={hits} /> : null}
+        {financeOpen ? (
+          <FinancePanel
+            book={book}
+            cash={cash}
+            board={board ?? null}
+            onKill={() => {
+              setBook(engageKill(book))
+              setSettings(disarmAllBots(settings))
+              setLiveConfirm(false)
+              setMsg('KILL on — bots disarmed, Place blocked')
+            }}
+            onClearKill={() => {
+              setBook(clearKill(book))
+              setMsg('KILL cleared')
+            }}
+          />
+        ) : null}
 
         {msg ? <p className="desk-msg">{msg}</p> : null}
 
@@ -598,13 +575,14 @@ function TapeRow({
 
       <RaceChart id={id} beat={beat} live={live} points={quote?.points} />
 
-      <p className="tape-line">
-        {paper ? 'PAPER · bot on / live cash or master off · not sent to Kalshi' : recipe.botOn ? 'bot armed' : 'bot OFF'}
-        {ticket ? ` · live ticket ${ticket.orderId}` : ''}
-      </p>
+      {paper || ticket ? (
+        <p className="tape-banner" data-testid={`banner-${id}`}>
+          {ticket ? `LIVE ${status}` : 'PAPER'}
+        </p>
+      ) : null}
 
       <div className="tape-controls">
-        <label className={`toggle ${recipe.botOn ? 'toggle-on' : ''}`}>
+        <label className={`toggle tap ${recipe.botOn ? 'toggle-on' : ''}`}>
           <input
             type="checkbox"
             data-testid={`bot-${id}`}
@@ -613,7 +591,7 @@ function TapeRow({
           />
           Bot {recipe.botOn ? 'ON' : 'OFF'}
         </label>
-        <label className={`toggle ${recipe.liveOn ? 'toggle-hot' : ''}`}>
+        <label className={`toggle tap ${recipe.liveOn ? 'toggle-hot' : ''}`}>
           <input
             type="checkbox"
             data-testid={`live-cash-${id}`}
@@ -646,7 +624,7 @@ function TapeRow({
         </label>
         <button
           type="button"
-          className="chip-btn"
+          className="chip-btn tap"
           data-testid={`save-${id}`}
           disabled={recipeLocked}
           onClick={() => saveContracts()}
@@ -697,12 +675,6 @@ function PulseCard({
             </p>
           </div>
         </div>
-        <p className="pulse-note">
-          {quote && vs != null
-            ? `${vs >= 0 ? 'above' : 'below'} the gold line by ${formatLive(quote.id, Math.abs(vs))}`
-            : 'all quiet'}
-          . Hit % and TTL stay on each tape. No live ticket.
-        </p>
       </section>
     )
   }
@@ -731,9 +703,6 @@ function PulseCard({
           </p>
         </div>
       </div>
-      <p className="pulse-note">
-        {tone === 'green' ? 'live is on our side of BEAT' : 'live is against BEAT'}
-      </p>
     </section>
   )
 }
