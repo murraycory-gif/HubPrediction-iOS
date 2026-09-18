@@ -131,4 +131,8 @@ describe('contractsFromCash', () => {
     expect(contractsFromCash(0, 31, 0.8)).toBe(0)
     expect(contractsFromCash(100, 99, 0.8)).toBe(0)
   })
+
+  it('caps at the locked max 25 contracts', () => {
+    expect(contractsFromCash(50_000, 20, 0.9)).toBe(25)
+  })
 })

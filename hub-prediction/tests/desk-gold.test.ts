@@ -46,6 +46,14 @@ describe('defaults Soft FAIL Live / bots ON', () => {
   })
 })
 
+describe('AI finance manager Soft KEEP on the gold desk', () => {
+  it('keeps Live bets OFF and Paper as the default mode line ingredients', () => {
+    const s = hydrateSettings(null)
+    expect(s.liveBets).toBe(false)
+    expect(s.tapes.btc.botOn).toBe(false)
+  })
+})
+
 describe('Grok Build recipes', () => {
   it('keeps BTC 8–3 / $40 / 69–89¢', () => {
     expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })

@@ -8,16 +8,23 @@ export function SettingsPanel(props: {
   onKeyId: (v: string) => void
   onPem: (v: string) => void
   onLiveBets: (on: boolean) => void
+  onRequestLive: () => void
   onTape: (id: TapeId, patch: Partial<TapeRecipe>) => void
   onRefreshCash: () => void
   cashLabel: string
+  killed: boolean
 }) {
   return (
     <section className="settings" data-testid="settings">
       <p className="hud-label">Settings · same desk on phone</p>
       <p className="settings-note">
-        Contracts, bots, live cash, and recipes save on this device. Refresh keeps them. Live bets stay OFF
-        unless you flip them. Keys stay on this PC/phone — never in git.
+        Contracts, bots, live cash, and recipes save on this device. Refresh keeps them. Mode defaults Paper.
+        Live bets stay OFF unless you confirm LIVE + keys. SizeCash recipe is locked this session. Keys stay
+        on this PC/phone — never in git.
+      </p>
+      <p className="settings-note" data-testid="sizecash-lock">
+        SizeCash locked · risk 8% · lock 40% · ¼ Kelly · max 25 · paper floor $50 · live floor max($150, 20%
+        dep)
       </p>
 
       <div className="settings-master">
@@ -26,7 +33,10 @@ export function SettingsPanel(props: {
             type="checkbox"
             data-testid="live-bets"
             checked={props.settings.liveBets}
-            onChange={(e) => props.onLiveBets(e.target.checked)}
+            onChange={(e) => {
+              if (e.target.checked) props.onRequestLive()
+              else props.onLiveBets(false)
+            }}
           />
           Live bets {props.settings.liveBets ? 'ON' : 'OFF'}
         </label>
@@ -59,6 +69,7 @@ export function SettingsPanel(props: {
           key={id}
           id={id}
           recipe={props.settings.tapes[id]}
+          killed={props.killed}
           onChange={(patch) => props.onTape(id, patch)}
         />
       ))}
@@ -69,10 +80,12 @@ export function SettingsPanel(props: {
 function TapeSettings({
   id,
   recipe,
+  killed,
   onChange,
 }: {
   id: TapeId
   recipe: TapeRecipe
+  killed: boolean
   onChange: (patch: Partial<TapeRecipe>) => void
 }) {
   const meta = TAPE_META[id]
@@ -156,6 +169,7 @@ function TapeSettings({
             type="checkbox"
             data-testid={`bot-${id}`}
             checked={recipe.botOn}
+            disabled={killed}
             onChange={(e) => onChange({ botOn: e.target.checked })}
           />
           Bot {recipe.botOn ? 'ON' : 'OFF'}
