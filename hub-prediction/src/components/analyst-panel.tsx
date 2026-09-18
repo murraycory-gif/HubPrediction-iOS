@@ -13,6 +13,7 @@ import {
   type DeskPaths,
   type PaperDrafts,
 } from '../lib/analyst'
+import { buildDeskBrief, formatNewsAge, type DeskBriefsPayload } from '../lib/desk-brief'
 import { HIT_FLOOR } from '../lib/finance'
 import {
   TAPE_META,
@@ -30,6 +31,7 @@ export function AnalystPanel({
   settings,
   bets,
   paths,
+  briefs,
   killed,
   onAccept,
   onDeny,
@@ -39,6 +41,7 @@ export function AnalystPanel({
   settings: DeskSettings
   bets: AnalystBet[]
   paths: DeskPaths | null
+  briefs?: DeskBriefsPayload | null
   killed?: boolean
   onAccept: (id: TapeId, recipe: TapeRecipe) => void
   onDeny: (id: TapeId, token: string) => void
@@ -55,17 +58,28 @@ export function AnalystPanel({
     <section className="analyst" data-testid="analyst">
       <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal</p>
       <p className="settings-note" data-testid="analyst-lock">
-        Reads the current bot recipe, your fills vs that recipe, and the 24h / 48h move vs now. Recs aim at a {HIT_FLOOR}%
-        win ratio. Accept writes the retune onto that tape for this run. Deny keeps the current recipe. Does not
-        flip Live or live cash.
+        Each tape has its own desk chief. They review upcoming clocks, 24h / 48h trend, news on that desk, and a
+        good / bad swing forecast. Recs aim at a {HIT_FLOOR}% win ratio. Accept writes the retune onto that tape for
+        this run. Deny keeps the current recipe. Does not flip Live or live cash.
       </p>
       <div className="analyst-grid">
         {report.tapes.map((t) => {
           const hidden = t.changed && (denied.includes(t.token) || isDeniedRec(t.token))
+          const brief = buildDeskBrief({
+            id: t.id,
+            quote: board?.tapes[t.id] ?? null,
+            recipe: settings.tapes[t.id],
+            path: t.path,
+            upcoming: briefs?.upcoming?.[t.id],
+            news: briefs?.news?.[t.id],
+          })
           return (
             <article key={t.id} className="analyst-row" data-testid={`analyst-${t.id}`}>
               <p className="tape-name">
                 {TAPE_META[t.id].label} · {t.pct}% {t.w}W–{t.l}L
+              </p>
+              <p className="analyst-expert" data-testid={`analyst-expert-${t.id}`}>
+                {brief.expert}
               </p>
               <p className="tape-line" data-testid={`analyst-hug-${t.id}`}>
                 {hugLine(t.id, t.hug, t.gap, t.through)}
@@ -88,6 +102,53 @@ export function AnalystPanel({
                   {line}
                 </p>
               ))}
+              <div className="analyst-report" data-testid={`analyst-report-${t.id}`}>
+                <p className="analyst-report-label">Upcoming runs</p>
+                <div className="analyst-upcoming" data-testid={`analyst-upcoming-${t.id}`}>
+                  {brief.upcoming.length ? (
+                    brief.upcoming.map((run) => (
+                      <span key={run.ticker} className="analyst-run" data-kind={run.kind}>
+                        {run.kind === 'live' ? 'LIVE' : 'NEXT'} {run.label}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="analyst-run">waiting on Kalshi clocks</span>
+                  )}
+                </div>
+                <p className="analyst-report-label">Trend</p>
+                <p className="tape-line" data-testid={`analyst-trend-${t.id}`}>
+                  {brief.trend}
+                </p>
+                <p className="analyst-report-label">News focus</p>
+                <p className="tape-line" data-testid={`analyst-news-focus-${t.id}`}>
+                  {brief.newsFocus}
+                </p>
+                {brief.news.map((item) => (
+                  <p key={`${item.href}-${item.at}`} className="analyst-news pulse-note">
+                    {item.href ? (
+                      <a href={item.href} target="_blank" rel="noreferrer">
+                        {item.title}
+                      </a>
+                    ) : (
+                      item.title
+                    )}
+                    {item.source ? ` · ${item.source}` : ''}
+                    {item.at ? ` · ${formatNewsAge(item.at)}` : ''}
+                  </p>
+                ))}
+                <p className="analyst-report-label">Swings</p>
+                <p
+                  className="swing-good tape-line"
+                  data-testid={`analyst-swing-good-${t.id}`}
+                  data-side={brief.swing.side}
+                  data-risk={brief.swing.risk}
+                >
+                  {brief.swing.good}
+                </p>
+                <p className="swing-bad tape-line" data-testid={`analyst-swing-bad-${t.id}`}>
+                  {brief.swing.bad}
+                </p>
+              </div>
               <div className="analyst-actions">
                 <button
                   type="button"

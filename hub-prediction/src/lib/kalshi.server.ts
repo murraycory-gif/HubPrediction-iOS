@@ -18,6 +18,7 @@ import {
   type TapeId,
 } from './tapes'
 import { summarizeTapePath, type DeskPaths } from './analyst'
+import { newsRssUrl, parseNewsRss, type DeskBriefsPayload, type ListedClock, type NewsItem } from './desk-brief'
 import { mergeRaceTrail } from './race-path'
 import type { DeskBoard, LivePrints, Point, Settled, TapeQuote } from './types'
 
@@ -46,6 +47,18 @@ let warming = false
 
 function ua() {
   return { 'User-Agent': 'HUB-Prediction/1.0', Accept: 'application/json' }
+}
+
+async function fetchText(url: string, ms: number): Promise<string> {
+  const c = new AbortController()
+  const t = setTimeout(() => c.abort(), ms)
+  try {
+    const r = await fetch(url, { signal: c.signal, headers: ua() })
+    if (!r.ok) throw new Error(`http ${r.status}`)
+    return await r.text()
+  } finally {
+    clearTimeout(t)
+  }
 }
 
 async function fetchJson<T>(url: string, ms: number): Promise<T> {
@@ -468,6 +481,55 @@ export async function loadTapePaths(events: Partial<Record<TapeId, string>> = {}
     tapes[id] = rows[i]
   })
   return { tapes, fetchedAt: now }
+}
+
+export async function loadUpcomingRuns(
+  clocks: Record<TapeId, TapeClock> = defaultClocks(),
+): Promise<Record<TapeId, ListedClock[]>> {
+  const now = Date.now()
+  const rows = await Promise.all(
+    TAPE_IDS.map(async (id) => {
+      const series = seriesForTape(id, hydrateClock(clocks[id]))
+      const markets = await listSeriesMarkets(series, 32)
+      return markets
+        .map((m) => ({
+          ticker: String(m.ticker ?? ''),
+          openAt: marketOpenAt(m),
+          closeAt: marketCloseAt(m),
+          beat: strikeOf(m) ?? 0,
+        }))
+        .filter((m) => m.ticker && Number.isFinite(m.openAt) && Number.isFinite(m.closeAt) && m.closeAt > now - 60_000)
+    }),
+  )
+  const out = {} as Record<TapeId, ListedClock[]>
+  TAPE_IDS.forEach((id, i) => {
+    out[id] = rows[i]
+  })
+  return out
+}
+
+let newsCache: { at: number; tapes: Record<TapeId, NewsItem[]> } | null = null
+
+export async function loadDeskNews(): Promise<Record<TapeId, NewsItem[]>> {
+  const now = Date.now()
+  if (newsCache && now - newsCache.at < 8 * 60_000) return newsCache.tapes
+  const rows = await Promise.all(
+    TAPE_IDS.map(async (id) => {
+      const xml = await fetchText(newsRssUrl(id), 1600).catch(() => '')
+      return parseNewsRss(xml, now)
+    }),
+  )
+  const tapes = {} as Record<TapeId, NewsItem[]>
+  TAPE_IDS.forEach((id, i) => {
+    tapes[id] = rows[i]
+  })
+  newsCache = { at: now, tapes }
+  return tapes
+}
+
+export async function loadDeskBriefs(clocks: Record<TapeId, TapeClock> = defaultClocks()): Promise<DeskBriefsPayload> {
+  const [upcoming, news] = await Promise.all([loadUpcomingRuns(clocks), loadDeskNews()])
+  return { upcoming, news, fetchedAt: Date.now() }
 }
 
 export function startWarm() {

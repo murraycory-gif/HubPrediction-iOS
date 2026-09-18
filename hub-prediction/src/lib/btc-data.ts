@@ -34,6 +34,14 @@ export const getSettledTape = createServerFn({ method: 'POST' })
     return loadSettledTape(data.id)
   })
 
+export const getDeskBriefs = createServerFn({ method: 'POST' })
+  .validator((d: { clocks?: Partial<Record<TapeId, TapeClock>> } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+    const { loadDeskBriefs } = await import('./kalshi.server')
+    const { hydrateClocks } = await import('./tapes')
+    return loadDeskBriefs(hydrateClocks(data?.clocks))
+  })
+
 export const getTapePaths = createServerFn({ method: 'POST' })
   .validator((d: { events?: Partial<Record<TapeId, string>> } | undefined) => d ?? {})
   .handler(async ({ data }) => {

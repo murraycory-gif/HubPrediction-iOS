@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { getDeskBoard, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi } from '../lib/btc-data'
+import { getDeskBoard, getDeskBriefs, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi } from '../lib/btc-data'
 import {
   TAPE_IDS,
   TAPE_META,
@@ -634,6 +634,13 @@ function AnalystDesk({
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   })
+  const briefQuery = useQuery({
+    queryKey: ['desk-briefs', settings.clocks],
+    queryFn: () => getDeskBriefs({ data: { clocks: settings.clocks } }),
+    staleTime: 8 * 60_000,
+    refetchInterval: 8 * 60_000,
+    placeholderData: keepPreviousData,
+  })
   return (
     <AnalystPanel
       board={board}
@@ -641,6 +648,7 @@ function AnalystDesk({
       settings={settings}
       bets={bets}
       paths={pathQuery.data ?? null}
+      briefs={briefQuery.data ?? null}
       killed={killed}
       onAccept={onAccept}
       onDeny={() => {}}
