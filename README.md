@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-Open **http://localhost:8080** in Edge or Chrome. Leave that tab **open** — sends do not run from a hidden-only tab.
+Open **http://localhost:8080** in Edge or Chrome on the machine named **HUB**. Leave that tab **open** — sends do not run from a hidden-only tab. Soft FAIL grok.me as the host.
 
 The dev server binds all interfaces (`--host`) so a phone on the same LAN can reach it.
 

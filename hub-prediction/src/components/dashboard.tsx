@@ -14,8 +14,8 @@ import {
   formatCash,
   formatLive,
   formatPnl,
+  formatWeThink,
   hitPct,
-  hydrateSettings,
   inArmWindow,
   loadCash,
   loadHits,
@@ -33,7 +33,7 @@ import {
   ticketStatus,
   ttlFromHits,
   upsertTicket,
-  weThink,
+  weThinkPair,
   type DeskSettings,
   type DeskTicket,
   type TapeId,
@@ -53,12 +53,12 @@ function writeLocal(key: string, value: string) {
 }
 
 export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
-  const [settings, setSettings] = useState<DeskSettings>(() => hydrateSettings(null))
-  const [tickets, setTickets] = useState<DeskTicket[]>([])
+  const [settings, setSettings] = useState<DeskSettings>(() => loadSettings())
+  const [tickets, setTickets] = useState<DeskTicket[]>(() => loadTickets())
   const [hits, setHits] = useState(() => loadHits())
   const [cash, setCash] = useState(() => loadCash())
-  const [keyId, setKeyId] = useState('')
-  const [pem, setPem] = useState('')
+  const [keyId, setKeyId] = useState(() => readLocal(KEY_ID))
+  const [pem, setPem] = useState(() => readLocal(KEY_PEM))
   const [msg, setMsg] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(true)
   const sentRef = useRef<Record<string, string>>({})
@@ -223,6 +223,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           {settings.liveBets ? 'LIVE BETS ON' : 'Live bets OFF'} · paper only unless you flip Live · bots{' '}
           {TAPE_IDS.every((id) => !settings.tapes[id].botOn) ? 'OFF' : 'armed'}
         </p>
+        <p className="mode-line" data-testid="host-line">
+          HUB · Windows local · not grok.me
+        </p>
       </header>
 
       <main className="desk-main">
@@ -343,7 +346,7 @@ function PulseCard({
   tone: 'quiet' | 'green' | 'red'
 }) {
   const think = useMemo(
-    () => weThink(quote?.live ?? null, quote?.beat ?? 0, quote?.points ?? []),
+    () => weThinkPair(quote?.live ?? null, quote?.beat ?? 0, quote?.points ?? []),
     [quote?.live, quote?.beat, quote?.fetchedAt],
   )
   const vs = quote?.live != null && quote.beat ? quote.live - quote.beat : null
@@ -359,7 +362,7 @@ function PulseCard({
           </div>
           <div>
             <p className="hud-label">WE THINK</p>
-            <p>{quote ? formatLive(quote.id, think) : '—'}</p>
+            <p data-testid="we-think">{quote ? formatWeThink(quote.id, think.live, think.ahead) : '—'}</p>
           </div>
           <div>
             <p className="hud-label">VS LINE</p>

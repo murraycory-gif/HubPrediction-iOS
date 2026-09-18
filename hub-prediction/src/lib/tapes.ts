@@ -533,18 +533,34 @@ export function formatPnl(n: number | null | undefined) {
 }
 
 export function weThink(live: number | null, beat: number, points: { t: number; px: number }[], now = Date.now()) {
-  if (live == null || !Number.isFinite(live)) return null
+  return weThinkPair(live, beat, points, now).ahead
+}
+
+/** Gold pulse: live / 4-min ahead. Soft KEEP the pair; do not swap in strike or theory. */
+export function weThinkPair(
+  live: number | null,
+  beat: number,
+  points: { t: number; px: number }[],
+  now = Date.now(),
+): { live: number | null; ahead: number | null } {
+  if (live == null || !Number.isFinite(live)) return { live: null, ahead: null }
   const from = now - 6 * 60_000
   const slice = points.filter((p) => p.t >= from && p.t <= now + 1000)
-  if (slice.length < 2) return live
+  if (slice.length < 2) return { live, ahead: live }
   const a = slice[0]
   const b = slice[slice.length - 1]
   const mins = (b.t - a.t) / 60_000
-  if (mins < 0.2) return live
+  if (mins < 0.2) return { live, ahead: live }
   const slope = (b.px - a.px) / mins
   const ahead = live + slope * 4
-  if (!Number.isFinite(ahead) || Math.abs(ahead - beat) > Math.abs(beat) * 0.2 + 500) return live
-  return ahead
+  if (!Number.isFinite(ahead) || Math.abs(ahead - beat) > Math.abs(beat) * 0.2 + 500) return { live, ahead: live }
+  return { live, ahead }
+}
+
+export function formatWeThink(id: TapeId, live: number | null, ahead: number | null) {
+  if (live == null) return '—'
+  if (ahead == null || ahead === live) return formatLive(id, live)
+  return `${formatLive(id, live)} / ${formatLive(id, ahead)}`
 }
 
 export function extractOrderId(raw: unknown): string | null {

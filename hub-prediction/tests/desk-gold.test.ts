@@ -10,6 +10,7 @@ import {
   latchFromEvents,
   mergeHitEvents,
   inArmWindow,
+  formatWeThink,
   lastPrintFromLiveData,
   loadSettings,
   makeTicket,
@@ -20,6 +21,8 @@ import {
   tapeLean,
   ticketStatus,
   ttlFromHits,
+  weThink,
+  weThinkPair,
 } from '../src/lib/tapes'
 
 afterEach(() => {
@@ -185,6 +188,27 @@ describe('arm / pulse / send tab', () => {
 
   it('tabIsOpen is true in this visible test runtime', () => {
     expect(tabIsOpen()).toBe(true)
+  })
+
+  it('WE THINK is live / 4-min ahead, not strike', () => {
+    const now = 10_000_000
+    const pair = weThinkPair(
+      76537.05,
+      76511.91,
+      [
+        { t: now - 5 * 60_000, px: 76487.55 },
+        { t: now, px: 76537.05 },
+      ],
+      now,
+    )
+    expect(pair.live).toBeCloseTo(76537.05)
+    expect(pair.ahead).toBeCloseTo(76576.65, 0)
+    expect(weThink(76537.05, 76511.91, [
+      { t: now - 5 * 60_000, px: 76487.55 },
+      { t: now, px: 76537.05 },
+    ], now)).toBeCloseTo(76576.65, 0)
+    expect(formatWeThink('btc', pair.live, pair.ahead)).toMatch(/\$76,537\.05 \/ \$76,576\./)
+    expect(formatWeThink('btc', 76537.05, 76511.91)).not.toContain('76,511.91 / 76,511.91')
   })
 
   it('extracts Kalshi order_id from place payload', () => {
