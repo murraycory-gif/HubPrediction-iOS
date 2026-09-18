@@ -294,13 +294,29 @@ export function latchDeskBoard(
   )
 }
 
+/** Keep last good live / asks / path on a live clock. Soft FAIL empty then snap. */
+function latchLivePrints(incoming: TapeQuote, held?: TapeQuote | null): TapeQuote {
+  if (!held || held.ticker !== incoming.ticker) return incoming
+  return {
+    ...incoming,
+    live: incoming.live != null && incoming.live > 0 ? incoming.live : held.live,
+    liveSource: incoming.liveSource ?? held.liveSource,
+    yesAsk: incoming.yesAsk || held.yesAsk,
+    noAsk: incoming.noAsk || held.noAsk,
+    beat: incoming.beat || held.beat,
+    points: incoming.points?.length ? incoming.points : held.points,
+    openAt: incoming.openAt || held.openAt,
+    closeAt: incoming.closeAt || held.closeAt,
+  }
+}
+
 /** Tape row hold. Soft FAIL showing a dead clock after the run ends. */
 export function holdTapeQuote(
   incoming: TapeQuote | null | undefined,
   held: TapeQuote | null | undefined,
   now = Date.now(),
 ): TapeQuote | null {
-  if (quoteIsLiveClock(incoming, now)) return incoming ?? null
+  if (quoteIsLiveClock(incoming, now)) return latchLivePrints(incoming, held)
   if (incoming && incoming.ticker && incoming.ticker !== held?.ticker) return expireClosedQuote(incoming, now) ?? null
   if (quoteIsLiveClock(held, now) && !quoteHasClock(incoming)) return held ?? null
   if (incoming && quoteHasClock(incoming)) return expireClosedQuote(incoming, now) ?? null
@@ -1171,8 +1187,13 @@ export function lastPrintFromLiveData(payload: unknown): { px: number; source: '
   if (Array.isArray(ts) && ts.length) {
     for (let i = ts.length - 1; i >= 0; i--) {
       const row = ts[i]
+      if (Array.isArray(row)) {
+        const v = num(row[1] ?? row[2])
+        if (v != null && v > 0) return { px: v, source: 'kalshi-timeseries' }
+        continue
+      }
       if (!row || typeof row !== 'object') continue
-      const v = livePx(row as Record<string, unknown>, ['v', 'px', 'price', 'close'])
+      const v = livePx(row as Record<string, unknown>, ['v', 'px', 'price', 'close', 'value'])
       if (v != null) return { px: v, source: 'kalshi-timeseries' }
     }
   }
@@ -1217,14 +1238,42 @@ export function pointsFromLiveData(payload: unknown): { t: number; px: number }[
   const ts = details.timeseries
   if (Array.isArray(ts) && ts.length) {
     for (const row of ts) {
+      if (Array.isArray(row)) {
+        push(row[0], row[1] ?? row[2])
+        continue
+      }
       if (!row || typeof row !== 'object') continue
       const r = row as Record<string, unknown>
-      push(r.t ?? r.ts, r.v ?? r.px ?? r.price ?? r.close)
+      const nested = r.price && typeof r.price === 'object' ? (r.price as Record<string, unknown>) : null
+      push(
+        r.t ?? r.ts ?? r.time ?? r.timestamp,
+        r.v ?? r.px ?? r.price ?? r.close ?? r.value ?? nested?.close ?? nested?.last,
+      )
     }
     out.sort((a, b) => a.t - b.t)
     const bag = new Map<number, number>()
     for (const p of out) bag.set(p.t, p.px)
     return [...bag.entries()].map(([t, px]) => ({ t, px })).sort((a, b) => a.t - b.t).slice(-2400)
+  }
+  const sticks = details.candlesticks
+  const groups = sticks && typeof sticks === 'object' ? (sticks as Record<string, unknown>) : null
+  const candles = Array.isArray(sticks)
+    ? sticks
+    : Array.isArray(groups?.['1S'])
+      ? groups!['1S']
+      : Array.isArray(groups?.['1s'])
+        ? groups!['1s']
+        : Array.isArray(groups?.['1M'])
+          ? groups!['1M']
+          : Array.isArray(groups?.['1m'])
+            ? groups!['1m']
+            : []
+  if (Array.isArray(candles) && candles.length) {
+    for (const row of candles) {
+      if (!row || typeof row !== 'object') continue
+      const r = row as Record<string, unknown>
+      push(r.t ?? r.ts ?? r.end_ts ?? r.end_period_ts, r.close ?? r.c ?? r.px ?? r.v)
+    }
   }
   const ticks = details.ticks ?? details.trades ?? live?.ticks
   if (Array.isArray(ticks)) {

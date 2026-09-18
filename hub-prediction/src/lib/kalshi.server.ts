@@ -31,7 +31,7 @@ const LIST_ABORT = 2800
 const LIST_RETRY = 3600
 const TICKER_ABORT = 1500
 const LIVE_ABORT = 1600
-const PRINT_ABORT = 800
+const PRINT_ABORT = 1800
 const PRINT_FRESH_MS = 80
 const LIST_LIMIT = 32
 const NEAR_CLOSE_MS = 12_000
@@ -298,12 +298,19 @@ export async function loadLivePrints(
         const incoming = slimLivePoints(pointsFromLiveData(livePayload), Date.now(), LIVE_TRAIL_MS)
         const live = print?.px ?? prev?.live ?? incoming[incoming.length - 1]?.px ?? null
         const liveSource = print?.source ?? prev?.liveSource ?? (incoming.length ? 'kalshi-timeseries' : null)
-        if (prev?.eventTicker === eventTicker && live === prev.live && liveSource === prev.liveSource) {
-          return prev
-        }
         const points = slimLivePoints(
           mergeRaceTrail(prev?.eventTicker === eventTicker ? prev.points : [], incoming, live, Date.now()),
         )
+        if (
+          prev?.eventTicker === eventTicker &&
+          live === prev.live &&
+          liveSource === prev.liveSource &&
+          points.length === prev.points.length &&
+          points[points.length - 1]?.t === prev.points[prev.points.length - 1]?.t &&
+          points[points.length - 1]?.px === prev.points[prev.points.length - 1]?.px
+        ) {
+          return prev
+        }
         return { eventTicker, live, liveSource, points, fetchedAt: Date.now() }
       }),
     )

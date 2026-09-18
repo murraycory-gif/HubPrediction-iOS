@@ -273,6 +273,20 @@ describe('live $ and asks', () => {
     })
     expect(pts[0]?.t).toBeGreaterThan(1e12)
     expect(pts[pts.length - 1]?.px).toBeCloseTo(76541.2)
+    const tuples = pointsFromLiveData({
+      live_data: {
+        details: {
+          timeseries: [
+            [nowSec - 4, 76539.4],
+            [nowSec - 2, 76540.8],
+            [nowSec, 76541.2],
+          ],
+        },
+      },
+    })
+    expect(tuples).toHaveLength(3)
+    expect(tuples[0]?.t).toBeGreaterThan(1e12)
+    expect(tuples[2]?.px).toBeCloseTo(76541.2)
   })
 })
 

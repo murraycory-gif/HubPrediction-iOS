@@ -105,6 +105,7 @@ import { SettingsPanel } from './settings-panel'
 import { TapeIcon } from './tape-icon'
 
 export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
+  const [hostReady, setHostReady] = useState(false)
   const [settings, setSettings] = useState<DeskSettings>(() => hydrateSettings(null))
   const [tickets, setTickets] = useState<DeskTicket[]>(() => loadTickets())
   const [hits, setHits] = useState(() => loadHits())
@@ -157,6 +158,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })),
     )
     setRehab(loadAutoState())
+    const writeHost = (patch: { settings?: unknown; tickets?: unknown; finance?: unknown; hits?: unknown }) => {
+      void saveDeskState({ data: patch })
+    }
+    setHostDeskWriter(writeHost)
     void getDeskState()
       .then((host) => {
         if (host && applyHostDeskState(host)) {
@@ -171,14 +176,22 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             })),
           )
         }
-        setHostDeskWriter((patch) => {
-          void saveDeskState({ data: patch })
+        setHostDeskWriter(writeHost)
+        writeHost({
+          settings: loadSettings(),
+          tickets: loadTickets(),
+          finance: loadFinance(),
         })
+        setHostReady(true)
       })
       .catch(() => {
-        setHostDeskWriter((patch) => {
-          void saveDeskState({ data: patch })
+        setHostDeskWriter(writeHost)
+        writeHost({
+          settings: loadSettings(),
+          tickets: loadTickets(),
+          finance: loadFinance(),
         })
+        setHostReady(true)
       })
     void getKalshiBalance()
       .then((r) => applyCashAndSettlements(r))
@@ -259,7 +272,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }, [liveEventKey])
 
   const printsQuery = useQuery({
-    queryKey: ['live-prints', liveEvents, settings.charts],
+    queryKey: ['live-prints', liveEvents, settings.charts, settings.clocks],
     queryFn: () => getLivePrints({ data: { events: liveEvents, charts: settings.charts, clocks: settings.clocks } }),
     enabled: Object.values(liveEvents).some(Boolean),
     refetchInterval: LIVE_PRINT_MS,
@@ -346,17 +359,19 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const ask = side === 'down' ? quote.noAsk : quote.yesAsk
     markFilled(sentRef.current, `${tape}:${quote.ticker}`, ticket.orderId)
     setTickets((prev) => upsertTicket(prev, ticket))
-    const booked = bookFill(book, {
-      tape,
-      ticker: quote.ticker,
-      clock: quote.clockId || quote.clock,
-      closeAt: quote.closeAt,
-      side,
-      count: ticket.contracts,
-      ask,
-      orderId: ticket.orderId,
+    setBook((prev) => {
+      const booked = bookFill(prev, {
+        tape,
+        ticker: quote.ticker,
+        clock: quote.clockId || quote.clock,
+        closeAt: quote.closeAt,
+        side,
+        count: ticket.contracts,
+        ask,
+        orderId: ticket.orderId,
+      })
+      return booked.ok ? booked.state : prev
     })
-    if (booked.ok) setBook(booked.state)
     setMsg(`${TAPE_META[tape].label} PAPER ${side.toUpperCase()} ${ticket.orderId}`)
   }
 
@@ -510,7 +525,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   return (
     <div className="desk">
-      <header className="desk-head" data-testid="desk-head">
+      <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">
             <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>

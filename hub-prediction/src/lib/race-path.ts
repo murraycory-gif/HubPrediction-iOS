@@ -114,6 +114,13 @@ export function cleanRacePoints(
   raw.sort((a, b) => a.t - b.t)
   const last = raw[raw.length - 1]
   if (last && to - last.t > 80) raw.push({ t: to, px: last.px })
+  if (raw.length < 3 && last && Number.isFinite(from) && to - from > 200) {
+    return [
+      { t: from, px: raw[0]?.px ?? last.px },
+      { t: from + (to - from) / 2, px: last.px },
+      { t: to, px: last.px },
+    ]
+  }
   if (raw.length <= MAX_RACE_DOTS) return raw
   return bucketExtrema(raw, MAX_RACE_DOTS)
 }

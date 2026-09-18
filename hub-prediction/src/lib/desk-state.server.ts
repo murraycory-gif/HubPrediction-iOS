@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { HostDeskState } from './desk-persist'
+import { mergeHostDeskState, type HostDeskState } from './desk-persist'
 
 export const DESK_STATE_FILE = 'desk-state.json'
 
@@ -44,11 +44,7 @@ export function readDeskState(): HostDeskState | null {
 
 export function writeDeskState(patch: Partial<HostDeskState>): HostDeskState {
   const prev = readDeskState() ?? { asOf: 0 }
-  const next: HostDeskState = {
-    ...prev,
-    ...patch,
-    asOf: Date.now(),
-  }
+  const next = mergeHostDeskState(prev, patch)
   const path = deskStatePath()
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, JSON.stringify(next))

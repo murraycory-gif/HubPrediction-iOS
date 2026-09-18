@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { applyHostDeskState } from '../src/lib/desk-hydrate'
+import { mergeHostDeskState } from '../src/lib/desk-persist'
 import { readDeskState, writeDeskState } from '../src/lib/desk-state.server'
-import { bookFill, emptyFinance, hydrateFinance, loadFinance } from '../src/lib/finance'
+import { bookFill, emptyFinance, hydrateFinance, loadFinance, saveFinance } from '../src/lib/finance'
 import { GOLD_RECIPES, hydrateSettings, loadSettings, loadTickets, patchTape, saveTickets } from '../src/lib/tapes'
 
 const prevFile = process.env.HUB_DESK_STATE_FILE
@@ -72,6 +73,58 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     const finance = hydrateFinance(loadFinance())
     expect(finance.bets.some((b) => b.orderId === 'deskfill-btc-persist1' && b.kind === 'paper')).toBe(true)
     expect(loadTickets().some((t) => t.orderId === 'deskfill-btc-persist1')).toBe(true)
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('finance write cannot restore stale Live cash OFF over a newer pick', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hub-desk-merge-'))
+    process.env.HUB_DESK_STATE_FILE = join(dir, 'desk-state.json')
+    const off = loadSettings()
+    expect(off.tapes.btc.liveOn).toBe(false)
+    writeDeskState({ settings: { ...off, savedAt: 1_000 } })
+    const on = patchTape(loadSettings(), 'btc', { liveOn: true })
+    expect(on.tapes.btc.liveOn).toBe(true)
+    writeDeskState({ settings: { ...on, savedAt: 2_000 } })
+    writeDeskState({ finance: emptyFinance(), settings: { ...off, savedAt: 1_000 } })
+    const host = readDeskState()
+    expect((host?.settings as { tapes?: { btc?: { liveOn?: boolean } } })?.tapes?.btc?.liveOn).toBe(true)
+    expect((host?.settings as { savedAt?: number })?.savedAt).toBe(2_000)
+    const stale = mergeHostDeskState(
+      { asOf: 1, settings: { ...on, savedAt: 2_000 }, finance: emptyFinance() },
+      { settings: { ...off, savedAt: 1_000 }, finance: { killed: false, paperStartedAt: 1, bets: [] } },
+    )
+    expect((stale.settings as { tapes?: { btc?: { liveOn?: boolean } } })?.tapes?.btc?.liveOn).toBe(true)
+    localStorage.clear()
+    applyHostDeskState(readDeskState())
+    expect(loadSettings().tapes.btc.liveOn).toBe(true)
+    expect(loadSettings().liveBets).toBe(false)
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('update-desk restart (LS wipe) keeps Live cash ON and today paper', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hub-desk-update-'))
+    process.env.HUB_DESK_STATE_FILE = join(dir, 'desk-state.json')
+    const armed = patchTape(loadSettings(), 'ng', { liveOn: true, botOn: true })
+    const booked = bookFill(emptyFinance(), {
+      tape: 'cu',
+      ticker: 'KXCOPPER15M-TODAY',
+      clock: '15m',
+      closeAt: Date.now() + 60_000,
+      side: 'down',
+      count: 1,
+      ask: 40,
+      orderId: 'deskfill-cu-update1',
+    })
+    expect(booked.ok).toBe(true)
+    if (booked.ok) saveFinance(booked.state)
+    writeDeskState({ settings: armed, finance: loadFinance() })
+    localStorage.clear()
+    applyHostDeskState(readDeskState())
+    expect(loadSettings().tapes.ng.liveOn).toBe(true)
+    expect(loadSettings().liveBets).toBe(false)
+    expect(hydrateFinance(loadFinance()).bets.some((b) => b.orderId === 'deskfill-cu-update1' && b.kind === 'paper')).toBe(
+      true,
+    )
     await rm(dir, { recursive: true, force: true })
   })
 })
