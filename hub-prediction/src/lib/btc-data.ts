@@ -27,6 +27,18 @@ export const getSettledDesk = createServerFn({ method: 'GET' }).handler(async ()
   return rows.flat()
 })
 
+/** First-paint cash + deposits. Soft FAIL waiting on settlements / Settings tap. */
+export const getKalshiBalance = createServerFn({ method: 'POST' })
+  .validator((d: { keyId: string; pem: string }) => d)
+  .handler(async ({ data }) => {
+    const { fetchBalance, fetchDeposits } = await import('./kalshi-trade.server')
+    const [bal, deposits] = await Promise.all([
+      fetchBalance(data.keyId, data.pem),
+      fetchDeposits(data.keyId, data.pem).catch(() => null),
+    ])
+    return { ...bal, deposits }
+  })
+
 export const getKalshiCash = createServerFn({ method: 'POST' })
   .validator((d: { keyId: string; pem: string }) => d)
   .handler(async ({ data }) => {

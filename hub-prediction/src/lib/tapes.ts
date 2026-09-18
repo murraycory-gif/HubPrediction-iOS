@@ -544,9 +544,14 @@ export function saveCash(cash: CashLatch) {
 }
 
 export function depositsFromPayload(raw: unknown): number | null {
-  const list = Array.isArray((raw as { deposits?: unknown })?.deposits)
-    ? (raw as { deposits: Record<string, unknown>[] }).deposits
-    : []
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const nested = o.data && typeof o.data === 'object' ? (o.data as Record<string, unknown>) : null
+  const list = Array.isArray(o.deposits)
+    ? (o.deposits as Record<string, unknown>[])
+    : Array.isArray(nested?.deposits)
+      ? (nested.deposits as Record<string, unknown>[])
+      : []
   if (!list.length) return null
   let sum = 0
   for (const d of list) {
@@ -579,49 +584,90 @@ export function num(v: unknown): number | null {
   return null
 }
 
-/** Last print from Kalshi live_data / timeseries. Soft FAIL strike-as-live. */
+const STRIKE_KEYS = new Set(['floor_strike', 'strike', 'strike_price', 'beat', 'floor'])
+const LIVE_PRINT_KEYS = ['last', 'latest', 'price', 'value', 'px', 'close', 'last_price', 'spot', 'index', 'underlying']
+
+function livePx(row: Record<string, unknown>, keys: readonly string[]): number | null {
+  for (const k of keys) {
+    if (STRIKE_KEYS.has(k)) continue
+    const v = num(row[k])
+    if (v != null && v > 0) return v
+  }
+  return null
+}
+
+/** Last print from Kalshi live_data / timeseries. Soft FAIL strike-as-live. Prefer latest over 1M. */
 export function lastPrintFromLiveData(payload: unknown): { px: number; source: 'kalshi-live' | 'kalshi-timeseries' } | null {
   const root = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
   const live = (root?.live_data && typeof root.live_data === 'object' ? root.live_data : root) as Record<string, unknown> | null
   const details = (live?.details && typeof live.details === 'object' ? live.details : live) as Record<string, unknown> | null
   if (!details) return null
 
+  for (const bag of [details, live!]) {
+    const instant = livePx(bag, LIVE_PRINT_KEYS)
+    if (instant != null) return { px: instant, source: 'kalshi-live' }
+  }
+
+  const ticks = details.ticks ?? details.trades ?? live?.ticks
+  if (Array.isArray(ticks) && ticks.length) {
+    for (let i = ticks.length - 1; i >= 0; i--) {
+      const row = ticks[i]
+      if (!row || typeof row !== 'object') continue
+      const v = livePx(row as Record<string, unknown>, ['v', 'px', 'price', 'close', 'last'])
+      if (v != null) return { px: v, source: 'kalshi-live' }
+    }
+  }
+
   const ts = details.timeseries
   if (Array.isArray(ts) && ts.length) {
     for (let i = ts.length - 1; i >= 0; i--) {
       const row = ts[i]
       if (!row || typeof row !== 'object') continue
-      const v = num((row as { v?: unknown; px?: unknown; price?: unknown; close?: unknown }).v
-        ?? (row as { px?: unknown }).px
-        ?? (row as { price?: unknown }).price
-        ?? (row as { close?: unknown }).close)
-      if (v != null && v > 0) return { px: v, source: 'kalshi-timeseries' }
+      const v = livePx(row as Record<string, unknown>, ['v', 'px', 'price', 'close'])
+      if (v != null) return { px: v, source: 'kalshi-timeseries' }
     }
   }
 
   const sticks = details.candlesticks
-  const groups = sticks && typeof sticks === 'object' ? sticks as Record<string, unknown> : null
+  const groups = sticks && typeof sticks === 'object' ? (sticks as Record<string, unknown>) : null
   const series = Array.isArray(sticks)
     ? sticks
-    : Array.isArray(groups?.['1M'])
-      ? groups!['1M']
-      : Array.isArray(groups?.['1m'])
-        ? groups!['1m']
-        : []
+    : Array.isArray(groups?.['1S'])
+      ? groups!['1S']
+      : Array.isArray(groups?.['1s'])
+        ? groups!['1s']
+        : Array.isArray(groups?.['1M'])
+          ? groups!['1M']
+          : Array.isArray(groups?.['1m'])
+            ? groups!['1m']
+            : []
   if (Array.isArray(series) && series.length) {
     for (let i = series.length - 1; i >= 0; i--) {
       const row = series[i]
       if (!row || typeof row !== 'object') continue
-      const v = num((row as { close?: unknown }).close ?? (row as { c?: unknown }).c ?? (row as { v?: unknown }).v)
-      if (v != null && v > 0) return { px: v, source: 'kalshi-live' }
+      const v = livePx(row as Record<string, unknown>, ['close', 'c', 'v', 'px'])
+      if (v != null) return { px: v, source: 'kalshi-live' }
     }
   }
 
-  for (const k of ['last', 'price', 'value', 'px', 'close']) {
-    const v = num(details[k])
-    if (v != null && v > 0) return { px: v, source: 'kalshi-live' }
-  }
   return null
+}
+
+/** Soft KEEP: Kalshi status=open|active and now < close. `active` is the open-filter field. */
+export function marketTradingActive(
+  m: { status?: unknown; close_time?: unknown; open_time?: unknown } | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!m) return false
+  const status = String(m.status ?? 'open').toLowerCase()
+  if (status === 'closed' || status === 'settled' || status === 'finalized' || status === 'determined' || status === 'inactive') {
+    return false
+  }
+  const close = Date.parse(String(m.close_time ?? ''))
+  if (Number.isFinite(close) && now >= close) return false
+  const open = Date.parse(String(m.open_time ?? ''))
+  if (Number.isFinite(open) && now < open) return false
+  return status === 'open' || status === 'active' || m.status == null
 }
 
 export function askCentsFromMarket(m: Record<string, unknown>, yes: boolean) {

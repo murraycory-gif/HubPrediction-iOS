@@ -332,7 +332,7 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
   expect(livePosts).toEqual([])
 })
 
-test('phone desk: boot hydrates settlements when keys present — Live stays OFF', async ({ page }) => {
+test('phone desk: boot first-paints cash when keys present — no Settings tap, Live stays OFF', async ({ page }) => {
   const cashPosts: string[] = []
   const livePosts: string[] = []
   await page.addInitScript(() => {
@@ -353,6 +353,8 @@ test('phone desk: boot hydrates settlements when keys present — Live stays OFF
   await expect(page.getByTestId('bets-filter-all')).toBeVisible()
   await expect(page.getByTestId('bets-filter-btc')).toBeVisible()
   await expect(page.getByTestId('scoreboard')).toBeVisible()
+  await expect(page.getByTestId('kalshi-cash')).toBeVisible()
+  await expect(page.getByTestId('settings')).toHaveCount(0)
   await expect(page.locator('.rain-col')).toHaveCount(0)
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
   await expect

@@ -29,23 +29,48 @@ export function ticketCost(count: number, askCents: number) {
   return Math.round(count * (askCents / 100) * 100) / 100
 }
 
-export function cashFromBalancePayload(raw: unknown): number {
-  if (!raw || typeof raw !== 'object') return 0
-  const o = raw as Record<string, unknown>
-  const dollars =
-    o.balance_dollars ?? o.cash_dollars ?? o.portfolio_value_dollars ?? o.available_balance_dollars
-  if (typeof dollars === 'string' && dollars.length) {
-    const n = Number(dollars)
+function asNum(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string' && v.trim()) {
+    const n = Number(v)
     if (Number.isFinite(n)) return n
   }
-  if (typeof dollars === 'number' && Number.isFinite(dollars)) return dollars
-  const cents = o.balance ?? o.cash ?? o.available_balance
-  if (typeof cents === 'number' && Number.isFinite(cents)) {
-    return cents > 5000 ? cents / 100 : cents
+  return null
+}
+
+function flattenBalance(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  const extras: Record<string, unknown>[] = []
+  for (const key of ['data', 'portfolio', 'balances']) {
+    const nested = o[key]
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) extras.push(nested as Record<string, unknown>)
   }
-  if (typeof cents === 'string') {
-    const n = Number(cents)
-    if (Number.isFinite(n)) return n > 5000 ? n / 100 : n
+  if (o.balance && typeof o.balance === 'object' && !Array.isArray(o.balance)) {
+    extras.push(o.balance as Record<string, unknown>)
+  }
+  return Object.assign({}, o, ...extras)
+}
+
+/** GET /portfolio/balance — dollars fields first, then cents. Unwraps nested data. */
+export function cashFromBalancePayload(raw: unknown): number {
+  const o = flattenBalance(raw)
+  if (!o) return 0
+  for (const key of [
+    'balance_dollars',
+    'cash_dollars',
+    'portfolio_value_dollars',
+    'available_balance_dollars',
+    'available_dollars',
+  ]) {
+    const n = asNum(o[key])
+    if (n != null) return n
+  }
+  for (const key of ['balance', 'cash', 'available_balance', 'portfolio_value', 'available']) {
+    const n = asNum(o[key])
+    if (n == null) continue
+    if (Number.isInteger(n) && Math.abs(n) > 5000) return n / 100
+    return n
   }
   return 0
 }

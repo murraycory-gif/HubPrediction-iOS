@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { getDeskBoard, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
+import { getDeskBoard, getKalshiBalance, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
 import {
   KEY_ID,
   KEY_PEM,
@@ -93,6 +93,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [financeOpen, setFinanceOpen] = useState(false)
   const sentRef = useRef<Record<string, SendClaim>>({})
 
+  function applyCashAndSettlements(r: { cash?: number | null; deposits?: unknown; settlements?: unknown }) {
+    const next = hydrateCashFromKalshi(r, loadCash())
+    setCash(next.cash)
+    setHits(next.hits)
+  }
+
   useLayoutEffect(() => {
     setSettings(loadSettings())
     const nextTickets = loadTickets()
@@ -111,14 +117,15 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })),
     )
     if (nextKey && nextPem) {
-      void getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
-        .then((r) => {
-          const next = hydrateCashFromKalshi(r, loadCash())
-          setCash(next.cash)
-          setHits(next.hits)
-        })
+      void getKalshiBalance({ data: { keyId: nextKey, pem: nextPem } })
+        .then((r) => applyCashAndSettlements(r))
         .catch(() => {
-          /* keys present but Kalshi miss — latch stays */
+          /* keys present but balance miss — latch stays */
+        })
+      void getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
+        .then((r) => applyCashAndSettlements(r))
+        .catch(() => {
+          /* settlements follow cash — latch stays */
         })
     }
   }, [])
@@ -134,24 +141,33 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const board = boardQuery.data ?? seedBoard
 
-  function applyCashAndSettlements(r: Awaited<ReturnType<typeof getKalshiCash>>) {
-    const next = hydrateCashFromKalshi(r, loadCash())
-    setCash(next.cash)
-    setHits(next.hits)
-  }
-
   async function refreshCash(nextKey = keyId, nextPem = pem) {
     if (!nextKey || !nextPem) return
     try {
-      const r = await getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
-      applyCashAndSettlements(r)
+      const fast = await getKalshiBalance({ data: { keyId: nextKey, pem: nextPem } })
+      applyCashAndSettlements(fast)
       setMsg('')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'balance failed')
     }
+    try {
+      const r = await getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
+      applyCashAndSettlements(r)
+    } catch {
+      /* cash already painted — settlements optional */
+    }
   }
 
   const cashQuery = useQuery({
+    queryKey: ['kalshi-balance', keyId, pem],
+    enabled: Boolean(keyId && pem),
+    queryFn: () => getKalshiBalance({ data: { keyId, pem } }),
+    refetchInterval: 15_000,
+    staleTime: 2_000,
+    refetchOnMount: 'always',
+  })
+
+  const cashHitsQuery = useQuery({
     queryKey: ['kalshi-cash-hits', keyId, pem],
     enabled: Boolean(keyId && pem),
     queryFn: () => getKalshiCash({ data: { keyId, pem } }),
@@ -164,6 +180,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     if (!cashQuery.data) return
     applyCashAndSettlements(cashQuery.data)
   }, [cashQuery.data])
+
+  useEffect(() => {
+    if (!cashHitsQuery.data) return
+    applyCashAndSettlements(cashHitsQuery.data)
+  }, [cashHitsQuery.data])
 
   const settledQuery = useQuery({
     queryKey: ['settled-desk'],
@@ -202,6 +223,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       return
     }
     if (!quote.ticker) return
+    if (quote.tradingActive === false) {
+      setMsg(`${TAPE_META[tape].label} Kalshi window closed — sit`)
+      return
+    }
     const ask = side === 'down' ? quote.noAsk : quote.yesAsk
     const spent = ticketCost(settings.tapes[tape].contracts, ask)
     const gate = liveSendGate(book, {
@@ -270,6 +295,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       const recipe = settings.tapes[id]
       const gold = GOLD_RECIPES[id]
       if (!quote?.ticker || !recipe.botOn) continue
+      if (quote.tradingActive === false) continue
       if (ticketFor(tickets, id, quote.ticker)) continue
       if (!inArmWindow(gold, quote.closeAt)) continue
       const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe: gold })

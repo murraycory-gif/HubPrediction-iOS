@@ -21,6 +21,7 @@ import {
   lastPrintFromLiveData,
   loadSettings,
   makeTicket,
+  marketTradingActive,
   patchTape,
   pulseTone,
   saveSettings,
@@ -183,6 +184,71 @@ describe('live $ and asks', () => {
     const m = { yes_ask_dollars: '0.9400', no_ask_dollars: '0.0700', floor_strike: 2.99 }
     expect(askCentsFromMarket(m, true)).toBe(94)
     expect(askCentsFromMarket(m, false)).toBe(7)
+  })
+
+  it('prefers latest live print over a stale 1M candle', () => {
+    const print = lastPrintFromLiveData({
+      live_data: { details: { last: 76540.12, candlesticks: { '1M': [{ close: 76530 }] } } },
+    })
+    expect(print?.px).toBeCloseTo(76540.12)
+    expect(print?.source).toBe('kalshi-live')
+  })
+
+  it('reads 1S candle before 1M', () => {
+    const print = lastPrintFromLiveData({
+      live_data: { details: { candlesticks: { '1M': [{ close: 76530 }], '1S': [{ close: 76541.5 }] } } },
+    })
+    expect(print?.px).toBeCloseTo(76541.5)
+  })
+})
+
+describe('marketTradingActive Soft KEEP open window', () => {
+  it('is true for status=active while now < close', () => {
+    const now = 1_700_000_000_000
+    expect(
+      marketTradingActive(
+        {
+          status: 'active',
+          open_time: new Date(now - 5 * 60_000).toISOString(),
+          close_time: new Date(now + 8 * 60_000).toISOString(),
+        },
+        now,
+      ),
+    ).toBe(true)
+    expect(
+      marketTradingActive(
+        {
+          status: 'open',
+          open_time: new Date(now - 1 * 60_000).toISOString(),
+          close_time: new Date(now + 14 * 60_000).toISOString(),
+        },
+        now,
+      ),
+    ).toBe(true)
+  })
+
+  it('is false after close even if status still says open', () => {
+    const now = 1_700_000_000_000
+    expect(
+      marketTradingActive(
+        {
+          status: 'open',
+          open_time: new Date(now - 15 * 60_000).toISOString(),
+          close_time: new Date(now - 1).toISOString(),
+        },
+        now,
+      ),
+    ).toBe(false)
+    expect(
+      marketTradingActive(
+        {
+          status: 'closed',
+          open_time: new Date(now - 5 * 60_000).toISOString(),
+          close_time: new Date(now + 8 * 60_000).toISOString(),
+        },
+        now,
+      ),
+    ).toBe(false)
   })
 })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contractsFromCash } from '../src/lib/size-cash'
+import { cashFromBalancePayload, contractsFromCash } from '../src/lib/size-cash'
 import {
   forwardRay,
   maxStep,
@@ -130,5 +130,21 @@ describe('contractsFromCash', () => {
   it('sits when cash or price is unusable', () => {
     expect(contractsFromCash(0, 31, 0.8)).toBe(0)
     expect(contractsFromCash(100, 99, 0.8)).toBe(0)
+  })
+})
+
+describe('cashFromBalancePayload first-paint', () => {
+  it('reads $293.37 from cents, dollars, and nested data', () => {
+    expect(cashFromBalancePayload({ balance: 29337 })).toBeCloseTo(293.37)
+    expect(cashFromBalancePayload({ balance_dollars: '293.37' })).toBeCloseTo(293.37)
+    expect(cashFromBalancePayload({ data: { balance: 29337 } })).toBeCloseTo(293.37)
+    expect(cashFromBalancePayload({ data: { balance_dollars: 293.37 } })).toBeCloseTo(293.37)
+    expect(cashFromBalancePayload({ portfolio_value: 29337 })).toBeCloseTo(293.37)
+    expect(cashFromBalancePayload({ balance: 293.37 })).toBeCloseTo(293.37)
+  })
+
+  it('does not paint cash from an empty payload', () => {
+    expect(cashFromBalancePayload(null)).toBe(0)
+    expect(cashFromBalancePayload({})).toBe(0)
   })
 })

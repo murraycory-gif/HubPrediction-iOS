@@ -4,6 +4,7 @@ import {
   TAPE_META,
   askCentsFromMarket,
   lastPrintFromLiveData,
+  marketTradingActive,
   num,
   seriesToTape,
   type TapeId,
@@ -11,9 +12,10 @@ import {
 import type { DeskBoard, Point, Settled, TapeQuote } from './types'
 
 const KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
-const QUOTE_FRESH_MS = 900
-const QUOTE_ABORT = 1800
-const LIVE_ABORT = 1600
+const QUOTE_FRESH_MS = 350
+const LIST_ABORT = 1200
+const TICKER_ABORT = 900
+const LIVE_ABORT = 1200
 
 type Market = Record<string, unknown>
 
@@ -50,6 +52,19 @@ function pickOpen(markets: Market[], now: number) {
   return pool[0] ?? null
 }
 
+function unwrapMarket(payload: unknown, fallback: Market | null): Market | null {
+  if (payload && typeof payload === 'object') {
+    const o = payload as Record<string, unknown>
+    if (o.market && typeof o.market === 'object') return o.market as Market
+    if (o.ticker || o.yes_ask != null || o.yes_ask_dollars != null || o.status != null) return o as Market
+  }
+  return fallback
+}
+
+function stillOpen(openAt: number, closeAt: number, now: number) {
+  return openAt > 0 && closeAt > now && openAt <= now
+}
+
 function pointsFromLive(payload: unknown): Point[] {
   const root = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
   const live = (root?.live_data && typeof root.live_data === 'object' ? root.live_data : root) as Record<string, unknown> | null
@@ -82,42 +97,53 @@ function pointsFromLive(payload: unknown): Point[] {
 
 async function loadTape(id: TapeId, now: number): Promise<TapeQuote | null> {
   const meta = TAPE_META[id]
-  const markets = await fetchJson<{ markets?: Market[] }>(
-    `${KALSHI}/markets?series_ticker=${meta.series}&status=open&limit=4`,
-    QUOTE_ABORT,
-  ).catch(() => ({ markets: [] as Market[] }))
-  const m = pickOpen(markets.markets ?? [], now)
-  if (!m) return lastBoard?.tapes[id] ?? null
+  const prev = lastBoard?.tapes[id] ?? null
+  let listed: Market | null = null
 
-  const yesAsk = askCentsFromMarket(m, true)
-  const noAsk = askCentsFromMarket(m, false)
-  const beat = num(m.floor_strike) ?? num(m.strike_price)
-  const openAt = Date.parse(String(m.open_time ?? '')) || 0
-  const closeAt = Date.parse(String(m.close_time ?? '')) || 0
-  const ticker = String(m.ticker ?? '')
-  const eventTicker = String(m.event_ticker ?? '')
+  const reuse = Boolean(prev?.ticker && stillOpen(prev.openAt, prev.closeAt, now))
+  if (!reuse) {
+    const markets = await fetchJson<{ markets?: Market[] }>(
+      `${KALSHI}/markets?series_ticker=${meta.series}&status=open&limit=4`,
+      LIST_ABORT,
+    ).catch(() => ({ markets: [] as Market[] }))
+    listed = pickOpen(markets.markets ?? [], now)
+  }
+
+  const ticker = String(listed?.ticker ?? prev?.ticker ?? '')
+  const eventTicker = String(listed?.event_ticker ?? prev?.eventTicker ?? '')
+  if (!ticker) return prev
+
+  const [freshPayload, livePayload] = await Promise.all([
+    fetchJson<unknown>(`${KALSHI}/markets/${encodeURIComponent(ticker)}`, TICKER_ABORT).catch(() => null),
+    eventTicker
+      ? fetchJson<unknown>(
+          `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=15min`,
+          LIVE_ABORT,
+        ).catch(() => null)
+      : Promise.resolve(null),
+  ])
+
+  const m = unwrapMarket(freshPayload, listed)
+  if (!m) return prev
+
+  const yesAsk = askCentsFromMarket(m, true) || (prev?.ticker === ticker ? prev.yesAsk : 0)
+  const noAsk = askCentsFromMarket(m, false) || (prev?.ticker === ticker ? prev.noAsk : 0)
+  const beat = num(m.floor_strike) ?? num(m.strike_price) ?? prev?.beat ?? 0
+  const openAt = Date.parse(String(m.open_time ?? '')) || prev?.openAt || 0
+  const closeAt = Date.parse(String(m.close_time ?? '')) || prev?.closeAt || 0
 
   let live: number | null = null
   let liveSource: TapeQuote['liveSource'] = null
   let points: Point[] = []
-  if (eventTicker) {
-    try {
-      const payload = await fetchJson<unknown>(
-        `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=15min`,
-        LIVE_ABORT,
-      )
-      const print = lastPrintFromLiveData(payload)
-      if (print) {
-        live = print.px
-        liveSource = print.source
-      }
-      points = pointsFromLive(payload)
-    } catch {
-      /* Soft FAIL strike-as-live — leave live null */
+  if (livePayload) {
+    const print = lastPrintFromLiveData(livePayload)
+    if (print) {
+      live = print.px
+      liveSource = print.source
     }
+    points = pointsFromLive(livePayload)
   }
 
-  const prev = lastBoard?.tapes[id]
   if (live == null && prev?.ticker === ticker && prev.live != null) {
     live = prev.live
     liveSource = prev.liveSource
@@ -131,7 +157,7 @@ async function loadTape(id: TapeId, now: number): Promise<TapeQuote | null> {
     eventTicker,
     yesAsk,
     noAsk,
-    beat: beat ?? 0,
+    beat,
     live,
     liveSource,
     points,
@@ -139,12 +165,17 @@ async function loadTape(id: TapeId, now: number): Promise<TapeQuote | null> {
     closeAt,
     fetchedAt: now,
     clock: closeAt ? formatClock(closeAt) : '—',
-    tradingActive: String(m.status ?? 'open') === 'open',
+    tradingActive: marketTradingActive(m, now),
   }
 }
 
 export function peekDeskBoard(): DeskBoard | null {
   return lastBoard
+}
+
+export function resetDeskBoardForTests() {
+  lastBoard = null
+  lastBoardAt = 0
 }
 
 export async function loadDeskBoard(): Promise<DeskBoard> {
