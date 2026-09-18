@@ -79,6 +79,7 @@ import {
   liveSendGate,
   loadFinance,
   recipeRetuneGate,
+  hitFloorGate,
   settleBook,
   syncTicketsIntoBook,
   type FinanceState,
@@ -372,6 +373,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       if (quote.tradingActive === false) continue
       if (ticketFor(tickets, id, quote.ticker)) continue
       if (!inArmWindow(recipe, quote.closeAt)) continue
+      const floor = hitFloorGate(hits.tapes[id].w, hits.tapes[id].l)
+      if (!floor.ok) continue
       const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe })
       if (lean === 'sit') continue
       const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
@@ -382,7 +385,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       if (gates.ok) void sendLive(id, lean, quote)
       else if (!settings.liveBets && !recipe.liveOn) sendPaper(id, lean, quote)
     }
-  }, [board?.fetchedAt, settings, tickets, book.killed])
+  }, [board?.fetchedAt, settings, tickets, book.killed, hits])
 
   const ttl = ttlFromHits(hits)
   const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter, cash.firstDepositAt ?? 0)
@@ -432,7 +435,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             testId="pnl"
             tone={cash.pnl != null && cash.pnl < 0 ? 'down' : cash.pnl != null && cash.pnl > 0 ? 'up' : undefined}
           />
-          <Stat label="TTL 24H" value={`${ttl.pct}% ${ttl.w}W–${ttl.l}L`} testId="ttl" />
+          <Stat
+            label="TTL 24H"
+            value={`${ttl.pct}% ${ttl.w}W–${ttl.l}L · ${ttl.w + ttl.l >= 4 && ttl.pct < HIT_FLOOR ? `<${HIT_FLOOR}%` : `${HIT_FLOOR}% goal`}`}
+            testId="ttl"
+          />
           <Stat label="KALSHI CASH" value={formatCash(cash.cash)} testId="kalshi-cash" />
         </div>
         {liveConfirm ? (
@@ -784,7 +791,7 @@ function TapeRow({
       <div className="tape-row">
         <div className="hit-chip" data-testid={`hit-${id}`}>
           <span className="hit-k">24H</span>
-          <span className="tape-hit">{pct}%</span>
+          <span className="tape-hit">{pct}% / {HIT_FLOOR}</span>
           <span className="tape-wl" data-testid={`wl-${id}`}>
             {hits.w}W–{hits.l}L
           </span>
@@ -946,7 +953,7 @@ function Bets24Strip({
   const allOn = isAllBetsFilter(filter)
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
-      <p className="hud-label">Bets since first deposit · P&L is live only · paper in hit · hit floor {HIT_FLOOR}%</p>
+      <p className="hud-label">Bets since first deposit · P&L is live only · paper in hit · {HIT_FLOOR}% win-ratio goal</p>
       <div className="bets-filter" data-testid="bets-filter">
         <button
           type="button"

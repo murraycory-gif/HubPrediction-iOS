@@ -16,6 +16,7 @@ import {
   type TapeId,
   type TapeRecipe,
 } from './tapes'
+import { HIT_FLOOR } from './finance'
 import type { DeskBoard } from './types'
 
 export const PAPER_DRAFTS_KEY = 'hub.desk.analyst.paper.v1'
@@ -236,39 +237,44 @@ function recommendRecipe(
   let centLo = current.centLo
   let centHi = current.centHi
 
-  if (score.placed >= 4 && score.pct < 40 && score.pnl24 < 0) {
-    why.push('24h cold vs this recipe — sit, do not chase a rewrite')
+  if (score.placed >= 4 && score.pct < HIT_FLOOR && score.pnl24 < 0) {
+    why.push(`${score.pct}% is under the ${HIT_FLOOR}% goal — sit, do not chase a rewrite`)
     return { next: { ...current }, why }
   }
 
-  if (score.outWindow >= 2 && score.pnl24 > 0 && score.outWindow >= score.inWindow) {
+  if (score.outWindow >= 2 && score.pnl24 > 0 && score.outWindow >= score.inWindow && score.pct >= HIT_FLOOR) {
     armFromMin = Math.min(14, current.armFromMin + 1)
-    why.push(`${score.outWindow} fills sat outside the arm and the tape is still green — widen the window`)
+    why.push(`${score.outWindow} fills sat outside the arm and the tape is at ${score.pct}% — widen one minute`)
   } else if (score.outWindow >= 2 && score.pnl24 < 0) {
     armFromMin = Math.max(gold.armFromMin, current.armFromMin - 1)
     why.push(`${score.outWindow} off-window fills lost — pull the arm back toward gold`)
   }
 
-  if (score.outBand >= 2 && score.pct < 50) {
+  if (score.outBand >= 2 && score.pct < HIT_FLOOR) {
     if (id === 'btc') {
       why.push(`${score.outBand} ¢-band misses — keep BTC 69–89, do not open 56–68`)
     } else {
       centLo = Math.max(id === 'gld' ? 34 : 28, current.centLo - 4)
-      why.push(`${score.outBand} ¢-band misses — widen the ask band 4¢`)
+      why.push(`${score.outBand} ¢-band misses under ${HIT_FLOOR}% — sit more ¢, do not chase`)
     }
   }
 
   const d24 = path.hours24.delta
   const d48 = path.hours48.delta
-  if (hug === 'through' && score.pct >= 60 && score.placed >= 3) {
+  if (hug === 'through' && score.pct >= HIT_FLOOR && score.placed >= 3) {
     through = stepThrough(gold, current.through, -1)
-    why.push(`through-sends are hitting ${score.pct}% — trim through so the bot can arm earlier`)
-  } else if (score.placed >= 3 && score.pct < 50 && hug !== 'no-print') {
+    why.push(`${score.pct}% is at the ${HIT_FLOOR}% goal — small through trim`)
+  } else if (score.placed >= 3 && score.pct < HIT_FLOOR && hug !== 'no-print') {
     through = stepThrough(gold, current.through, 1)
-    why.push(`sends under this through are ${score.pct}% — raise through and sit more hugs`)
-  } else if (d24 != null && Math.abs(d24) < current.through && path.hours24.minutes >= 30) {
+    why.push(`${score.pct}% is under the ${HIT_FLOOR}% goal — raise through and sit hugs`)
+  } else if (
+    score.pct >= HIT_FLOOR &&
+    d24 != null &&
+    Math.abs(d24) < current.through &&
+    path.hours24.minutes >= 30
+  ) {
     through = stepThrough(gold, current.through, -1)
-    why.push(`24h move vs now is inside through — the bot is hugging too much`)
+    why.push(`24h move vs now is inside through while at ${score.pct}% — small through trim`)
   }
 
   if (d48 != null && d24 != null && Math.sign(d48) === Math.sign(d24) && Math.abs(d48) > current.through) {
@@ -339,8 +345,8 @@ export function analyzeDesk(
       else if (!inWindow) proposed += ' · clock outside arm — sit'
       else if (askOk === false) proposed += ' · ¢ out of band — sit'
     } else if (hug === 'no-print') proposed += ' · waiting on live $'
-    if (cell.w + cell.l >= 4 && hitPct(cell) < 40) {
-      proposed = `${lock} · 24h cold — paper sit, do not chase`
+    if (cell.w + cell.l >= 4 && hitPct(cell) < HIT_FLOOR) {
+      proposed = `${lock} · ${hitPct(cell)}% < ${HIT_FLOOR}% goal — sit`
     }
     return {
       id,
@@ -370,8 +376,8 @@ export function analyzeDesk(
   const retunes = tapes.filter((t) => t.changed).length
   const summary =
     retunes === 0
-      ? 'All four desks match the book. Accept is idle. Live stays OFF unless you arm it.'
-      : `${retunes} desk${retunes === 1 ? '' : 's'} have a retune. Accept applies it to this run’s bot. Deny keeps the current recipe. Live is not flipped.`
+      ? `Goal ${HIT_FLOOR}% win ratio. All four desks match the book. Accept is idle. Live stays OFF unless you arm it.`
+      : `Goal ${HIT_FLOOR}% win ratio. ${retunes} desk${retunes === 1 ? '' : 's'} have a retune. Accept applies it to this run’s bot. Deny keeps the current recipe. Live is not flipped.`
 
   return {
     liveTouched: false,

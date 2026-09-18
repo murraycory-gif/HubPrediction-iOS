@@ -5,6 +5,7 @@ import { V2_EVENTS_ORDERS, placeContract, v2EventsOrderBody } from '../src/lib/k
 import {
   emptyFinance,
   financeSendsOrders,
+  HIT_FLOOR,
   last24hBets,
   liveArmGate,
   liveSendGate,
@@ -49,6 +50,7 @@ describe('QC0 defaults Soft FAIL Live / live-cash ON', () => {
     const gate = liveArmGate(emptyFinance(), { cash: null, deposits: null, hasKeys: false })
     expect(gate.ok).toBe(false)
     expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(HIT_FLOOR).toBe(83)
   })
 })
 
@@ -61,6 +63,7 @@ describe('QC2 wires', () => {
     expect(dash).toMatch(/applyAnalystAccept/)
     expect(dash).toMatch(/getTapePaths/)
     expect(dash).toMatch(/inArmWindow\(recipe/)
+    expect(dash).toMatch(/hitFloorGate/)
     expect(dash).toMatch(/queryFn:\s*\(\)\s*=>\s*getDeskBoard\(\{ data: \{ clocks: settings\.clocks \} \}\)/)
     expect(dash).toMatch(/getLivePrints/)
     expect(dash).toMatch(/mergeLiveOntoBoard/)

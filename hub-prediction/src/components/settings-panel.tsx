@@ -16,7 +16,7 @@ export function SettingsPanel(props: {
         Bot, live cash, and contracts sit on each tape card. Factory gold is the default. Accept an Analyst
         retune to apply a new recipe to that tape for this run. For paper test: Bot ON, Live cash OFF, master
         Live OFF. Kalshi keys live on the Windows host. Soft FAIL paste PEM. Soft FAIL Live POST. Soft FAIL
-        flipping Live from Analyst.
+        flipping Live from Analyst. Win-ratio goal is 83%.
         {props.recipeLocked ? ' KILL / chase lock still blocks silent Settings retunes.' : ''}
       </p>
 

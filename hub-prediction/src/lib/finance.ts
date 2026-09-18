@@ -64,7 +64,7 @@ export const LIVE_FLOOR_PCT = 0.2
 export const ASK_CAP = 80
 export const PAPER_HOURS = 48
 export const DAILY_PNL_FLOOR_PAPER = -50
-export const HIT_FLOOR = 85
+export const HIT_FLOOR = 83
 
 export type BetKind = 'live' | 'paper'
 
@@ -338,6 +338,15 @@ export function liveArmGate(
   if ((cash as number) < floor) {
     return { ok: false, reason: `Cash ${cash} under live floor ${floor} — Soft FAIL Live` }
   }
+  return { ok: true }
+}
+
+/** Sit when the tape is under the 83% goal after enough settled results. */
+export function hitFloorGate(w: number, l: number): Gate {
+  const n = Math.max(0, Math.round(w) + Math.round(l))
+  if (n < 4) return { ok: true }
+  const pct = Math.round((Math.max(0, w) / n) * 100)
+  if (pct < HIT_FLOOR) return { ok: false, reason: `${pct}% < ${HIT_FLOOR}% goal — sit` }
   return { ok: true }
 }
 

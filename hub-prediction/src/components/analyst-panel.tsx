@@ -13,6 +13,7 @@ import {
   type DeskPaths,
   type PaperDrafts,
 } from '../lib/analyst'
+import { HIT_FLOOR } from '../lib/finance'
 import {
   TAPE_META,
   formatLive,
@@ -52,10 +53,11 @@ export function AnalystPanel({
 
   return (
     <section className="analyst" data-testid="analyst">
-      <p className="hud-label">Analyst · each desk vs its recipe</p>
+      <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal</p>
       <p className="settings-note" data-testid="analyst-lock">
-        Reads the current bot recipe, your fills vs that recipe, and the 24h / 48h move vs now. Accept writes the
-        retune onto that tape for this run. Deny keeps the current recipe. Does not flip Live or live cash.
+        Reads the current bot recipe, your fills vs that recipe, and the 24h / 48h move vs now. Recs aim at a {HIT_FLOOR}%
+        win ratio. Accept writes the retune onto that tape for this run. Deny keeps the current recipe. Does not
+        flip Live or live cash.
       </p>
       <div className="analyst-grid">
         {report.tapes.map((t) => {

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ASK_CAP,
+  HIT_FLOOR,
   LIVE_FLOOR_MIN,
+  hitFloorGate,
   askAllowedByGold,
   bookFill,
   emptyFinance,
@@ -47,6 +49,11 @@ describe('finance Soft KEEP', () => {
     expect(recommendSize('btc')).toBe(GOLD_RECIPES.btc.contracts)
     expect(recommendSize('ng')).toBe(1)
     expect(GOLD_RECIPES.btc).toMatchObject({ through: 40, armFromMin: 8, centLo: 69 })
+    expect(HIT_FLOOR).toBe(83)
+    expect(hitFloorGate(0, 0).ok).toBe(true)
+    expect(hitFloorGate(3, 0).ok).toBe(true)
+    expect(hitFloorGate(20, 4).ok).toBe(true)
+    expect(hitFloorGate(20, 5).ok).toBe(false)
     expect(hydrateSettings(null).liveBets).toBe(false)
     expect(DEFAULT_SETTINGS.liveBets).toBe(false)
   })
