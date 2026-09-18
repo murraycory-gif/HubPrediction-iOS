@@ -35,16 +35,11 @@ FIRST TIME (do this once)
 
 EVERY TIME AFTER I SHIP A CHANGE
 --------------------------------
-1. I will say "run update-desk.bat" and give a branch name only if it changed.
-2. On HUB: stop the old npm window (Ctrl+C).
-3. Double-click update-desk.bat in the repo folder.
-   If I named a new branch, once only:
+In PowerShell, one line (Ctrl+C the old desk window first):
 
-   update-desk.bat cursor/new-name-be4f
+cd C:\Users\Cory\Developer\HubPrediction-iOS; git fetch origin cursor/host-kalshi-creds-be4f; git checkout -B cursor/host-kalshi-creds-be4f origin/cursor/host-kalshi-creds-be4f; cd hub-prediction; npm.cmd install; npm.cmd run dev
 
-4. Wait until you see the Vite / local URL.
-5. On this PC: http://localhost:8080  then Ctrl+Shift+R
-6. Phone (later, Tailscale or house Wi-Fi): same desk, hard-refresh. No PEM.
+Then open the Local URL it prints (http://localhost:8080 or 8081) and press Ctrl+Shift+R.
 
 Already pulled and just want to start without git:
 
