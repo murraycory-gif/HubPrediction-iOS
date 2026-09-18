@@ -697,7 +697,7 @@ function Bets24Strip({
 }) {
   const allOn = isAllBetsFilter(filter)
   return (
-    <section className="bets-24h" data-testid="bets-24h">
+    <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
       <p className="hud-label">Last 24H bets</p>
       <div className="bets-filter" data-testid="bets-filter">
         <button
