@@ -60,6 +60,15 @@ export async function fetchBalance(keyId: string, pem: string) {
   return { cash: cashFromBalancePayload(json), raw: json }
 }
 
+export async function fetchSettlements(keyId: string, pem: string) {
+  const minTs = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000)
+  return signed(keyId, pem, 'GET', `${ROOT}/portfolio/settlements?limit=200&min_ts=${minTs}`)
+}
+
+export async function fetchDeposits(keyId: string, pem: string) {
+  return signed(keyId, pem, 'GET', `${ROOT}/portfolio/deposits?limit=200`)
+}
+
 export async function placeContract(args: {
   keyId: string
   pem: string

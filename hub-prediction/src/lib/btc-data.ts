@@ -20,11 +20,23 @@ export const getSettledTape = createServerFn({ method: 'POST' })
     return loadSettledTape(data.id)
   })
 
+export const getSettledDesk = createServerFn({ method: 'GET' }).handler(async () => {
+  const { loadSettledTape } = await import('./kalshi.server')
+  const { TAPE_IDS } = await import('./tapes')
+  const rows = await Promise.all(TAPE_IDS.map((id) => loadSettledTape(id)))
+  return rows.flat()
+})
+
 export const getKalshiCash = createServerFn({ method: 'POST' })
   .validator((d: { keyId: string; pem: string }) => d)
   .handler(async ({ data }) => {
-    const { fetchBalance } = await import('./kalshi-trade.server')
-    return fetchBalance(data.keyId, data.pem)
+    const { fetchBalance, fetchDeposits, fetchSettlements } = await import('./kalshi-trade.server')
+    const [bal, deposits, settlements] = await Promise.all([
+      fetchBalance(data.keyId, data.pem),
+      fetchDeposits(data.keyId, data.pem).catch(() => null),
+      fetchSettlements(data.keyId, data.pem).catch(() => null),
+    ])
+    return { ...bal, deposits, settlements }
   })
 
 export const placeKalshi = createServerFn({ method: 'POST' })

@@ -6,7 +6,7 @@ Same desk on the house PC and on iPhone. Settings and contract sizes persist on 
 
 ## Windows house PC (host)
 
-Needs Node.js 20+ and Edge or Chrome.
+Machine hostname **HUB**. Needs Node.js 20+ and Edge or Chrome.
 
 ```bat
 cd hub-prediction

@@ -4,8 +4,11 @@ import {
   GOLD_RECIPES,
   SETTINGS_KEY,
   askCentsFromMarket,
+  eventsFromKalshiSettlements,
   extractOrderId,
   hydrateSettings,
+  latchFromEvents,
+  mergeHitEvents,
   inArmWindow,
   lastPrintFromLiveData,
   loadSettings,
@@ -169,6 +172,7 @@ describe('arm / pulse / send tab', () => {
   it('TTL sums the four tape latches', () => {
     const ttl = ttlFromHits({
       asOf: 1,
+      events: [],
       tapes: {
         btc: { w: 20, l: 9 },
         ng: { w: 4, l: 0 },
@@ -186,5 +190,33 @@ describe('arm / pulse / send tab', () => {
   it('extracts Kalshi order_id from place payload', () => {
     expect(extractOrderId({ order: { order_id: 'deadbeef-1111-2222' } })).toBe('deadbeef-1111-2222')
     expect(extractOrderId({ order_id: 'short' })).toBeNull()
+  })
+})
+
+describe('Kalshi-settled 24h latch', () => {
+  it('counts W–L from portfolio settlements and does not double a ticker', () => {
+    const now = Date.now()
+    const ev = eventsFromKalshiSettlements({
+      settlements: [
+        { ticker: 'KXBTC15M-A', market_result: 'yes', yes_count_fp: '2.00', no_count_fp: '0', settled_time: new Date(now - 1000).toISOString() },
+        { ticker: 'KXNATGAS15M-B', market_result: 'no', yes_count_fp: '0', no_count_fp: '1.00', settled_time: new Date(now - 2000).toISOString() },
+        { ticker: 'KXBTC15M-A', market_result: 'yes', yes_count_fp: '2.00', no_count_fp: '0', settled_time: new Date(now - 1000).toISOString() },
+      ],
+    }, now)
+    const latch = latchFromEvents(ev, now)
+    expect(latch.tapes.btc).toEqual({ w: 1, l: 0 })
+    expect(latch.tapes.ng).toEqual({ w: 1, l: 0 })
+    const again = mergeHitEvents(latch, ev, now)
+    expect(again.tapes.btc.w).toBe(1)
+  })
+
+  it('drops settlements older than 24h', () => {
+    const now = Date.now()
+    const ev = eventsFromKalshiSettlements({
+      settlements: [
+        { ticker: 'KXGOLD15M-OLD', market_result: 'yes', yes_count_fp: '1', no_count_fp: '0', settled_time: new Date(now - 25 * 60 * 60 * 1000).toISOString() },
+      ],
+    }, now)
+    expect(ev).toEqual([])
   })
 })

@@ -1,12 +1,15 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getDeskBoard, getKalshiCash, placeKalshi } from '../lib/btc-data'
+import { getDeskBoard, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
 import {
   KEY_ID,
   KEY_PEM,
   TAPE_IDS,
   TAPE_META,
   askInBand,
+  depositsFromPayload,
+  eventsFromKalshiSettlements,
+  eventsFromTickets,
   extractOrderId,
   formatCash,
   formatLive,
@@ -19,9 +22,11 @@ import {
   loadSettings,
   loadTickets,
   makeTicket,
+  mergeHitEvents,
   patchTape,
   pulseTone,
   saveCash,
+  saveHits,
   setLiveBets,
   tabIsOpen,
   tapeLean,
@@ -84,18 +89,38 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     if (!nextKey || !nextPem) return
     try {
       const r = await getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
+      const deposits = depositsFromPayload(r.deposits) ?? cash.deposits
       const next = saveCash({
         cash: r.cash,
-        pnl: cash.pnl,
-        deposits: cash.deposits,
+        deposits,
+        pnl: r.cash != null && deposits != null ? r.cash - deposits : cash.pnl,
         asOf: Date.now(),
       })
       setCash(next)
+      if (r.settlements) {
+        const ev = eventsFromKalshiSettlements(r.settlements)
+        setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
+      }
       setMsg('')
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'balance failed')
     }
   }
+
+  const settledQuery = useQuery({
+    queryKey: ['settled-desk'],
+    queryFn: () => getSettledDesk(),
+    refetchInterval: 20_000,
+    staleTime: 15_000,
+  })
+
+  useEffect(() => {
+    const settled = settledQuery.data
+    if (!settled?.length) return
+    const ev = eventsFromTickets(tickets, settled)
+    if (!ev.length) return
+    setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
+  }, [settledQuery.data, tickets])
 
   async function sendLive(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
     if (!tabIsOpen()) {
@@ -208,7 +233,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             key={id}
             id={id}
             quote={board?.tapes[id] ?? null}
-            recipe={settings.tapes[id]}
             ticket={ticketFor(tickets, id, board?.tapes[id]?.ticker)}
             hits={hits.tapes[id]}
           />
@@ -263,13 +287,11 @@ function Stat({ label, value, testId }: { label: string; value: string; testId: 
 function TapeRow({
   id,
   quote,
-  recipe,
   ticket,
   hits,
 }: {
   id: TapeId
   quote: TapeQuote | null
-  recipe: TapeRecipe
   ticket: DeskTicket | undefined
   hits: { w: number; l: number }
 }) {
@@ -277,54 +299,37 @@ function TapeRow({
   const pct = hitPct(hits)
   const live = quote?.live ?? null
   const beat = quote?.beat ?? 0
+  const delta = live != null && beat ? live - beat : null
   return (
     <article className="tape" data-testid={`tape-${id}`}>
-      <div className="tape-top">
+      <div className="tape-row">
         <p className="tape-name">
           {TAPE_META[id].label} · {quote?.clock || '—'}
         </p>
+        <p className="tape-hit" data-testid={`hit-${id}`}>
+          {pct}%
+        </p>
+        <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
+          {status}
+        </p>
+        <p className="tape-wl" data-testid={`wl-${id}`}>
+          {hits.w}W–{hits.l}L
+        </p>
         <CloseClock closeAt={quote?.closeAt} />
+        <p className="tape-num" data-testid={`beat-${id}`}>
+          BEAT {formatLive(id, beat || null)}
+        </p>
+        <p className="tape-num" data-testid={`live-${id}`}>
+          {formatLive(id, live)}
+        </p>
       </div>
-      <div className="tape-grid">
-        <div>
-          <p className="hud-label">Hit %</p>
-          <p className="tape-hit" data-testid={`hit-${id}`}>
-            {pct}%
-          </p>
-          <p className="tape-wl" data-testid={`wl-${id}`}>
-            {hits.w}W–{hits.l}L
-          </p>
-        </div>
-        <div>
-          <p className="hud-label">Ticket</p>
-          <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
-            {status}
-          </p>
-          <p className="tape-sub">
-            {ticket ? `${ticket.contracts} ${ticket.side.toUpperCase()}` : 'ticket none'}
-          </p>
-        </div>
-        <div>
-          <p className="hud-label">BEAT / LINE</p>
-          <p className="tape-num" data-testid={`beat-${id}`}>
-            {formatLive(id, beat || null)}
-          </p>
-          <p className="tape-sub">
-            UP {Number.isFinite(quote?.yesAsk) ? `${quote!.yesAsk}¢` : '—'} / DOWN{' '}
-            {Number.isFinite(quote?.noAsk) ? `${quote!.noAsk}¢` : '—'}
-          </p>
-        </div>
-        <div>
-          <p className="hud-label">Live $</p>
-          <p className="tape-num" data-testid={`live-${id}`}>
-            {formatLive(id, live)}
-          </p>
-          <p className="tape-sub">{quote?.liveSource === 'kalshi-timeseries' ? 'timeseries' : quote?.liveSource === 'kalshi-live' ? 'live_data' : 'waiting print'}</p>
-        </div>
-      </div>
-      <p className="tape-recipe">
-        {recipe.contracts} ct · arm {recipe.armFromMin}–{recipe.armToMin}m · through {recipe.through} · {recipe.centLo}–{recipe.centHi}¢
-        · bot {recipe.botOn ? 'ON' : 'OFF'} · live {recipe.liveOn ? 'ON' : 'OFF'}
+      <p className="tape-line">
+        {status} live {formatLive(id, live)} vs BEAT {formatLive(id, beat || null)}
+        {delta != null ? ` (${delta >= 0 ? '+' : ''}${formatLive(id, Math.abs(delta)).replace('$', '')})` : ''}
+        {' · '}UP {Number.isFinite(quote?.yesAsk) ? `${quote!.yesAsk}¢` : '—'} / DOWN{' '}
+        {Number.isFinite(quote?.noAsk) ? `${quote!.noAsk}¢` : '—'}
+        {' · '}
+        {ticket ? `${ticket.contracts} ${ticket.side.toUpperCase()}` : 'ticket none'}
       </p>
     </article>
   )
@@ -367,7 +372,12 @@ function PulseCard({
             </p>
           </div>
         </div>
-        <p className="pulse-note">all quiet. Hit % and TTL stay on each tape. No live ticket.</p>
+        <p className="pulse-note">
+          {quote && vs != null
+            ? `${vs >= 0 ? 'above' : 'below'} the gold line by ${formatLive(quote.id, Math.abs(vs))}`
+            : 'all quiet'}
+          . Hit % and TTL stay on each tape. No live ticket.
+        </p>
       </section>
     )
   }

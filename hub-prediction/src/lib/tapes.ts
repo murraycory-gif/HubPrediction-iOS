@@ -248,16 +248,91 @@ export function ticketStatus(ticket: DeskTicket | undefined): 'WAIT' | 'UP' | 'D
 }
 
 export type HitCell = { w: number; l: number }
+export type HitEvent = { tape: TapeId; ticker: string; win: boolean; at: number }
 export type HitLatch = {
   asOf: number
   tapes: Record<TapeId, HitCell>
+  events: HitEvent[]
+}
+
+export const TTL_MS = 24 * 60 * 60 * 1000
+
+function emptyCells(): Record<TapeId, HitCell> {
+  return { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } }
 }
 
 export function emptyHits(): HitLatch {
-  return {
-    asOf: Date.now(),
-    tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } },
+  return { asOf: Date.now(), tapes: emptyCells(), events: [] }
+}
+
+export function latchFromEvents(events: HitEvent[], now = Date.now()): HitLatch {
+  const recent = events.filter((e) => e.at >= now - TTL_MS && isTapeId(e.tape) && e.ticker)
+  const seen = new Set<string>()
+  const tapes = emptyCells()
+  const kept: HitEvent[] = []
+  for (const e of recent) {
+    if (seen.has(e.ticker)) continue
+    seen.add(e.ticker)
+    kept.push(e)
+    if (e.win) tapes[e.tape].w += 1
+    else tapes[e.tape].l += 1
   }
+  return { asOf: now, tapes, events: kept }
+}
+
+/** Hold an existing 24h latch. New Kalshi-settled tickers add in; already-latched tickers do not flicker. */
+export function mergeHitEvents(latch: HitLatch, incoming: HitEvent[], now = Date.now()): HitLatch {
+  return latchFromEvents([...(latch.events ?? []), ...incoming], now)
+}
+
+export function eventsFromKalshiSettlements(raw: unknown, now = Date.now()): HitEvent[] {
+  const list = Array.isArray((raw as { settlements?: unknown })?.settlements)
+    ? (raw as { settlements: Record<string, unknown>[] }).settlements
+    : Array.isArray(raw)
+      ? (raw as Record<string, unknown>[])
+      : []
+  const out: HitEvent[] = []
+  for (const s of list) {
+    const ticker = String(s.ticker ?? '')
+    const tape = seriesToTape(ticker)
+    if (!tape) continue
+    const at = Date.parse(String(s.settled_time ?? s.settled_ts ?? '')) || now
+    if (at < now - TTL_MS) continue
+    const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? 0
+    const no = num(s.no_count_fp) ?? num(s.no_count) ?? 0
+    if (yes <= 0 && no <= 0) continue
+    const result = String(s.market_result ?? s.result ?? '').toLowerCase()
+    let win = false
+    if (yes > 0 && no <= 0) win = result === 'yes'
+    else if (no > 0 && yes <= 0) win = result === 'no'
+    else {
+      const revenue = num(s.revenue) ?? 0
+      const yesCost = num(s.yes_total_cost_dollars) ?? 0
+      const noCost = num(s.no_total_cost_dollars) ?? 0
+      win = revenue / 100 > yesCost + noCost
+    }
+    out.push({ tape, ticker, win, at })
+  }
+  return out
+}
+
+export function eventsFromTickets(
+  tickets: DeskTicket[],
+  settled: Array<{ ticker: string; result: 'up' | 'down'; closeAt?: number }>,
+  now = Date.now(),
+): HitEvent[] {
+  const byTicker = new Map(settled.map((s) => [s.ticker, s]))
+  const out: HitEvent[] = []
+  for (const t of tickets) {
+    if (!isRealOrderId(t.orderId)) continue
+    const s = byTicker.get(t.ticker)
+    if (!s) continue
+    const at = s.closeAt && s.closeAt > 0 ? s.closeAt : now
+    if (at < now - TTL_MS) continue
+    const win = (t.side === 'up' && s.result === 'up') || (t.side === 'down' && s.result === 'down')
+    out.push({ tape: t.tape, ticker: t.ticker, win, at })
+  }
+  return out
 }
 
 export function loadHits(): HitLatch {
@@ -266,16 +341,19 @@ export function loadHits(): HitLatch {
     const raw = localStorage.getItem(HITS_KEY)
     if (!raw) return emptyHits()
     const parsed = JSON.parse(raw) as HitLatch
-    const base = emptyHits()
+    if (Array.isArray(parsed.events) && parsed.events.length) {
+      return latchFromEvents(parsed.events)
+    }
+    const held = emptyHits()
     for (const id of TAPE_IDS) {
       const cell = parsed?.tapes?.[id]
-      base.tapes[id] = {
+      held.tapes[id] = {
         w: Math.max(0, Math.round(Number(cell?.w) || 0)),
         l: Math.max(0, Math.round(Number(cell?.l) || 0)),
       }
     }
-    base.asOf = Number(parsed?.asOf) || Date.now()
-    return base
+    held.asOf = Number(parsed?.asOf) || Date.now()
+    return held
   } catch {
     return emptyHits()
   }
@@ -334,6 +412,24 @@ export function saveCash(cash: CashLatch) {
     /* quota */
   }
   return cash
+}
+
+export function depositsFromPayload(raw: unknown): number | null {
+  const list = Array.isArray((raw as { deposits?: unknown })?.deposits)
+    ? (raw as { deposits: Record<string, unknown>[] }).deposits
+    : []
+  if (!list.length) return null
+  let sum = 0
+  for (const d of list) {
+    const dollars = num(d.amount_dollars) ?? num(d.deposit_dollars)
+    if (dollars != null) {
+      sum += dollars
+      continue
+    }
+    const cents = num(d.amount) ?? num(d.deposit)
+    if (cents != null) sum += cents > 50 ? cents / 100 : cents
+  }
+  return sum
 }
 
 export function seriesToTape(seriesOrTicker: string): TapeId | null {
