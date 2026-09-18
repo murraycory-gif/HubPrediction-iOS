@@ -43,12 +43,34 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
   await expect(page.getByTestId('bets-24h')).toBeVisible()
   await expect(page.getByTestId('bets-24h')).toContainText(/Last 24H bets/i)
+  await expect(page.getByTestId('bets-filter')).toBeVisible()
+  await expect(page.getByTestId('bets-filter-all')).toBeVisible()
+  await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'true')
+  for (const id of ['btc', 'ng', 'cu', 'gld']) {
+    await expect(page.getByTestId(`bets-filter-${id}`)).toBeVisible()
+    const chipBox = await page.getByTestId(`bets-filter-${id}`).boundingBox()
+    expect((chipBox?.height ?? 0)).toBeGreaterThanOrEqual(40)
+    expect((chipBox?.x ?? 0) + (chipBox?.width ?? 0)).toBeLessThanOrEqual(392)
+  }
   const placedBox = await page.getByTestId('bets-placed').boundingBox()
   const wlBox = await page.getByTestId('bets-wl').boundingBox()
   const pnl24Box = await page.getByTestId('bets-pnl').boundingBox()
   expect((wlBox?.x ?? 0)).toBeGreaterThan((placedBox?.x ?? 0) + (placedBox?.width ?? 0) - 2)
   expect((pnl24Box?.x ?? 0)).toBeGreaterThan((wlBox?.x ?? 0) + (wlBox?.width ?? 0) - 2)
+  await page.getByTestId('bets-filter-btc').click()
+  await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('bets-filter-btc')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('bets-filter-ng').click()
+  await expect(page.getByTestId('bets-filter-btc')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('bets-filter-ng')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-bets-24h.png' })
+  await page.reload({ waitUntil: 'networkidle' })
+  await expect(page.getByTestId('bets-filter-all')).toBeVisible()
+  await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('bets-filter-btc')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('bets-filter-ng')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('bets-filter-all').click()
+  await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
   await expect(page.getByTestId('bot-btc')).not.toBeChecked()
   await expect(page.getByTestId('analyst-toggle')).toBeVisible()
@@ -84,4 +106,74 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
       !/Failed to fetch dynamically imported module/i.test(e),
   )
   expect(serious).toEqual([])
+})
+
+test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ page }) => {
+  const now = Date.now()
+  await page.addInitScript(
+    ([ts]) => {
+      localStorage.setItem(
+        'hub.desk.finance.v1',
+        JSON.stringify({
+          killed: false,
+          paperStartedAt: ts,
+          bets: [
+            {
+              betId: 'bet_btc',
+              tape: 'btc',
+              ticker: 'KXBTC15M-A',
+              clock: '9:00 PM',
+              closeAt: ts,
+              side: 'up',
+              count: 1,
+              ask: 70,
+              spent: 10,
+              orderId: 'ord-btc-aaaaaa',
+              status: 'settled',
+              pnl: 5,
+              filledAt: ts - 1000,
+              settledAt: ts,
+            },
+            {
+              betId: 'bet_ng',
+              tape: 'ng',
+              ticker: 'KXNATGAS15M-A',
+              clock: '9:00 PM',
+              closeAt: ts,
+              side: 'down',
+              count: 1,
+              ask: 40,
+              spent: 20,
+              orderId: 'ord-ng-bbbbbb',
+              status: 'settled',
+              pnl: -20,
+              filledAt: ts - 2000,
+              settledAt: ts,
+            },
+          ],
+        }),
+      )
+    },
+    [now],
+  )
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByTestId('bets-filter-all')).toBeVisible()
+  await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('bets-placed')).toContainText('$30.00')
+  await expect(page.getByTestId('bets-wl')).toHaveText('1W–1L')
+  await expect(page.getByTestId('bets-pnl')).toContainText('−$15.00')
+  await page.getByTestId('bets-filter-btc').click()
+  await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.getByTestId('bets-placed')).toContainText('$10.00')
+  await expect(page.getByTestId('bets-wl')).toHaveText('1W–0L')
+  await expect(page.getByTestId('bets-pnl')).toContainText('+$5.00')
+  await page.getByTestId('bets-filter-ng').click()
+  await expect(page.getByTestId('bets-placed')).toContainText('$30.00')
+  await expect(page.getByTestId('bets-wl')).toHaveText('1W–1L')
+  await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-bets-filter.png' })
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
 })

@@ -53,13 +53,16 @@ import {
   clearKill,
   engageKill,
   chasingLosses,
+  isAllBetsFilter,
   last24hBets,
   liveArmGate,
   liveSendGate,
+  loadBetsFilter,
   loadFinance,
   recipeRetuneGate,
   settleBook,
   syncTicketsIntoBook,
+  toggleBetsFilter,
   type FinanceState,
 } from '../lib/finance'
 import { deskStorage } from '../lib/desk-storage'
@@ -90,6 +93,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [liveConfirm, setLiveConfirm] = useState(false)
   const [analystOpen, setAnalystOpen] = useState(false)
   const [financeOpen, setFinanceOpen] = useState(false)
+  const [betsFilter, setBetsFilter] = useState<TapeId[]>(() => loadBetsFilter())
   const sentRef = useRef<Record<string, SendClaim>>({})
 
   useEffect(() => {
@@ -107,6 +111,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask: 50,
       })),
     )
+    setBetsFilter(loadBetsFilter())
   }, [])
 
   const boardQuery = useQuery({
@@ -279,7 +284,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }, [board?.fetchedAt, settings, tickets, book.killed])
 
   const ttl = ttlFromHits(hits)
-  const bets24 = last24hBets(book, hits)
+  const bets24 = last24hBets(book, hits, Date.now(), betsFilter)
 
   return (
     <div className="desk">
@@ -387,7 +392,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           ))}
         </div>
 
-        <Bets24Strip placed={bets24.placed} w={bets24.w} l={bets24.l} pnl={bets24.pnl} />
+        <Bets24Strip
+          placed={bets24.placed}
+          w={bets24.w}
+          l={bets24.l}
+          pnl={bets24.pnl}
+          filter={betsFilter}
+          onFilter={(chip) => setBetsFilter(toggleBetsFilter(betsFilter, chip))}
+        />
 
         <div className="under-desk" data-testid="under-desk">
           <button
@@ -656,15 +668,46 @@ function Bets24Strip({
   w,
   l,
   pnl,
+  filter,
+  onFilter,
 }: {
   placed: number
   w: number
   l: number
   pnl: number
+  filter: TapeId[]
+  onFilter: (chip: 'all' | TapeId) => void
 }) {
+  const allOn = isAllBetsFilter(filter)
   return (
     <section className="bets-24h" data-testid="bets-24h">
       <p className="hud-label">Last 24H bets</p>
+      <div className="bets-filter" data-testid="bets-filter">
+        <button
+          type="button"
+          className={`filter-chip${allOn ? ' toggle-on' : ''}`}
+          data-testid="bets-filter-all"
+          aria-pressed={allOn}
+          onClick={() => onFilter('all')}
+        >
+          All
+        </button>
+        {TAPE_IDS.map((id) => {
+          const on = !allOn && filter.includes(id)
+          return (
+            <button
+              key={id}
+              type="button"
+              className={`filter-chip${on ? ' toggle-on' : ''}`}
+              data-testid={`bets-filter-${id}`}
+              aria-pressed={on}
+              onClick={() => onFilter(id)}
+            >
+              {TAPE_META[id].short}
+            </button>
+          )
+        })}
+      </div>
       <div className="scoreboard-row">
         <Stat label="PLACED" value={placed > 0 ? formatCash(placed) : '—'} testId="bets-placed" />
         <Stat label="WINS–LOSSES" value={`${w}W–${l}L`} testId="bets-wl" />

@@ -14,8 +14,14 @@ import {
   pnlVsDeposits,
   chasingLosses,
   last24hBets,
+  loadBetsFilter,
   recipeRetuneGate,
   recommendSize,
+  saveBetsFilter,
+  toggleBetsFilter,
+  hydrateBetsFilter,
+  isAllBetsFilter,
+  BETS_FILTER_KEY,
 } from '../src/lib/finance'
 import { GOLD_RECIPES, DEFAULT_SETTINGS, hydrateSettings } from '../src/lib/tapes'
 
@@ -161,5 +167,95 @@ describe('finance Soft KEEP', () => {
     expect(strip.w).toBe(4)
     expect(strip.l).toBe(2)
     expect(strip.pnl).toBeCloseTo(0.28)
+    const btc = last24hBets(state, hits, now, ['btc'])
+    expect(btc.placed).toBeCloseTo(0.72)
+    expect(btc.w).toBe(3)
+    expect(btc.l).toBe(1)
+    expect(btc.pnl).toBeCloseTo(0.28)
+    const ng = last24hBets(state, hits, now, ['ng'])
+    expect(ng.placed).toBe(0)
+    expect(ng.w).toBe(0)
+    expect(ng.l).toBe(0)
+    expect(ng.pnl).toBe(0)
+    const both = last24hBets(state, hits, now, ['btc', 'gld'])
+    expect(both.w).toBe(4)
+    expect(both.l).toBe(2)
+  })
+
+  it('Last 24H bets tape filter splits placed / W–L / P&L', () => {
+    const now = Date.now()
+    const hits = { tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } } }
+    const state = {
+      ...emptyFinance(),
+      bets: [
+        {
+          betId: 'bet_btc',
+          tape: 'btc' as const,
+          ticker: 'KXBTC15M-A',
+          clock: '9:00 PM',
+          closeAt: now,
+          side: 'up' as const,
+          count: 1,
+          ask: 70,
+          spent: 10,
+          orderId: 'ord-btc-aaaaaa',
+          status: 'settled' as const,
+          pnl: 5,
+          filledAt: now - 1000,
+          settledAt: now,
+        },
+        {
+          betId: 'bet_ng',
+          tape: 'ng' as const,
+          ticker: 'KXNATGAS15M-A',
+          clock: '9:00 PM',
+          closeAt: now,
+          side: 'down' as const,
+          count: 1,
+          ask: 40,
+          spent: 20,
+          orderId: 'ord-ng-bbbbbb',
+          status: 'settled' as const,
+          pnl: -20,
+          filledAt: now - 2000,
+          settledAt: now,
+        },
+      ],
+    }
+    const all = last24hBets(state, hits, now)
+    expect(all.placed).toBeCloseTo(30)
+    expect(all.w).toBe(1)
+    expect(all.l).toBe(1)
+    expect(all.pnl).toBeCloseTo(-15)
+    const btc = last24hBets(state, hits, now, ['btc'])
+    expect(btc.placed).toBeCloseTo(10)
+    expect(btc.w).toBe(1)
+    expect(btc.l).toBe(0)
+    expect(btc.pnl).toBeCloseTo(5)
+    const ng = last24hBets(state, hits, now, ['ng'])
+    expect(ng.placed).toBeCloseTo(20)
+    expect(ng.w).toBe(0)
+    expect(ng.l).toBe(1)
+    expect(ng.pnl).toBeCloseTo(-20)
+    const multi = last24hBets(state, hits, now, ['btc', 'ng'])
+    expect(multi.placed).toBeCloseTo(30)
+    expect(multi.w).toBe(1)
+    expect(multi.l).toBe(1)
+  })
+
+  it('Last 24H bets filter persists All·BTC·NG·CU·GLD multi-select', () => {
+    expect(isAllBetsFilter(hydrateBetsFilter(null))).toBe(true)
+    expect(hydrateBetsFilter([])).toEqual(['btc', 'ng', 'cu', 'gld'])
+    const btc = toggleBetsFilter(loadBetsFilter(), 'btc')
+    expect(btc).toEqual(['btc'])
+    expect(JSON.parse(localStorage.getItem(BETS_FILTER_KEY) || '[]')).toEqual(['btc'])
+    const plus = toggleBetsFilter(btc, 'ng')
+    expect(plus).toEqual(['btc', 'ng'])
+    expect(loadBetsFilter()).toEqual(['btc', 'ng'])
+    const stay = toggleBetsFilter(['btc'], 'btc')
+    expect(stay).toEqual(['btc'])
+    const all = toggleBetsFilter(plus, 'all')
+    expect(isAllBetsFilter(all)).toBe(true)
+    expect(saveBetsFilter(['nope' as never])).toEqual(['btc', 'ng', 'cu', 'gld'])
   })
 })

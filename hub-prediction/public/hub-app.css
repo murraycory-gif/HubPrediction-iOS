@@ -180,6 +180,37 @@ body {
   margin-bottom: 2px;
 }
 
+.bets-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 6px;
+}
+
+.filter-chip {
+  flex: 1 1 52px;
+  min-height: 44px;
+  min-width: 52px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--ink);
+  border: 1px solid rgba(0, 229, 122, 0.16);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-chip.toggle-on {
+  background: #12351f;
+  border-color: rgba(0, 229, 122, 0.45);
+  color: var(--up);
+}
+
 .tone-up { color: var(--up); }
 .tone-down { color: var(--down); }
 
@@ -202,7 +233,7 @@ body {
 .bets-filter {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tape-grid {

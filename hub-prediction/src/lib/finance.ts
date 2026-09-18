@@ -2,6 +2,7 @@ import { deskStorage } from './desk-storage'
 import { ticketCost } from './size-cash'
 import {
   GOLD_RECIPES,
+  TAPE_IDS,
   TAPE_META,
   isRealOrderId,
   isTapeId,
@@ -11,6 +12,7 @@ import {
 } from './tapes'
 
 export const FINANCE_KEY = 'hub.desk.finance.v1'
+export const BETS_FILTER_KEY = 'hub.desk.betsFilter.v1'
 export const PAPER_CASH_FLOOR = 50
 export const LIVE_FLOOR_MIN = 150
 export const LIVE_FLOOR_PCT = 0.2
@@ -110,19 +112,70 @@ export function bookRealizedPnl(state: FinanceState) {
   ) / 100
 }
 
+export function allBetsFilter(): TapeId[] {
+  return [...TAPE_IDS]
+}
+
+export function isAllBetsFilter(ids: readonly TapeId[]) {
+  return TAPE_IDS.every((id) => ids.includes(id))
+}
+
+export function hydrateBetsFilter(raw: unknown): TapeId[] {
+  if (!Array.isArray(raw)) return allBetsFilter()
+  const ids = [...new Set(raw.filter((v): v is TapeId => typeof v === 'string' && isTapeId(v)))]
+  return ids.length ? ids : allBetsFilter()
+}
+
+export function loadBetsFilter(): TapeId[] {
+  const ls = deskStorage()
+  if (!ls) return allBetsFilter()
+  try {
+    const raw = ls.getItem(BETS_FILTER_KEY)
+    return hydrateBetsFilter(raw ? JSON.parse(raw) : null)
+  } catch {
+    return allBetsFilter()
+  }
+}
+
+export function saveBetsFilter(ids: readonly TapeId[]): TapeId[] {
+  const next = hydrateBetsFilter([...ids])
+  const ls = deskStorage()
+  if (!ls) return next
+  try {
+    ls.setItem(BETS_FILTER_KEY, JSON.stringify(next))
+  } catch {
+    /* quota */
+  }
+  return next
+}
+
+/** All stays visible. Empty selection Soft FAIL — snap back to All. Last tape stays on. */
+export function toggleBetsFilter(current: readonly TapeId[], chip: 'all' | TapeId): TapeId[] {
+  if (chip === 'all') return saveBetsFilter(allBetsFilter())
+  if (isAllBetsFilter(current)) return saveBetsFilter([chip])
+  if (current.includes(chip)) {
+    const next = current.filter((id) => id !== chip)
+    return saveBetsFilter(next.length ? next : [chip])
+  }
+  return saveBetsFilter([...current, chip])
+}
+
 export function last24hBets(
   state: FinanceState,
   hits: { tapes: Record<TapeId, { w: number; l: number }> },
   now = Date.now(),
+  tapes: readonly TapeId[] = TAPE_IDS,
 ) {
+  const allow = new Set(hydrateBetsFilter([...tapes]))
   const from = now - 24 * 60 * 60 * 1000
-  const recent = state.bets.filter((b) => (b.filledAt || b.settledAt || 0) >= from)
+  const recent = state.bets.filter((b) => allow.has(b.tape) && (b.filledAt || b.settledAt || 0) >= from)
   const placed = Math.round(recent.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
   const settled = recent.filter((b) => b.status === 'settled')
   const bookW = settled.filter((b) => (b.pnl ?? 0) > 0).length
   const bookL = settled.filter((b) => (b.pnl ?? 0) < 0).length
-  const hitW = (['btc', 'ng', 'cu', 'gld'] as TapeId[]).reduce((s, id) => s + (hits.tapes[id]?.w ?? 0), 0)
-  const hitL = (['btc', 'ng', 'cu', 'gld'] as TapeId[]).reduce((s, id) => s + (hits.tapes[id]?.l ?? 0), 0)
+  const selected = TAPE_IDS.filter((id) => allow.has(id))
+  const hitW = selected.reduce((s, id) => s + (hits.tapes[id]?.w ?? 0), 0)
+  const hitL = selected.reduce((s, id) => s + (hits.tapes[id]?.l ?? 0), 0)
   const w = hitW + hitL > 0 ? hitW : bookW
   const l = hitW + hitL > 0 ? hitL : bookL
   const pnl = Math.round(settled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
