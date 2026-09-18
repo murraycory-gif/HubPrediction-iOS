@@ -1,8 +1,86 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createSign, constants } from 'node:crypto'
 import { cashFromBalancePayload } from './size-cash'
 
 const BASE = 'https://external-api.kalshi.com'
 const ROOT = '/trade-api/v2'
+
+export type KalshiHostCreds = { keyId: string; pem: string }
+
+let hostCredsCache: KalshiHostCreds | null | undefined
+
+export function resetKalshiHostCredsForTests() {
+  hostCredsCache = undefined
+}
+
+function readSecretFile(path: string) {
+  try {
+    if (!path || !existsSync(path)) return ''
+    return readFileSync(path, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+function looksLikePem(v: string) {
+  return /BEGIN (?:RSA |EC )?PRIVATE KEY/.test(v)
+}
+
+function secretDirs() {
+  const libDir = dirname(fileURLToPath(import.meta.url))
+  const hubDir = resolve(libDir, '../..')
+  const repoDir = resolve(hubDir, '..')
+  const cwd = process.cwd()
+  return [
+    process.env.KALSHI_SECRETS_DIR,
+    resolve(cwd, '.secrets'),
+    resolve(cwd, '../.secrets'),
+    resolve(hubDir, '.secrets'),
+    resolve(repoDir, '.secrets'),
+    resolve(repoDir, '../.secrets'),
+  ].filter((d): d is string => Boolean(d))
+}
+
+function readKalshiHostCreds(): KalshiHostCreds | null {
+  const envId = String(process.env.KALSHI_KEY_ID ?? '').trim()
+  const envPem = String(
+    process.env.KALSHI_PRIVATE_KEY ?? process.env.KALSHI_PEM ?? process.env.KALSHI_PRIVATE_KEY_PEM ?? '',
+  ).replace(/\\n/g, '\n')
+  if (envId && looksLikePem(envPem)) return { keyId: envId, pem: envPem }
+
+  const idFile = String(process.env.KALSHI_KEY_ID_FILE ?? '').trim()
+  const pemFile = String(process.env.KALSHI_PEM_FILE ?? process.env.KALSHI_PRIVATE_KEY_FILE ?? '').trim()
+  const fromEnvFiles = {
+    keyId: readSecretFile(idFile).trim(),
+    pem: readSecretFile(pemFile),
+  }
+  if (fromEnvFiles.keyId && looksLikePem(fromEnvFiles.pem)) return fromEnvFiles
+
+  for (const dir of secretDirs()) {
+    const keyId =
+      readSecretFile(resolve(dir, 'kalshi_key_id.txt')).trim() ||
+      readSecretFile(resolve(dir, 'kalshi_key_id')).trim()
+    const pem =
+      readSecretFile(resolve(dir, 'kalshi_key.pem')) ||
+      readSecretFile(resolve(dir, 'kalshi.pem')) ||
+      readSecretFile(resolve(dir, 'kalshi_private_key.pem'))
+    if (keyId && looksLikePem(pem)) return { keyId, pem }
+  }
+  return null
+}
+
+/** Windows-host Kalshi creds. Soft FAIL commit. Soft FAIL send PEM to the browser. */
+export function loadKalshiHostCreds(): KalshiHostCreds | null {
+  if (hostCredsCache !== undefined) return hostCredsCache
+  hostCredsCache = readKalshiHostCreds()
+  return hostCredsCache
+}
+
+export function hasKalshiHostCreds() {
+  return loadKalshiHostCreds() != null
+}
 
 function sign(pem: string, timestamp: string, method: string, path: string) {
   const signer = createSign('RSA-SHA256')

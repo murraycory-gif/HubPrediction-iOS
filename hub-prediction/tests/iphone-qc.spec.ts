@@ -380,12 +380,12 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
   expect(livePosts).toEqual([])
 })
 
-test('phone desk: boot first-paints cash when keys present — no Settings tap, Live stays OFF', async ({ page }) => {
-  const cashPosts: string[] = []
+test('phone desk: boot first-paints from host creds — no Safari PEM, Live stays OFF', async ({ page }) => {
+  const leaked: string[] = []
   const livePosts: string[] = []
   await page.addInitScript(() => {
-    localStorage.setItem('hub.kalshi.keyId', 'qc-boot-key-id')
-    localStorage.setItem('hub.kalshi.pem', '-----BEGIN PRIVATE KEY-----\nQCBOOT\n-----END PRIVATE KEY-----')
+    localStorage.removeItem('hub.kalshi.keyId')
+    localStorage.removeItem('hub.kalshi.pem')
   })
   page.on('request', (req) => {
     const url = req.url()
@@ -393,7 +393,7 @@ test('phone desk: boot first-paints cash when keys present — no Settings tap, 
     if (req.method() === 'POST' && /external-api\.kalshi\.com.*\/events\/orders/i.test(url)) {
       livePosts.push(url)
     }
-    if (data.includes('qc-boot-key-id') || data.includes('QCBOOT')) cashPosts.push(url)
+    if (/BEGIN (?:RSA |EC )?PRIVATE KEY|qc-boot-key-id/i.test(`${url}\n${data}`)) leaked.push(url)
   })
 
   await page.setViewportSize({ width: 390, height: 844 })
@@ -403,11 +403,15 @@ test('phone desk: boot first-paints cash when keys present — no Settings tap, 
   await expect(page.getByTestId('scoreboard')).toBeVisible()
   await expect(page.getByTestId('kalshi-cash')).toBeVisible()
   await expect(page.getByTestId('settings')).toHaveCount(0)
+  await expect(page.getByTestId('key-pem')).toHaveCount(0)
   await expect(page.locator('.rain-col')).toHaveCount(0)
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
-  await expect
-    .poll(() => cashPosts.length, { timeout: 8000 })
-    .toBeGreaterThan(0)
+  await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
+  await expect(page.getByTestId('desk-title')).not.toHaveText(/HUBEB|PREDICTTIONS/)
+  await expect(page.getByTestId('beat-label-btc')).toHaveText('BEAT')
+  await expect(page.getByTestId('beat-label-btc')).not.toHaveText(/BEATET/)
+  await page.waitForTimeout(800)
+  expect(leaked).toEqual([])
   expect(livePosts).toEqual([])
   for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
     await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()

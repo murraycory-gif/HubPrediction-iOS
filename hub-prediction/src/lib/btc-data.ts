@@ -30,35 +30,35 @@ export const getSettledDesk = createServerFn({ method: 'GET' }).handler(async ()
   return rows.flat()
 })
 
-/** First-paint cash + deposits. Soft FAIL waiting on settlements / Settings tap. */
-export const getKalshiBalance = createServerFn({ method: 'POST' })
-  .validator((d: { keyId: string; pem: string }) => d)
-  .handler(async ({ data }) => {
-    const { fetchBalance, fetchDeposits } = await import('./kalshi-trade.server')
-    const [bal, deposits] = await Promise.all([
-      fetchBalance(data.keyId, data.pem),
-      fetchDeposits(data.keyId, data.pem).catch(() => null),
-    ])
-    return { ...bal, deposits }
-  })
+/** First-paint cash + deposits from Windows-host creds. Soft FAIL browser PEM. */
+export const getKalshiBalance = createServerFn({ method: 'GET' }).handler(async () => {
+  const { loadKalshiHostCreds, fetchBalance, fetchDeposits } = await import('./kalshi-trade.server')
+  const creds = loadKalshiHostCreds()
+  if (!creds) return { cash: null, deposits: null, hostCreds: false }
+  const [bal, deposits] = await Promise.all([
+    fetchBalance(creds.keyId, creds.pem),
+    fetchDeposits(creds.keyId, creds.pem).catch(() => null),
+  ])
+  return { ...bal, deposits, hostCreds: true }
+})
 
-export const getKalshiCash = createServerFn({ method: 'POST' })
-  .validator((d: { keyId: string; pem: string }) => d)
-  .handler(async ({ data }) => {
-    const { fetchBalance, fetchDeposits, fetchSettlements } = await import('./kalshi-trade.server')
-    const [bal, deposits, settlements] = await Promise.all([
-      fetchBalance(data.keyId, data.pem),
-      fetchDeposits(data.keyId, data.pem).catch(() => null),
-      fetchSettlements(data.keyId, data.pem).catch(() => null),
-    ])
-    return { ...bal, deposits, settlements }
-  })
+export const getKalshiCash = createServerFn({ method: 'GET' }).handler(async () => {
+  const { loadKalshiHostCreds, fetchBalance, fetchDeposits, fetchSettlements } = await import(
+    './kalshi-trade.server'
+  )
+  const creds = loadKalshiHostCreds()
+  if (!creds) return { cash: null, deposits: null, settlements: null, hostCreds: false }
+  const [bal, deposits, settlements] = await Promise.all([
+    fetchBalance(creds.keyId, creds.pem),
+    fetchDeposits(creds.keyId, creds.pem).catch(() => null),
+    fetchSettlements(creds.keyId, creds.pem).catch(() => null),
+  ])
+  return { ...bal, deposits, settlements, hostCreds: true }
+})
 
 export const placeKalshi = createServerFn({ method: 'POST' })
   .validator(
     (d: {
-      keyId: string
-      pem: string
       ticker: string
       side: 'up' | 'down'
       count: number
@@ -67,8 +67,10 @@ export const placeKalshi = createServerFn({ method: 'POST' })
     }) => d,
   )
   .handler(async ({ data }) => {
-    const { placeContract } = await import('./kalshi-trade.server')
-    return placeContract(data)
+    const { loadKalshiHostCreds, placeContract } = await import('./kalshi-trade.server')
+    const creds = loadKalshiHostCreds()
+    if (!creds) throw new Error('Kalshi host keys missing on Windows')
+    return placeContract({ ...data, keyId: creds.keyId, pem: creds.pem })
   })
 
 /** @deprecated BTC-only snapshot — kept so leftover imports typecheck. */

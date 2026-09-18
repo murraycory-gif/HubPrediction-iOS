@@ -403,7 +403,7 @@ export function ticketStatus(ticket: DeskTicket | undefined): 'WAIT' | 'UP' | 'D
 }
 
 export type HitCell = { w: number; l: number }
-export type HitEvent = { tape: TapeId; ticker: string; win: boolean; at: number }
+export type HitEvent = { tape: TapeId; ticker: string; win: boolean; at: number; spent?: number; pnl?: number }
 export type HitLatch = {
   asOf: number
   tapes: Record<TapeId, HitCell>
@@ -468,16 +468,18 @@ export function eventsFromKalshiSettlements(raw: unknown, now = Date.now()): Hit
     const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? num(s.yes_total_cost_fp) ?? 0
     const no = num(s.no_count_fp) ?? num(s.no_count) ?? num(s.no_total_cost_fp) ?? 0
     const result = String(s.market_result ?? s.result ?? '').toLowerCase()
-    const revenue = num(s.revenue) ?? num(s.revenue_fp) ?? 0
-    const yesCost = num(s.yes_total_cost_dollars) ?? (num(s.yes_total_cost) != null ? Number(s.yes_total_cost) / 100 : 0)
-    const noCost = num(s.no_total_cost_dollars) ?? (num(s.no_total_cost) != null ? Number(s.no_total_cost) / 100 : 0)
-    const hasFill = yes > 0 || no > 0 || yesCost > 0 || noCost > 0 || revenue > 0
+    const revenue = settlementDollars(s.revenue_dollars ?? s.revenue_fp ?? s.revenue)
+    const yesCost = settlementDollars(s.yes_total_cost_dollars) || settlementDollars(s.yes_total_cost)
+    const noCost = settlementDollars(s.no_total_cost_dollars) || settlementDollars(s.no_total_cost)
+    const spent = Math.round((yesCost + noCost) * 100) / 100
+    const hasFill = yes > 0 || no > 0 || spent > 0 || revenue > 0
     if (!hasFill) continue
     let win = false
     if (yes > 0 && no <= 0) win = result === 'yes'
     else if (no > 0 && yes <= 0) win = result === 'no'
-    else win = revenue / 100 > yesCost + noCost || (result === 'yes' && yesCost > noCost) || (result === 'no' && noCost > yesCost)
-    out.push({ tape, ticker, win, at })
+    else win = revenue > spent || (result === 'yes' && yesCost > noCost) || (result === 'no' && noCost > yesCost)
+    const pnl = spent > 0 || revenue > 0 ? Math.round((revenue - spent) * 100) / 100 : undefined
+    out.push({ tape, ticker, win, at, ...(spent > 0 ? { spent } : {}), ...(pnl != null ? { pnl } : {}) })
   }
   return out
 }
@@ -537,7 +539,14 @@ export function saveHits(hits: HitLatch) {
   return hits
 }
 
-/** Soft KEEP boot hydrate: portfolio settlements → tape 24H chips when keys present. */
+function settlementDollars(v: unknown) {
+  const n = num(v)
+  if (n == null) return 0
+  if (Number.isInteger(n) && Math.abs(n) >= 1000) return n / 100
+  return n
+}
+
+/** Soft KEEP boot hydrate: portfolio settlements → tape 24H chips from Windows-host creds. */
 export function hydrateHitsFromKalshiCash(raw: unknown, prev: HitLatch = loadHits(), now = Date.now()): HitLatch {
   const ev = eventsFromKalshiSettlements(raw, now)
   if (!ev.length) return prev

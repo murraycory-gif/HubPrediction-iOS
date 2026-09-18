@@ -29,7 +29,11 @@ vendor/bundle/
 .swiftpm/
 
 # Never commit Kalshi runtime creds
+.secrets/
+**/.secrets/
 *.pem
 *.p8
 .env
 .env.*
+!.env.example
+!**/.env.example
