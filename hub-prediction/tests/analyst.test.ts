@@ -3,14 +3,21 @@ import {
   analyzeDesk,
   applyAnalystAccept,
   applyDraftsToLiveSettings,
+  consecutiveLosses,
   denyAnalystRec,
+  emptyAutoState,
   expectedTakeDollars,
   explainRules,
   isDeniedRec,
+  isRehabPaper,
   loadPaperDrafts,
+  LOSS_STREAK_HALT,
   makePaperDrafts,
+  paperRehabStats,
   pathWindowFromPoints,
   profitImpact,
+  REHAB_PAPER_RUNS,
+  runAutoAnalyst,
   savePaperDrafts,
   scoreBetsVsRecipe,
   summarizeTapePath,
@@ -56,7 +63,7 @@ function board(partial: Partial<DeskBoard['tapes']> = {}): DeskBoard {
   }
 }
 
-describe('analyst Soft KEEP gold factory + user Accept', () => {
+describe('analyst Soft KEEP gold factory + auto recipe', () => {
   it('starts from gold and never marks live touched', () => {
     const report = analyzeDesk(board(), emptyHits())
     expect(report.liveTouched).toBe(false)
@@ -102,7 +109,7 @@ describe('analyst Soft KEEP gold factory + user Accept', () => {
     expect(() => applyDraftsToLiveSettings()).toThrow(/must not apply paper drafts to LIVE/)
   })
 
-  it('Accept writes the tape recipe onto this run and leaves Live OFF', () => {
+  it('auto recipe write leaves Live OFF and does not arm live cash', () => {
     const start = loadSettings()
     expect(start.tapes.btc.through).toBe(40)
     const next = applyAnalystAccept(start, 'btc', { ...GOLD_RECIPES.btc, through: 46, botOn: true, liveOn: true })
@@ -251,5 +258,124 @@ describe('analyst current rules + profit dollars', () => {
     const trim = hot.tapes.find((t) => t.id === 'btc')!
     expect(trim.changed).toBe(true)
     expect(profitImpact(trim, 72).headline).toMatch(/extra clean take|\$0\.11/)
+  })
+})
+
+describe('analyst auto 83% + 3-loss paper rehab', () => {
+  function settled(
+    tape: 'btc' | 'ng' | 'cu' | 'gld',
+    pnl: number,
+    at: number,
+    extra: { kind?: 'live' | 'paper'; betId?: string } = {},
+  ) {
+    return {
+      betId: extra.betId ?? `bet_${tape}_${at}`,
+      tape,
+      status: 'settled' as const,
+      pnl,
+      filledAt: at,
+      settledAt: at,
+      closeAt: at,
+      kind: extra.kind ?? 'live',
+      orderId: extra.kind === 'paper' ? `deskfill-${tape}-${at}` : `ord-${tape}-${at}`,
+    }
+  }
+
+  it('counts more than two losses in a row', () => {
+    const now = 2_000_000
+    const bets = [
+      settled('btc', -1, now),
+      settled('btc', -1, now - 1),
+      settled('btc', -1, now - 2),
+      settled('btc', 1, now - 3),
+    ]
+    expect(LOSS_STREAK_HALT).toBe(3)
+    expect(consecutiveLosses(bets, 'btc')).toBe(3)
+    expect(consecutiveLosses([settled('btc', -1, now), settled('btc', 1, now - 1)], 'btc')).toBe(1)
+  })
+
+  it('auto-applies an 83% retune once per book change and never arms master Live', () => {
+    const now = Date.now()
+    const bets = [
+      { tape: 'btc' as const, side: 'up' as const, ask: 72, pnl: 0.28, status: 'settled' as const, filledAt: now - 1000, settledAt: now - 500, closeAt: now + 4 * 60_000, betId: 'a' },
+      { tape: 'btc' as const, side: 'up' as const, ask: 74, pnl: 0.26, status: 'settled' as const, filledAt: now - 2000, settledAt: now - 400, closeAt: now + 4 * 60_000, betId: 'b' },
+      { tape: 'btc' as const, side: 'up' as const, ask: 71, pnl: 0.29, status: 'settled' as const, filledAt: now - 3000, settledAt: now - 300, closeAt: now + 4 * 60_000, betId: 'c' },
+    ]
+    const start = hydrateSettings({
+      liveBets: false,
+      tapes: { btc: { ...GOLD_RECIPES.btc, botOn: true, liveOn: false } },
+    })
+    const report = analyzeDesk(board({ btc: quote('btc', 76600, 76500) }), emptyHits(), bets, start.tapes)
+    expect(report.tapes.find((t) => t.id === 'btc')?.changed).toBe(true)
+    const first = runAutoAnalyst({ settings: start, report, bets, rehab: emptyAutoState() })
+    expect(first.didChange).toBe(true)
+    expect(first.settings.tapes.btc.through).toBeLessThan(40)
+    expect(first.settings.liveBets).toBe(false)
+    expect(first.settings.tapes.btc.liveOn).toBe(false)
+    const again = runAutoAnalyst({ settings: first.settings, report, bets, rehab: first.rehab })
+    expect(again.didChange).toBe(false)
+    expect(again.settings.tapes.btc.through).toBe(first.settings.tapes.btc.through)
+  })
+
+  it('halts live cash after 3 losses, papers 12, then restores at 83%', () => {
+    const now = 5_000_000
+    const losses = [0, 1, 2].map((i) => settled('btc', -1, now - i * 1000, { kind: 'live' }))
+    const armed = hydrateSettings({
+      liveBets: false,
+      tapes: { btc: { ...GOLD_RECIPES.btc, botOn: true, liveOn: true } },
+    })
+    const report = analyzeDesk(board(), emptyHits(), losses, armed.tapes)
+    const halted = runAutoAnalyst({ settings: armed, report, bets: losses, rehab: emptyAutoState(), now })
+    expect(isRehabPaper(halted.rehab, 'btc')).toBe(true)
+    expect(halted.settings.tapes.btc.liveOn).toBe(false)
+    expect(halted.settings.liveBets).toBe(false)
+    expect(halted.rehab.tapes.btc?.liveWasOn).toBe(true)
+    expect(REHAB_PAPER_RUNS).toBe(12)
+
+    const paper = Array.from({ length: 12 }, (_, i) =>
+      settled('btc', i < 10 ? 0.2 : -0.7, now + 10_000 + i * 1000, { kind: 'paper', betId: `paper_${i}` }),
+    )
+    expect(paperRehabStats(paper, 'btc', now).n).toBe(12)
+    expect(paperRehabStats(paper, 'btc', now).pct).toBeGreaterThanOrEqual(83)
+    const done = runAutoAnalyst({
+      settings: halted.settings,
+      report: analyzeDesk(board(), emptyHits(), [...losses, ...paper], halted.settings.tapes),
+      bets: [...losses, ...paper],
+      rehab: halted.rehab,
+      now: now + 30_000,
+    })
+    expect(isRehabPaper(done.rehab, 'btc')).toBe(false)
+    expect(done.rehab.tapes.btc?.status).toBe('restored')
+    expect(done.settings.tapes.btc.liveOn).toBe(true)
+    expect(done.settings.liveBets).toBe(false)
+  })
+
+  it('does not restore live cash when the 12 paper runs miss 83%', () => {
+    const now = 6_000_000
+    const losses = [0, 1, 2].map((i) => settled('ng', -1, now - i * 1000))
+    const armed = hydrateSettings({
+      tapes: { ng: { ...GOLD_RECIPES.ng, botOn: true, liveOn: true } },
+    })
+    const halted = runAutoAnalyst({
+      settings: armed,
+      report: analyzeDesk(board(), emptyHits(), losses, armed.tapes),
+      bets: losses,
+      rehab: emptyAutoState(),
+      now,
+    })
+    const paper = Array.from({ length: 12 }, (_, i) =>
+      settled('ng', i < 8 ? 0.2 : -0.4, now + 10_000 + i * 1000, { kind: 'paper', betId: `ngp_${i}` }),
+    )
+    expect(paperRehabStats(paper, 'ng', now).pct).toBeLessThan(83)
+    const stay = runAutoAnalyst({
+      settings: halted.settings,
+      report: analyzeDesk(board(), emptyHits(), [...losses, ...paper], halted.settings.tapes),
+      bets: [...losses, ...paper],
+      rehab: halted.rehab,
+      now: now + 40_000,
+    })
+    expect(isRehabPaper(stay.rehab, 'ng')).toBe(true)
+    expect(stay.settings.tapes.ng.liveOn).toBe(false)
+    expect(stay.settings.liveBets).toBe(false)
   })
 })

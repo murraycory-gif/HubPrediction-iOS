@@ -17,11 +17,16 @@ import {
   type TapeId,
   type TapeRecipe,
 } from './tapes'
-import { HIT_FLOOR } from './finance'
+import { deskStorage } from './desk-storage'
+import { HIT_FLOOR, isPaperBet } from './finance'
 import type { DeskBoard } from './types'
 
 export const PAPER_DRAFTS_KEY = 'hub.desk.analyst.paper.v1'
 export const ANALYST_DENY_KEY = 'hub.desk.analyst.deny.v1'
+export const ANALYST_REHAB_KEY = 'hub.desk.analyst.rehab.v1'
+/** More than 2 losses in a row — halt that desk’s live cash. */
+export const LOSS_STREAK_HALT = 3
+export const REHAB_PAPER_RUNS = 12
 
 export type HugNote = 'hug' | 'through' | 'no-print'
 
@@ -377,8 +382,8 @@ export function analyzeDesk(
   const retunes = tapes.filter((t) => t.changed).length
   const summary =
     retunes === 0
-      ? `Goal ${HIT_FLOOR}% win ratio. All four desks match the book. Accept is idle. Live stays OFF unless you arm it.`
-      : `Goal ${HIT_FLOOR}% win ratio. ${retunes} desk${retunes === 1 ? '' : 's'} have a retune. Accept applies it to this run’s bot. Deny keeps the current recipe. Live is not flipped.`
+      ? `Goal ${HIT_FLOOR}% win ratio. All four desks match the book. Rules stay. Live cash is not flipped unless a desk is in 3-loss rehab.`
+      : `Goal ${HIT_FLOOR}% win ratio. ${retunes} desk${retunes === 1 ? '' : 's'} retune automatically. No Accept / Deny. Live cash only moves on a 3-loss halt or an ${HIT_FLOOR}% paper restore.`
 
   return {
     liveTouched: false,
@@ -460,7 +465,7 @@ export function listDeniedRecs() {
   return loadDenied()
 }
 
-/** User Accept — recipe only. Soft FAIL flipping Live / live-cash. */
+/** Auto recipe write — recipe only. Soft FAIL flipping master Live. */
 export function applyAnalystAccept(settings: DeskSettings, id: TapeId, proposed: TapeRecipe): DeskSettings {
   const gold = GOLD_RECIPES[id]
   const cur = settings.tapes[id]
@@ -565,7 +570,7 @@ export function profitImpact(t: TapeNote, askCents?: number | null) {
   if (t.w + t.l >= 4 && t.pct < HIT_FLOOR) {
     return {
       headline: `Sitting saves about ${missLabel} this clock`,
-      detail: `Hit rate is ${t.pct}%, under the ${HIT_FLOOR}% goal. Another ${ask}¢ take that loses costs about ${missLabel}. Dollars go up by not sending until the book is back at ${HIT_FLOOR}%. Accept does not flip Live.`,
+      detail: `Hit rate is ${t.pct}%, under the ${HIT_FLOOR}% goal. Another ${ask}¢ take that loses costs about ${missLabel}. Dollars go up by not sending until the book is back at ${HIT_FLOOR}%. Live is not flipped here.`,
       tone: 'up' as const,
       ev,
     }
@@ -573,7 +578,7 @@ export function profitImpact(t: TapeNote, askCents?: number | null) {
   if (!t.changed) {
     return {
       headline: `${evLabel} expected per ${ask}¢ take at ${HIT_FLOOR}%`,
-      detail: `Keep these rules. At ${HIT_FLOOR}% a ${ask}¢ contract is about ${evLabel}. Sitting a hug keeps ${missLabel} in cash instead of a miss. That is how the desk grows dollars. Accept does not flip Live.`,
+      detail: `Keep these rules. At ${HIT_FLOOR}% a ${ask}¢ contract is about ${evLabel}. Sitting a hug keeps ${missLabel} in cash instead of a miss. That is how the desk grows dollars. Live is not flipped here.`,
       tone: ev >= 0 ? ('up' as const) : ('down' as const),
       ev,
     }
@@ -581,7 +586,7 @@ export function profitImpact(t: TapeNote, askCents?: number | null) {
   if (t.nextRecipe.through > t.currentRecipe.through) {
     return {
       headline: `Skipping hugs saves about ${missLabel} per miss`,
-      detail: `Higher through means fewer hug sends. Each avoided miss keeps about ${missLabel}. At ${HIT_FLOOR}% a clean ${ask}¢ take is still about ${evLabel}. Accept only retunes this tape — Live stays OFF.`,
+      detail: `Higher through means fewer hug sends. Each avoided miss keeps about ${missLabel}. At ${HIT_FLOOR}% a clean ${ask}¢ take is still about ${evLabel}. The retune writes this tape only — master Live stays OFF.`,
       tone: 'up' as const,
       ev,
     }
@@ -589,15 +594,263 @@ export function profitImpact(t: TapeNote, askCents?: number | null) {
   if (t.nextRecipe.through < t.currentRecipe.through) {
     return {
       headline: `One extra clean take is about ${evLabel}`,
-      detail: `Lower through takes clocks that now sit. Only if it is a real through. At ${HIT_FLOOR}% that extra ${ask}¢ contract is about ${evLabel}. A hug still costs about ${missLabel}. Accept does not flip Live.`,
+      detail: `Lower through takes clocks that now sit. Only if it is a real through. At ${HIT_FLOOR}% that extra ${ask}¢ contract is about ${evLabel}. A hug still costs about ${missLabel}. Live is not flipped here.`,
       tone: ev >= 0 ? ('up' as const) : ('down' as const),
       ev,
     }
   }
   return {
     headline: `${evLabel} expected per ${ask}¢ take at ${HIT_FLOOR}%`,
-    detail: `The retune aims more sends at the ${HIT_FLOOR}% path. At ${ask}¢ that is about ${evLabel} per clean take. Accept writes the recipe on this tape only.`,
+    detail: `The retune aims more sends at the ${HIT_FLOOR}% path. At ${ask}¢ that is about ${evLabel} per clean take. The desk writes the recipe on this tape only.`,
     tone: ev >= 0 ? ('up' as const) : ('down' as const),
     ev,
   }
+}
+
+export type AutoBet = {
+  betId?: string
+  tape: TapeId
+  status: 'open' | 'settled'
+  pnl: number | null
+  filledAt?: number
+  settledAt?: number | null
+  closeAt?: number
+  kind?: unknown
+  orderId?: unknown
+}
+
+export type TapeRehab = {
+  id: TapeId
+  status: 'paper' | 'restored'
+  haltedAt: number
+  liveWasOn: boolean
+  paperTarget: number
+  fromMs: number
+  appliedToken: string
+  restoredAt?: number
+}
+
+export type AnalystAutoStamp = {
+  token: string
+  betSig: string
+}
+
+export type AnalystAutoState = {
+  tapes: Partial<Record<TapeId, TapeRehab>>
+  lastAuto: Partial<Record<TapeId, AnalystAutoStamp>>
+}
+
+export function emptyAutoState(): AnalystAutoState {
+  return { tapes: {}, lastAuto: {} }
+}
+
+function betTime(b: AutoBet) {
+  return Number(b.settledAt) || Number(b.closeAt) || Number(b.filledAt) || 0
+}
+
+export function tapeBetSig(bets: AutoBet[], id: TapeId) {
+  const mine = bets.filter((b) => b.tape === id)
+  const last = mine.slice().sort((a, b) => betTime(b) - betTime(a))[0]
+  return `${mine.length}:${last?.betId ?? ''}:${last?.status ?? ''}:${last?.pnl ?? ''}`
+}
+
+export function consecutiveLosses(bets: AutoBet[], id: TapeId, fromMs = 0) {
+  const mine = bets
+    .filter((b) => b.tape === id && b.status === 'settled' && b.pnl != null && betTime(b) >= fromMs)
+    .sort((a, b) => betTime(b) - betTime(a))
+  let n = 0
+  for (const b of mine) {
+    if ((b.pnl ?? 0) < 0) n += 1
+    else break
+  }
+  return n
+}
+
+export function paperRehabStats(bets: AutoBet[], id: TapeId, fromMs: number) {
+  const mine = bets.filter(
+    (b) => b.tape === id && isPaperBet(b) && b.status === 'settled' && b.pnl != null && betTime(b) >= fromMs,
+  )
+  const w = mine.filter((b) => (b.pnl ?? 0) > 0).length
+  const l = mine.filter((b) => (b.pnl ?? 0) < 0).length
+  const n = w + l
+  return { w, l, n, pct: n ? Math.round((w / n) * 100) : 0 }
+}
+
+export function hydrateAutoState(raw: unknown): AnalystAutoState {
+  const base = emptyAutoState()
+  if (!raw || typeof raw !== 'object') return base
+  const o = raw as Partial<AnalystAutoState>
+  const tapes: AnalystAutoState['tapes'] = {}
+  for (const id of TAPE_IDS) {
+    const cell = o.tapes?.[id]
+    if (!cell || (cell.status !== 'paper' && cell.status !== 'restored')) continue
+    tapes[id] = {
+      id,
+      status: cell.status,
+      haltedAt: Number(cell.haltedAt) || 0,
+      liveWasOn: cell.liveWasOn === true,
+      paperTarget: Number(cell.paperTarget) || REHAB_PAPER_RUNS,
+      fromMs: Number(cell.fromMs) || 0,
+      appliedToken: typeof cell.appliedToken === 'string' ? cell.appliedToken : '',
+      restoredAt: Number(cell.restoredAt) || undefined,
+    }
+  }
+  const lastAuto: AnalystAutoState['lastAuto'] = {}
+  for (const id of TAPE_IDS) {
+    const stamp = o.lastAuto?.[id]
+    if (stamp && typeof stamp.token === 'string' && typeof stamp.betSig === 'string') lastAuto[id] = stamp
+  }
+  return { tapes, lastAuto }
+}
+
+export function loadAutoState(): AnalystAutoState {
+  const ls = deskStorage()
+  if (!ls) return emptyAutoState()
+  try {
+    const raw = ls.getItem(ANALYST_REHAB_KEY)
+    return hydrateAutoState(raw ? JSON.parse(raw) : null)
+  } catch {
+    return emptyAutoState()
+  }
+}
+
+export function saveAutoState(state: AnalystAutoState): AnalystAutoState {
+  const next = hydrateAutoState(state)
+  const ls = deskStorage()
+  if (!ls) return next
+  try {
+    ls.setItem(ANALYST_REHAB_KEY, JSON.stringify(next))
+  } catch {
+    /* quota */
+  }
+  return next
+}
+
+export function isRehabPaper(state: AnalystAutoState, id: TapeId) {
+  return state.tapes[id]?.status === 'paper'
+}
+
+function sameAuto(a: AnalystAutoState, b: AnalystAutoState) {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function startRehab(id: TapeId, liveWasOn: boolean, token: string, now: number): TapeRehab {
+  return {
+    id,
+    status: 'paper',
+    haltedAt: now,
+    liveWasOn,
+    paperTarget: REHAB_PAPER_RUNS,
+    fromMs: now,
+    appliedToken: token,
+  }
+}
+
+export function runAutoAnalyst(opts: {
+  settings: DeskSettings
+  report: AnalystReport
+  bets: AutoBet[]
+  rehab: AnalystAutoState
+  killed?: boolean
+  now?: number
+}): { settings: DeskSettings; rehab: AnalystAutoState; msg: string; didChange: boolean } {
+  const now = opts.now ?? Date.now()
+  let settings = opts.settings
+  let rehab = hydrateAutoState(opts.rehab)
+  const notes: string[] = []
+  if (opts.killed) return { settings, rehab, msg: '', didChange: false }
+
+  for (const note of opts.report.tapes) {
+    const id = note.id
+    const streak = consecutiveLosses(opts.bets, id)
+    const active = rehab.tapes[id]?.status === 'paper' ? rehab.tapes[id]! : null
+    const sig = tapeBetSig(opts.bets, id)
+
+    if (!active && streak >= LOSS_STREAK_HALT) {
+      const liveWasOn = settings.tapes[id].liveOn === true
+      if (note.changed) {
+        settings = applyAnalystAccept(settings, id, note.nextRecipe)
+        rehab = {
+          ...rehab,
+          lastAuto: { ...rehab.lastAuto, [id]: { token: note.token, betSig: sig } },
+        }
+      }
+      if (settings.tapes[id].liveOn) {
+        settings = patchTape(settings, id, { liveOn: false })
+      }
+      rehab = {
+        ...rehab,
+        tapes: { ...rehab.tapes, [id]: startRehab(id, liveWasOn, note.token, now) },
+      }
+      notes.push(
+        `${TAPE_META[id].label} live cash halted — ${streak} losses. Paper ${REHAB_PAPER_RUNS} then ${HIT_FLOOR}%.`,
+      )
+      continue
+    }
+
+    if (active) {
+      if (settings.tapes[id].liveOn) {
+        settings = patchTape(settings, id, { liveOn: false })
+        notes.push(`${TAPE_META[id].label} live cash stays off — paper rehab`)
+      }
+      const paperStreak = consecutiveLosses(
+        opts.bets.filter((b) => isPaperBet(b)),
+        id,
+        active.fromMs,
+      )
+      if (paperStreak >= LOSS_STREAK_HALT) {
+        if (note.changed) {
+          settings = applyAnalystAccept(settings, id, note.nextRecipe)
+          rehab = {
+            ...rehab,
+            lastAuto: { ...rehab.lastAuto, [id]: { token: note.token, betSig: sig } },
+          }
+        }
+        rehab = {
+          ...rehab,
+          tapes: { ...rehab.tapes, [id]: startRehab(id, active.liveWasOn, note.token, now) },
+        }
+        notes.push(`${TAPE_META[id].label} paper streak ${paperStreak} — restart ${REHAB_PAPER_RUNS}`)
+        continue
+      }
+      const paper = paperRehabStats(opts.bets, id, active.fromMs)
+      if (paper.n >= active.paperTarget && paper.pct >= HIT_FLOOR) {
+        if (active.liveWasOn) settings = patchTape(settings, id, { liveOn: true })
+        rehab = {
+          ...rehab,
+          tapes: {
+            ...rehab.tapes,
+            [id]: { ...active, status: 'restored', restoredAt: now },
+          },
+        }
+        notes.push(
+          `${TAPE_META[id].label} paper ${paper.pct}% on ${paper.n} — ${active.liveWasOn ? 'live cash back' : 'rehab clear, live cash stays off'}`,
+        )
+        continue
+      }
+    }
+
+    if (note.changed && rehab.lastAuto[id]?.betSig !== sig) {
+      settings = applyAnalystAccept(settings, id, note.nextRecipe)
+      rehab = {
+        ...rehab,
+        lastAuto: { ...rehab.lastAuto, [id]: { token: note.token, betSig: sig } },
+      }
+      notes.push(`${TAPE_META[id].label} rules auto-updated for the ${HIT_FLOOR}% path`)
+    }
+  }
+
+  rehab = saveAutoState(rehab)
+  const didChange = settings !== opts.settings || !sameAuto(rehab, hydrateAutoState(opts.rehab))
+  return { settings, rehab, msg: notes.join(' · '), didChange }
+}
+
+export function rehabCopy(state: AnalystAutoState, id: TapeId, bets: AutoBet[] = []) {
+  const cell = state.tapes[id]
+  if (!cell) return ''
+  if (cell.status === 'restored') {
+    return `Rehab clear. ${cell.liveWasOn ? 'Live cash was restored after' : 'Live cash stayed off after'} ${cell.paperTarget} paper runs at ${HIT_FLOOR}%.`
+  }
+  const paper = paperRehabStats(bets, id, cell.fromMs)
+  return `Live cash halted. Paper ${paper.n}/${cell.paperTarget} · ${paper.w}W–${paper.l}L · ${paper.n ? `${paper.pct}%` : '—'}. Back on at ${HIT_FLOOR}% after ${cell.paperTarget} consistent runs.`
 }

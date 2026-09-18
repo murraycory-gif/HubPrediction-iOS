@@ -12,6 +12,7 @@ import {
   num,
   seriesToTape,
   clockFromTicker,
+  isTapeClock,
   windowMsForClock,
   type DeskTicket,
   type TapeId,
@@ -167,6 +168,17 @@ export function cashAfterEachBet(
 
 export function betWindowMs(b: { clock?: string; ticker?: string }) {
   return windowMsForClock(b.clock || '') || windowMsForClock(b.ticker || '')
+}
+
+export function betClockLabel(b: { clock?: string; ticker?: string }) {
+  if (isTapeClock(b.clock)) return b.clock
+  const fromClock = clockFromTicker(b.clock || '')
+  if (fromClock) return fromClock
+  const s = `${b.clock || ''} ${b.ticker || ''}`.toUpperCase()
+  if (s.includes('15M') || s.includes('15 MIN')) return '15m'
+  if (s.includes('5M') || s.includes('5 MIN')) return '5m'
+  if (s.includes('1H') || s.includes('BTCD') || s.includes('GOLDH')) return '1h'
+  return clockFromTicker(b.ticker || '') || '—'
 }
 
 export type FinanceState = {

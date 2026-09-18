@@ -67,6 +67,7 @@ import {
 import { ticketCost } from '../lib/size-cash'
 import type { DeskBoard, TapeQuote } from '../lib/types'
 import {
+  betClockLabel,
   betKind,
   betWindowMs,
   cashAfterEachBet,
@@ -87,7 +88,7 @@ import {
   syncTicketsIntoBook,
   type FinanceState,
 } from '../lib/finance'
-import { applyAnalystAccept } from '../lib/analyst'
+import { analyzeDesk, isRehabPaper, loadAutoState, runAutoAnalyst, type AnalystAutoState } from '../lib/analyst'
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
@@ -108,6 +109,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [liveConfirm, setLiveConfirm] = useState(false)
   const [analystOpen, setAnalystOpen] = useState(false)
   const [financeOpen, setFinanceOpen] = useState(false)
+  const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
   const sentRef = useRef<Record<string, SendClaim>>({})
 
   function applyCashAndSettlements(r: {
@@ -147,6 +149,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask: 50,
       })),
     )
+    setRehab(loadAutoState())
     void getKalshiBalance()
       .then((r) => applyCashAndSettlements(r))
       .catch(() => {
@@ -319,6 +322,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       setMsg('Send needs this tab open')
       return
     }
+    if (isRehabPaper(rehab, tape)) {
+      setMsg(`${TAPE_META[tape].label} live cash halted — paper rehab`)
+      return
+    }
     const gates = cashGates(settings, tape)
     if (!gates.ok) {
       setMsg(
@@ -411,11 +418,29 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       if (!askInBand(ask, recipe)) continue
       const key = `${id}:${quote.ticker}`
       const gates = cashGates(settings, id)
+      const paperRehab = isRehabPaper(rehab, id)
       if (claimSend(sentRef.current, key) !== 'send') continue
-      if (gates.ok) void sendLive(id, lean, quote)
+      if (paperRehab) sendPaper(id, lean, quote)
+      else if (gates.ok) void sendLive(id, lean, quote)
       else if (!settings.liveBets && !recipe.liveOn) sendPaper(id, lean, quote)
     }
-  }, [board?.fetchedAt, settings, tickets, book.killed, hits])
+  }, [board?.fetchedAt, settings, tickets, book.killed, hits, rehab])
+
+  useEffect(() => {
+    if (book.killed) return
+    const report = analyzeDesk(board ?? null, hits, book.bets, settings.tapes)
+    const next = runAutoAnalyst({
+      settings,
+      report,
+      bets: book.bets,
+      rehab,
+      killed: book.killed,
+    })
+    if (!next.didChange) return
+    setSettings(next.settings)
+    setRehab(next.rehab)
+    if (next.msg) setMsg(next.msg)
+  }, [board, book.bets, book.killed, hits, rehab, settings])
 
   const ttl = ttlFromHits(hits)
   const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter, cash.firstDepositAt ?? 0)
@@ -517,6 +542,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               clock={settings.clocks[id]}
               chart={settings.charts?.[id] ?? DEFAULT_CHART}
               liveBets={settings.liveBets}
+              rehabPaper={isRehabPaper(rehab, id)}
               recipeLocked={chasingLosses(book) || book.killed}
               onClock={(next) => setSettings(setTapeClock(settings, id, next))}
               onChart={(next) => setSettings(setTapeChart(settings, id, next))}
@@ -578,14 +604,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             bets={book.bets}
             events={liveEvents}
             killed={book.killed}
-            onAccept={(id, recipe) => {
-              if (book.killed) {
-                setMsg('KILL on — recipe lock')
-                return
-              }
-              setSettings(applyAnalystAccept(settings, id, recipe))
-              setMsg(`${id.toUpperCase()} recipe applied to this run`)
-            }}
+            rehab={rehab}
           />
         ) : null}
         {financeOpen ? (
@@ -647,7 +666,7 @@ function AnalystDesk({
   bets,
   events,
   killed,
-  onAccept,
+  rehab,
 }: {
   board: DeskBoard | null
   hits: ReturnType<typeof loadHits>
@@ -655,7 +674,7 @@ function AnalystDesk({
   bets: FinanceState['bets']
   events: Partial<Record<TapeId, string>>
   killed: boolean
-  onAccept: (id: TapeId, recipe: TapeRecipe) => void
+  rehab: AnalystAutoState
 }) {
   const pathQuery = useQuery({
     queryKey: ['tape-paths', events],
@@ -680,8 +699,7 @@ function AnalystDesk({
       paths={pathQuery.data ?? null}
       briefs={briefQuery.data ?? null}
       killed={killed}
-      onAccept={onAccept}
-      onDeny={() => {}}
+      rehab={rehab}
     />
   )
 }
@@ -723,6 +741,7 @@ function TapeRow({
   clock,
   chart,
   liveBets,
+  rehabPaper,
   recipeLocked,
   onClock,
   onChart,
@@ -736,6 +755,7 @@ function TapeRow({
   clock: TapeClock
   chart: ChartRange
   liveBets: boolean
+  rehabPaper: boolean
   recipeLocked: boolean
   onClock: (clock: TapeClock) => void
   onChart: (chart: ChartRange) => void
@@ -907,9 +927,10 @@ function TapeRow({
             type="checkbox"
             data-testid={`live-cash-${id}`}
             checked={recipe.liveOn}
+            disabled={rehabPaper}
             onChange={(e) => onTape({ liveOn: e.target.checked })}
           />
-          Live cash {recipe.liveOn ? 'ON' : 'OFF'}
+          Live cash {rehabPaper ? 'HALT' : recipe.liveOn ? 'ON' : 'OFF'}
         </label>
         <label className="contracts-field">
           <span className="contracts-label glyph-plate" data-testid={`contracts-label-${id}`}>
@@ -994,7 +1015,10 @@ function Bets24Strip({
   const allOn = isAllBetsFilter(filter)
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
-      <p className="hud-label">Bets since first deposit · P&L is live only · paper in hit · {HIT_FLOOR}% win-ratio goal</p>
+      <p className="hud-label">
+        Bets since first deposit · P&L is live only · paper in hit · WINDOW date/time · MODE · CASH ·{' '}
+        {HIT_FLOOR}% win-ratio goal
+      </p>
       <div className="bets-filter" data-testid="bets-filter">
         <button
           type="button"
@@ -1040,6 +1064,7 @@ function Bets24Strip({
           <div className="bets-log-row bets-log-head" aria-hidden>
             <span>TAPE</span>
             <span>WINDOW</span>
+            <span>CLOCK</span>
             <span>SIDE</span>
             <span>RESULT</span>
             <span>MODE</span>
@@ -1054,6 +1079,7 @@ function Bets24Strip({
               const rowPnl = settled ? (b.pnl as number) : null
               const mode = betKind(b)
               const windowLabel = formatBetWindow(b.closeAt, betWindowMs(b), b.filledAt)
+              const clockLabel = betClockLabel(b)
               const cashAmt = cashByBet[b.betId]
               const cashText = cashAmt == null ? '—' : formatCash(cashAmt)
               return (
@@ -1062,8 +1088,15 @@ function Bets24Strip({
                   <span data-testid="bets-window" className="bets-window" title={windowLabel}>
                     {windowLabel}
                   </span>
+                  <span data-testid="bets-clock">{clockLabel}</span>
                   <span>{b.side.toUpperCase()}</span>
-                  <span>{result}</span>
+                  <span
+                    className={
+                      result === 'WIN' ? 'result-win' : result === 'LOSS' ? 'result-loss' : result === 'OPEN' ? 'result-open' : undefined
+                    }
+                  >
+                    {result}
+                  </span>
                   <span data-testid="bets-mode" className={mode === 'live' ? 'mode-live' : 'mode-paper'}>
                     {mode.toUpperCase()}
                   </span>
@@ -1081,7 +1114,7 @@ function Bets24Strip({
         </div>
         {rows.length ? null : (
           <p className="settings-note" data-testid="bets-empty">
-            No Kalshi fills since first deposit. The WINDOW · MODE · CASH columns stay here. Soft FAIL Live POST.
+            No Kalshi fills since first deposit. The WINDOW · CLOCK · MODE · CASH columns stay here. Soft FAIL Live POST.
           </p>
         )}
       </div>

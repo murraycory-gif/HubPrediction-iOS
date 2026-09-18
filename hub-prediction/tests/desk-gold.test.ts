@@ -503,8 +503,8 @@ describe('gold race path', () => {
     expect(kept.charts.ng).toBe('live')
     expect(hydrateSettings(null).liveBets).toBe(false)
     expect(GOLD_RECIPES.btc.centLo).toBe(69)
-    expect(formatBetWindow(Date.parse('2026-09-18T16:45:00-05:00'), 15 * 60_000)).toBe('9/18 4:30–4:45 PM')
-    expect(formatBetWindow(Date.parse('2026-09-18T12:11:00-05:00'), 15 * 60_000)).toBe('9/18 11:56 AM–12:11 PM')
+    expect(formatBetWindow(Date.parse('2026-09-18T16:45:00-05:00'), 15 * 60_000)).toBe('Sep 18, 4:30–4:45 PM CDT')
+    expect(formatBetWindow(Date.parse('2026-09-18T12:11:00-05:00'), 15 * 60_000)).toBe('Sep 18, 11:56 AM–12:11 PM CDT')
   })
 })
 

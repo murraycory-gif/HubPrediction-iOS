@@ -2,15 +2,16 @@ import { useMemo, useState } from 'react'
 import {
   analyzeDesk,
   clockCall,
-  denyAnalystRec,
   explainRules,
-  isDeniedRec,
-  listDeniedRecs,
+  isRehabPaper,
   loadPaperDrafts,
   makePaperDrafts,
   profitImpact,
   proposalCopy,
+  REHAB_PAPER_RUNS,
+  rehabCopy,
   savePaperDrafts,
+  type AnalystAutoState,
   type AnalystBet,
   type DeskPaths,
   type PaperDrafts,
@@ -21,8 +22,6 @@ import {
   TAPE_META,
   type DeskSettings,
   type HitLatch,
-  type TapeId,
-  type TapeRecipe,
 } from '../lib/tapes'
 import type { DeskBoard } from '../lib/types'
 
@@ -33,9 +32,8 @@ export function AnalystPanel({
   bets,
   paths,
   briefs,
+  rehab,
   killed,
-  onAccept,
-  onDeny,
 }: {
   board: DeskBoard | null
   hits: HitLatch
@@ -43,28 +41,26 @@ export function AnalystPanel({
   bets: AnalystBet[]
   paths: DeskPaths | null
   briefs?: DeskBriefsPayload | null
+  rehab: AnalystAutoState
   killed?: boolean
-  onAccept: (id: TapeId, recipe: TapeRecipe) => void
-  onDeny: (id: TapeId, token: string) => void
 }) {
   const report = useMemo(
     () => analyzeDesk(board, hits, bets, settings.tapes, paths),
     [board?.fetchedAt, hits, bets, settings, paths],
   )
   const [drafts, setDrafts] = useState<PaperDrafts | null>(() => loadPaperDrafts())
-  const [denied, setDenied] = useState<string[]>(() => listDeniedRecs())
   const [saved, setSaved] = useState('')
 
   return (
     <section className="analyst" data-testid="analyst">
-      <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal</p>
+      <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal · auto</p>
       <p className="settings-note" data-testid="analyst-lock">
-        Each tape has its own desk chief. Current rules, the proposed change, why, and the dollar math are on the card.
-        Accept writes that tape’s recipe for this run. Deny keeps it. Does not flip Live or live cash.
+        Each tape has its own desk chief. Rules update automatically toward {HIT_FLOOR}%. More than two
+        losses in a row halt that desk’s live cash, load the new settings, and paper-test {REHAB_PAPER_RUNS}{' '}
+        consistent runs. At {HIT_FLOOR}% live cash comes back. No Accept / Deny.
       </p>
       <div className="analyst-grid">
         {report.tapes.map((t) => {
-          const hidden = t.changed && (denied.includes(t.token) || isDeniedRec(t.token))
           const brief = buildDeskBrief({
             id: t.id,
             quote: board?.tapes[t.id] ?? null,
@@ -74,10 +70,10 @@ export function AnalystPanel({
             news: briefs?.news?.[t.id],
           })
           const rules = explainRules(t.id, t.currentRecipe)
-          const proposal = hidden
-            ? { title: `Denied — keep ${TAPE_META[t.id].label} current rules`, lines: proposalCopy(t).lines }
-            : proposalCopy(t)
+          const proposal = proposalCopy(t)
           const money = profitImpact(t, t.lean === 'down' ? t.noAsk : t.yesAsk)
+          const rehabNote = rehabCopy(rehab, t.id, bets)
+          const paper = isRehabPaper(rehab, t.id)
           return (
             <article key={t.id} className="analyst-row" data-testid={`analyst-${t.id}`}>
               <p className="tape-name">
@@ -101,7 +97,7 @@ export function AnalystPanel({
               <div className="analyst-block" data-testid={`analyst-proposed-${t.id}`}>
                 <p className="analyst-report-label">Proposed</p>
                 <p className="tape-recipe" data-testid={`analyst-next-${t.id}`}>
-                  {proposal.title}
+                  {t.changed ? 'Auto-applying these rules' : proposal.title}
                 </p>
                 {proposal.lines.map((line) => (
                   <p key={line} className="analyst-plain">
@@ -112,7 +108,7 @@ export function AnalystPanel({
 
               <div className="analyst-block" data-testid={`analyst-why-${t.id}`}>
                 <p className="analyst-report-label">Why</p>
-                {(hidden ? ['You denied this retune. Current rules stay.'] : t.why).map((line) => (
+                {t.why.map((line) => (
                   <p key={line} className="analyst-plain">
                     {line}
                   </p>
@@ -175,35 +171,17 @@ export function AnalystPanel({
               <p className="analyst-plain" data-testid={`analyst-score-${t.id}`}>
                 Book 24h {t.score.pnl24 === 0 && t.score.pnl48 === 0 ? 'no live $ yet' : `${t.score.wins}W–${t.score.losses}L`}
               </p>
-              <div className="analyst-actions">
-                <button
-                  type="button"
-                  className="chip-btn tap rec-accept"
-                  data-testid={`analyst-accept-${t.id}`}
-                  disabled={killed || hidden || !t.changed}
-                  onClick={() => {
-                    if (killed || hidden || !t.changed) return
-                    onAccept(t.id, t.nextRecipe)
-                    setSaved(`${TAPE_META[t.id].label} recipe applied to this run`)
-                  }}
-                >
-                  Accept
-                </button>
-                <button
-                  type="button"
-                  className="chip-btn tap rec-deny"
-                  data-testid={`analyst-deny-${t.id}`}
-                  disabled={hidden || !t.changed}
-                  onClick={() => {
-                    const next = denyAnalystRec(t.token)
-                    setDenied(next)
-                    onDeny(t.id, t.token)
-                    setSaved(`${TAPE_META[t.id].label} rec denied — current recipe stays`)
-                  }}
-                >
-                  Deny
-                </button>
-              </div>
+              <p
+                className={paper ? 'swing-bad analyst-plain' : 'analyst-plain'}
+                data-testid={`analyst-auto-${t.id}`}
+              >
+                {killed
+                  ? 'KILL on — auto recipe lock'
+                  : rehabNote ||
+                    (t.changed
+                      ? `Auto-updating toward ${HIT_FLOOR}%. No Accept / Deny.`
+                      : `Auto on. Matching the ${HIT_FLOOR}% book.`)}
+              </p>
             </article>
           )
         })}

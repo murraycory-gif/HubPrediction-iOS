@@ -745,7 +745,7 @@ body {
 }
 
 .bets-log-scroll {
-  min-width: 44rem;
+  min-width: 50rem;
 }
 
 .bets-log {
@@ -762,8 +762,8 @@ body {
 
 .bets-log-row {
   display: grid;
-  grid-template-columns: 3.4rem minmax(11.5rem, 2.2fr) 3.8rem 4.2rem 4.6rem minmax(4.6rem, 1fr) minmax(4.8rem, 1fr) minmax(4.4rem, 1fr);
-  gap: 6px;
+  grid-template-columns: 3.6rem minmax(15rem, 2.6fr) 3.2rem 3.6rem 4rem 4.4rem minmax(4.6rem, 1fr) minmax(4.8rem, 1fr) minmax(4.6rem, 1fr);
+  gap: 8px;
   align-items: center;
   padding: 6px 4px;
   font-family: var(--mono);
@@ -786,11 +786,25 @@ body {
   white-space: nowrap;
 }
 
-.bets-log-row > span:nth-child(6),
 .bets-log-row > span:nth-child(7),
-.bets-log-row > span:nth-child(8) {
+.bets-log-row > span:nth-child(8),
+.bets-log-row > span:nth-child(9) {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.result-win {
+  color: var(--up);
+  font-weight: 700;
+}
+
+.result-loss {
+  color: var(--down);
+  font-weight: 700;
+}
+
+.result-open {
+  color: var(--mute);
 }
 
 .mode-live {

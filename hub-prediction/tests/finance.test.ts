@@ -16,6 +16,7 @@ import {
   pnlVsDeposits,
   chasingLosses,
   last24hBets,
+  betClockLabel,
   hydrateFinance,
   cashAfterEachBet,
   cashUpdateForBet,
@@ -414,6 +415,10 @@ describe('finance Soft KEEP', () => {
     expect(cu.pnl).toBe(0)
     const hydrated = hydrateFinance(live)
     expect(hydrated.bets.find((b) => b.orderId.startsWith('deskfill-'))?.kind).toBe('paper')
+    expect(betClockLabel({ clock: '15m', ticker: 'KXCOPPER15M-PAPER' })).toBe('15m')
+    expect(betClockLabel({ ticker: 'KXBTC15M-A' })).toBe('15m')
+    expect(betClockLabel({ ticker: 'KXBTC5M-A' })).toBe('5m')
+    expect(betClockLabel({ ticker: 'KXBTCD-A' })).toBe('1h')
     const kept = mergeKalshiHistoryToBook(live, {
       settlements: {
         settlements: [
