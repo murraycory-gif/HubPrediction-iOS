@@ -9,6 +9,7 @@ import {
   formatNowDelta,
   SETTINGS_KEY,
   seriesForTape,
+  setTapeChart,
   setTapeClock,
   askInBand,
   cashGates,
@@ -408,6 +409,12 @@ describe('gold race path', () => {
     expect(hydrateChartRange('10m')).toBe('15m')
     expect(hydrateChartRange('live')).toBe('live')
     expect(hydrateSettings(null).charts.btc).toBe('live')
+    expect(hydrateSettings(null).charts.ng).toBe('live')
+    expect(hydrateSettings(null).charts.cu).toBe('live')
+    expect(hydrateSettings(null).charts.gld).toBe('live')
+    const kept = setTapeChart(hydrateSettings(null), 'btc', '15m')
+    expect(kept.charts.btc).toBe('15m')
+    expect(kept.charts.ng).toBe('live')
     expect(hydrateSettings(null).liveBets).toBe(false)
     expect(GOLD_RECIPES.btc.centLo).toBe(69)
   })

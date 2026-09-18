@@ -8,6 +8,7 @@ import {
   CLOCK_CALLOUT,
   CLOCK_LABELS,
   DEFAULT_CHART,
+  defaultChartRanges,
   GOLD_RECIPES,
   applyBetsFilter,
   askInBand,
@@ -30,6 +31,7 @@ import {
   loadHits,
   hydrateSettings,
   loadSettings,
+  saveSettings,
   loadTickets,
   makePaperTicket,
   makeTicket,
@@ -121,7 +123,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }
 
   useLayoutEffect(() => {
-    setSettings(loadSettings())
+    setSettings(saveSettings({ ...loadSettings(), charts: defaultChartRanges() }))
     const nextTickets = loadTickets()
     setTickets(nextTickets)
     setHits(loadHits())
@@ -609,9 +611,17 @@ function TapeRow({
   const liveOn = quote?.tradingActive === true
   const [draft, setDraft] = useState(recipe.contracts)
   const contractsRef = useRef<HTMLInputElement>(null)
+  const lastTicker = useRef(quote?.ticker ?? '')
   useEffect(() => {
     setDraft(recipe.contracts)
   }, [recipe.contracts])
+  useEffect(() => {
+    const ticker = quote?.ticker ?? ''
+    if (lastTicker.current && ticker && lastTicker.current !== ticker && chart !== DEFAULT_CHART) {
+      onChart(DEFAULT_CHART)
+    }
+    lastTicker.current = ticker
+  }, [quote?.ticker, chart, onChart])
 
   function saveContracts(raw?: number) {
     const fromDom = contractsRef.current ? Number(contractsRef.current.value) : draft
