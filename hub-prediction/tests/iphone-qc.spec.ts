@@ -331,3 +331,35 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
   await expect(page.getByTestId('pulse')).toHaveCount(0)
   expect(livePosts).toEqual([])
 })
+
+test('phone desk: boot hydrates settlements when keys present — Live stays OFF', async ({ page }) => {
+  const cashPosts: string[] = []
+  const livePosts: string[] = []
+  await page.addInitScript(() => {
+    localStorage.setItem('hub.kalshi.keyId', 'qc-boot-key-id')
+    localStorage.setItem('hub.kalshi.pem', '-----BEGIN PRIVATE KEY-----\nQCBOOT\n-----END PRIVATE KEY-----')
+  })
+  page.on('request', (req) => {
+    const url = req.url()
+    const data = req.postData() || ''
+    if (req.method() === 'POST' && /external-api\.kalshi\.com.*\/events\/orders/i.test(url)) {
+      livePosts.push(url)
+    }
+    if (data.includes('qc-boot-key-id') || data.includes('QCBOOT')) cashPosts.push(url)
+  })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('bets-filter-all')).toBeVisible()
+  await expect(page.getByTestId('bets-filter-btc')).toBeVisible()
+  await expect(page.getByTestId('scoreboard')).toBeVisible()
+  await expect(page.locator('.rain-col')).toHaveCount(0)
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await expect
+    .poll(() => cashPosts.length, { timeout: 8000 })
+    .toBeGreaterThan(0)
+  expect(livePosts).toEqual([])
+  for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+    await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()
+  }
+})

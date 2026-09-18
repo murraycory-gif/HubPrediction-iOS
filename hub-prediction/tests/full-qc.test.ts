@@ -123,8 +123,9 @@ describe('QC2 wires', () => {
     expect(src).toMatch(/return \{ \.\.\.bal, deposits, settlements \}/)
     const dash = await readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8')
     expect(dash).toMatch(/applyCashAndSettlements/)
-    expect(dash).toMatch(/eventsFromKalshiSettlements\(r\.settlements\)/)
-    expect(dash).toMatch(/pnl: r\.cash != null && deposits != null \? r\.cash - deposits/)
+    expect(dash).toMatch(/hydrateCashFromKalshi/)
+    expect(dash).toMatch(/if \(nextKey && nextPem\)/)
+    expect(dash).toMatch(/getKalshiCash\(\{ data: \{ keyId: nextKey, pem: nextPem \} \}\)/)
     expect(dash).toMatch(/queryKey: \['kalshi-cash-hits'/)
   })
 

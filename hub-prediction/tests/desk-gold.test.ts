@@ -7,8 +7,12 @@ import {
   askInBand,
   cashGates,
   askCentsFromMarket,
+  emptyHits,
   eventsFromKalshiSettlements,
   extractOrderId,
+  hitPct,
+  hydrateCashFromKalshi,
+  hydrateHitsFromKalshiCash,
   hydrateSettings,
   latchFromEvents,
   mergeHitEvents,
@@ -316,6 +320,45 @@ describe('Kalshi-settled 24h latch', () => {
     expect(s.liveBets).toBe(false)
     expect(s.tapes.btc.botOn).toBe(true)
     expect(s.tapes.btc.liveOn).toBe(false)
+  })
+
+  it('boot hydrate writes tape 24H chips from portfolio settlements', () => {
+    const now = Date.now()
+    const hits = hydrateHitsFromKalshiCash(
+      {
+        settlements: [
+          {
+            ticker: 'KXBTC15M-BOOT',
+            market_result: 'yes',
+            yes_count_fp: '1',
+            no_count_fp: '0',
+            settled_time: new Date(now - 1000).toISOString(),
+          },
+        ],
+      },
+      emptyHits(),
+      now,
+    )
+    expect(hits.tapes.btc.w).toBe(1)
+    expect(hitPct(hits.tapes.btc)).toBe(100)
+    const desk = hydrateCashFromKalshi({
+      cash: 200,
+      deposits: { deposits: [{ amount_dollars: 760 }] },
+      settlements: {
+        settlements: [
+          {
+            ticker: 'KXNATGAS15M-BOOT',
+            market_result: 'no',
+            yes_count_fp: '0',
+            no_count_fp: '1',
+            settled_time: new Date(now - 2000).toISOString(),
+          },
+        ],
+      },
+    })
+    expect(desk.cash.cash).toBe(200)
+    expect(desk.hits.tapes.ng.w).toBe(1)
+    expect(hydrateSettings(null).liveBets).toBe(false)
   })
 
   it('drops settlements older than 24h', () => {

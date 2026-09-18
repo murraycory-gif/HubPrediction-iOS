@@ -12,9 +12,7 @@ import {
   cashGates,
   claimSend,
   clampContracts,
-  depositsFromPayload,
   disarmAllBots,
-  eventsFromKalshiSettlements,
   eventsFromTickets,
   extractOrderId,
   formatCash,
@@ -22,6 +20,7 @@ import {
   formatPnl,
   formatWeThink,
   hitPct,
+  hydrateCashFromKalshi,
   inArmWindow,
   loadCash,
   loadHits,
@@ -33,7 +32,6 @@ import {
   mergeHitEvents,
   patchTape,
   releaseClaim,
-  saveCash,
   saveHits,
   setLiveBets,
   tabIsOpen,
@@ -101,8 +99,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     setTickets(nextTickets)
     setHits(loadHits())
     setCash(loadCash())
-    setKeyId(readLocal(KEY_ID))
-    setPem(readLocal(KEY_PEM))
+    const nextKey = readLocal(KEY_ID)
+    const nextPem = readLocal(KEY_PEM)
+    setKeyId(nextKey)
+    setPem(nextPem)
     setBook(
       syncTicketsIntoBook(loadFinance(), nextTickets, () => ({
         clock: '',
@@ -110,6 +110,17 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask: 50,
       })),
     )
+    if (nextKey && nextPem) {
+      void getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
+        .then((r) => {
+          const next = hydrateCashFromKalshi(r, loadCash())
+          setCash(next.cash)
+          setHits(next.hits)
+        })
+        .catch(() => {
+          /* keys present but Kalshi miss — latch stays */
+        })
+    }
   }, [])
 
   const boardQuery = useQuery({
@@ -124,18 +135,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const board = boardQuery.data ?? seedBoard
 
   function applyCashAndSettlements(r: Awaited<ReturnType<typeof getKalshiCash>>) {
-    const deposits = depositsFromPayload(r.deposits) ?? cash.deposits
-    const next = saveCash({
-      cash: r.cash,
-      deposits,
-      pnl: r.cash != null && deposits != null ? r.cash - deposits : cash.pnl,
-      asOf: Date.now(),
-    })
-    setCash(next)
-    if (r.settlements) {
-      const ev = eventsFromKalshiSettlements(r.settlements)
-      if (ev.length) setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
-    }
+    const next = hydrateCashFromKalshi(r, loadCash())
+    setCash(next.cash)
+    setHits(next.hits)
   }
 
   async function refreshCash(nextKey = keyId, nextPem = pem) {
@@ -150,11 +152,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }
 
   const cashQuery = useQuery({
-    queryKey: ['kalshi-cash-hits', keyId],
+    queryKey: ['kalshi-cash-hits', keyId, pem],
     enabled: Boolean(keyId && pem),
     queryFn: () => getKalshiCash({ data: { keyId, pem } }),
     refetchInterval: 30_000,
     staleTime: 8_000,
+    refetchOnMount: 'always',
   })
 
   useEffect(() => {

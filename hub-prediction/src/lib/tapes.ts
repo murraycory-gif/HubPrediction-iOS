@@ -474,6 +474,28 @@ export function saveHits(hits: HitLatch) {
   return hits
 }
 
+/** Soft KEEP boot hydrate: portfolio settlements → tape 24H chips when keys present. */
+export function hydrateHitsFromKalshiCash(raw: unknown, prev: HitLatch = loadHits(), now = Date.now()): HitLatch {
+  const ev = eventsFromKalshiSettlements(raw, now)
+  if (!ev.length) return prev
+  return saveHits(mergeHitEvents(prev, ev, now))
+}
+
+export function hydrateCashFromKalshi(
+  raw: { cash?: number | null; deposits?: unknown; settlements?: unknown },
+  prev: CashLatch = loadCash(),
+): { cash: CashLatch; hits: HitLatch } {
+  const deposits = depositsFromPayload(raw.deposits) ?? prev.deposits
+  const cashAmt = Number.isFinite(raw.cash as number) ? Number(raw.cash) : prev.cash
+  const cash = saveCash({
+    cash: cashAmt,
+    deposits,
+    pnl: cashAmt != null && deposits != null ? cashAmt - deposits : prev.pnl,
+    asOf: Date.now(),
+  })
+  return { cash, hits: hydrateHitsFromKalshiCash(raw.settlements ?? raw, loadHits()) }
+}
+
 export function ttlFromHits(hits: HitLatch) {
   let w = 0
   let l = 0
