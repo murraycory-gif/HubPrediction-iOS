@@ -37,10 +37,13 @@ export function raceDomain(id: TapeId, beat: number, live: number | null, pts: P
   const ys = pts.map((p) => p.px)
   if (Number.isFinite(beat) && beat > 0) ys.push(beat)
   if (live != null && Number.isFinite(live) && live > 0) ys.push(live)
-  const mid = (Number.isFinite(beat) && beat > 0 ? beat : live) || 1
+  const mid = (Number.isFinite(beat) && beat > 0 ? beat : live) || 0
   const floor =
     id === 'btc' ? 90 : id === 'gld' ? 2 : id === 'ng' || id === 'cu' ? 0.004 : 1
-  if (!ys.length) return { lo: mid - floor, hi: mid + floor }
+  if (!ys.length) {
+    if (!(mid > 0)) return { lo: 0, hi: 1 }
+    return { lo: mid - floor, hi: mid + floor }
+  }
   let lo = Math.min(...ys)
   let hi = Math.max(...ys)
   const span = hi - lo
@@ -203,6 +206,7 @@ export const RaceChart = memo(function RaceChart({
     ? `${line} L${xOf(drawPts[drawPts.length - 1]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} L${xOf(drawPts[0]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} Z`
     : ''
 
+  const waiting = !(beat > 0) && (shown == null || !Number.isFinite(shown) || shown <= 0) && !drawPts.length
   const beatY = Number.isFinite(beat) && beat > 0 ? yOf(beat) : PAD.t + innerH / 2
   const liveY = shown != null && Number.isFinite(shown) ? yOf(shown) : null
   const liveX = liveY != null ? (drawPts.length ? xOf(drawPts[drawPts.length - 1]!.t) : PAD.l + innerW) : null
@@ -223,7 +227,12 @@ export const RaceChart = memo(function RaceChart({
             <stop offset="100%" stopColor={stroke} stopOpacity="0" />
           </linearGradient>
         </defs>
-        {yTicks.map((px) => (
+        {waiting ? (
+          <text x={w / 2} y={h / 2} className="race-axis" textAnchor="middle">
+            Waiting on this clock
+          </text>
+        ) : (
+          yTicks.map((px) => (
           <g key={`y-${px}`}>
             <line
               x1={PAD.l}
@@ -236,7 +245,8 @@ export const RaceChart = memo(function RaceChart({
               {formatLive(id, px)}
             </text>
           </g>
-        ))}
+          ))
+        )}
         {xTicks.map((t) => (
           <text key={`x-${Math.round(t / 1000)}`} x={xOf(t)} y={h - 6} className="race-axis" textAnchor="middle">
             {formatChartTick(Math.round(t / 1000) * 1000, windowMs)}

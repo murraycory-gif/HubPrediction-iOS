@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadDeskBoard, loadLivePrints, pickOpen, resetDeskBoardForTests } from '../src/lib/kalshi.server'
-import { BOARD_CLOSED_MS, BOARD_STRUCTURE_MS, LIVE_TRAIL_DOTS, boardPollMs, holdLiveEvents, latchDeskBoard, liveRangeFromCharts, mergeLiveOntoBoard, nextBoardRolloverWait, slimLivePoints } from '../src/lib/tapes'
+import { BOARD_CLOSED_MS, BOARD_STRUCTURE_MS, LIVE_TRAIL_DOTS, boardPollMs, holdLiveEvents, latchDeskBoard, liveRangeFromCharts, loadHeldBoard, mergeLiveOntoBoard, nextBoardRolloverWait, saveHeldBoard, slimLivePoints } from '../src/lib/tapes'
 import type { DeskBoard } from '../src/lib/types'
 
 afterEach(() => {
@@ -646,5 +646,17 @@ describe('desk never blanks on a Kalshi miss', () => {
     expect(second.tapes.btc?.ticker).toBe('KXBTC15M-LIVE')
     expect(second.tapes.btc?.live).toBeCloseTo(81080)
     expect(second.tapes.btc?.beat).toBe(81100)
+  })
+
+  it('persists the last good board so a reload does not paint BTC empty', () => {
+    if (typeof localStorage !== 'undefined') localStorage.clear()
+    const prev: DeskBoard = {
+      fetchedAt: 3,
+      tapes: { btc: q(), ng: null, cu: null, gld: null },
+    }
+    saveHeldBoard(prev)
+    const held = loadHeldBoard()
+    expect(held?.tapes.btc?.ticker).toBe('KXBTC15M-LIVE')
+    expect(held?.tapes.btc?.beat).toBe(81100)
   })
 })

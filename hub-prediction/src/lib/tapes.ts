@@ -234,6 +234,37 @@ export function latchDeskBoard(incoming: DeskBoard | null | undefined, prev: Des
   return { ...incoming, tapes, fetchedAt: Math.max(incoming.fetchedAt || 0, prev.fetchedAt || 0) }
 }
 
+export const BOARD_HOLD_KEY = 'hub.desk.board.hold.v1'
+
+export function loadHeldBoard(): DeskBoard | null {
+  const ls = deskStorage()
+  if (!ls) return null
+  try {
+    const raw = ls.getItem(BOARD_HOLD_KEY)
+    if (!raw) return null
+    const o = JSON.parse(raw) as DeskBoard
+    if (!o?.tapes) return null
+    const tapes = {} as DeskBoard['tapes']
+    for (const id of TAPE_IDS) tapes[id] = quoteHasClock(o.tapes[id]) ? o.tapes[id] : null
+    if (!TAPE_IDS.some((id) => tapes[id])) return null
+    return { tapes, fetchedAt: Number(o.fetchedAt) || 0 }
+  } catch {
+    return null
+  }
+}
+
+export function saveHeldBoard(board: DeskBoard | null | undefined) {
+  const ls = deskStorage()
+  if (!ls || !board) return board ?? null
+  try {
+    if (!TAPE_IDS.some((id) => quoteHasClock(board.tapes[id]))) return board
+    ls.setItem(BOARD_HOLD_KEY, JSON.stringify(board))
+  } catch {
+    /* quota */
+  }
+  return board
+}
+
 export function holdLiveEvents(
   incoming: Partial<Record<TapeId, string>>,
   prev: Partial<Record<TapeId, string>>,

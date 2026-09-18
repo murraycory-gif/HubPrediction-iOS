@@ -7,6 +7,7 @@ import {
   defaultClocks,
   hydrateClock,
   latchDeskBoard,
+  quoteHasClock,
   LIVE_TRAIL_MS,
   lastPrintFromLiveData,
   marketTradingActive,
@@ -26,10 +27,11 @@ import type { DeskBoard, LivePrints, Point, Settled, TapeQuote } from './types'
 const KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
 const QUOTE_FRESH_MS = 350
 const ROLLOVER_FRESH_MS = 150
-const LIST_ABORT = 1400
-const TICKER_ABORT = 900
-const LIVE_ABORT = 1200
-const PRINT_ABORT = 600
+const LIST_ABORT = 2800
+const LIST_RETRY = 3600
+const TICKER_ABORT = 1500
+const LIVE_ABORT = 1600
+const PRINT_ABORT = 800
 const PRINT_FRESH_MS = 80
 const LIST_LIMIT = 32
 const NEAR_CLOSE_MS = 12_000
@@ -153,7 +155,13 @@ async function listSeriesMarkets(series: string, limit: number): Promise<Market[
     fetchJson<{ markets?: Market[] }>(openUrl, LIST_ABORT).catch(() => ({ markets: [] as Market[] })),
     fetchJson<{ markets?: Market[] }>(allUrl, LIST_ABORT).catch(() => ({ markets: [] as Market[] })),
   ])
-  return mergeMarkets(open.markets ?? [], all.markets ?? [])
+  let merged = mergeMarkets(open.markets ?? [], all.markets ?? [])
+  const now = Date.now()
+  if (!merged.some((m) => isLiveWindow(m, now) || isUpcomingWindow(m, now))) {
+    const again = await fetchJson<{ markets?: Market[] }>(openUrl, LIST_RETRY).catch(() => ({ markets: [] as Market[] }))
+    merged = mergeMarkets(merged, again.markets ?? [])
+  }
+  return merged
 }
 
 function listedWindow(m: Market | null, now: number) {
@@ -191,7 +199,7 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
     skipLive || !eventTicker
       ? Promise.resolve(null)
       : fetchJson<unknown>(
-          `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=${clock === '5m' ? CLOCK_LIVE_RANGE['5m'] : '1h'}`,
+          `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=${CLOCK_LIVE_RANGE[clock]}`,
           LIVE_ABORT,
         ).catch(() => null),
   ])
@@ -349,7 +357,13 @@ export async function loadDeskBoard(clocks: Record<TapeId, TapeClock> = defaultC
       tapes[id] = row?.series === want ? row : lastBoard?.tapes[id]?.series === want ? lastBoard.tapes[id] : null
     })
     const raw: DeskBoard = { tapes, fetchedAt: Date.now() }
-    const latched = latchDeskBoard(raw, lastBoard) ?? raw
+    let latched = latchDeskBoard(raw, lastBoard) ?? raw
+    for (const id of TAPE_IDS) {
+      if (quoteHasClock(latched.tapes[id])) continue
+      const again = await loadTape(id, Date.now(), hydrateClock(clocks[id])).catch(() => latched.tapes[id] ?? null)
+      if (quoteHasClock(again)) tapes[id] = again
+    }
+    latched = latchDeskBoard({ tapes, fetchedAt: Date.now() }, lastBoard) ?? latched
     lastBoard = latched
     lastBoardAt = Date.now()
     lastClocksKey = key

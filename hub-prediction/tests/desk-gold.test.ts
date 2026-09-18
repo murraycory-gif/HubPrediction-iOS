@@ -447,6 +447,9 @@ describe('gold race path', () => {
     expect(drawn[1]!.px).toBeLessThan(4362)
     const btc = raceDomain('btc', 76500, 76540, [{ t: now, px: 76520 }])
     expect(btc.hi - btc.lo).toBeGreaterThan(70)
+    const empty = raceDomain('btc', 0, null, [])
+    expect(empty.hi).toBeLessThan(2)
+    expect(empty.lo).toBe(0)
   })
 
   it('LIVE chart eases NOW and ticks the wall on rAF — Soft FAIL 250ms hop', async () => {
@@ -455,6 +458,8 @@ describe('gold race path', () => {
     expect(src).toMatch(/t - last >= 48/)
     expect(src).toMatch(/requestAnimationFrame\(tick\)/)
     expect(src).toMatch(/displayLive/)
+    expect(src).toMatch(/Waiting on this clock/)
+    expect(src).toMatch(/if \(target == null \|\| !Number.isFinite\(target\) \|\| target <= 0\) next = cur/)
     expect(src).not.toMatch(/setInterval\(\(\) => setNow\(Date\.now\(\)\), 250\)/)
   })
 

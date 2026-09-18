@@ -15,6 +15,9 @@ import {
   nextBoardRolloverWait,
   holdLiveEvents,
   latchDeskBoard,
+  loadHeldBoard,
+  quoteHasClock,
+  saveHeldBoard,
   mergeLiveOntoBoard,
   askInBand,
   cashGates,
@@ -156,7 +159,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })
   }, [])
 
-  const heldBoard = useRef<DeskBoard | null>(seedBoard)
+  const heldBoard = useRef<DeskBoard | null>(seedBoard ?? loadHeldBoard())
   const heldEvents = useRef<Partial<Record<TapeId, string>>>({})
 
   const boardQuery = useQuery({
@@ -182,7 +185,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const structure = useMemo(() => {
     const next = latchDeskBoard(boardQuery.data ?? seedBoard, heldBoard.current)
-    if (next) heldBoard.current = next
+    if (next) {
+      heldBoard.current = next
+      saveHeldBoard(next)
+    }
     return next ?? heldBoard.current
   }, [boardQuery.data, seedBoard])
   const rolloverKey = TAPE_IDS.map((id) => {
@@ -737,14 +743,17 @@ function TapeRow({
 }) {
   const status = ticketStatus(ticket)
   const pct = hitPct(hits)
-  const live = quote?.live ?? null
+  const heldQuote = useRef(quote)
+  if (quoteHasClock(quote)) heldQuote.current = quote
+  const shownQuote = quoteHasClock(quote) ? quote : heldQuote.current
+  const live = shownQuote?.live ?? null
   const shownLive = useSmoothedLive(live)
-  const beat = quote?.beat ?? 0
-  const think = weThinkPair(live, beat, quote?.points ?? [])
+  const beat = shownQuote?.beat ?? 0
+  const think = weThinkPair(live, beat, shownQuote?.points ?? [])
   const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)
   const callout = CLOCK_CALLOUT[clock]
   const tone = nowTone(shownLive, beat)
-  const liveOn = quote?.tradingActive === true
+  const liveOn = shownQuote?.tradingActive === true
   const [draft, setDraft] = useState(recipe.contracts)
   const contractsRef = useRef<HTMLInputElement>(null)
   const lastTicker = useRef(quote?.ticker ?? '')
@@ -781,7 +790,7 @@ function TapeRow({
             </h2>
             <p className="tape-window glyph-plate">
               <span className="tape-name">
-                {formatWindowRange(quote?.openAt, quote?.closeAt)}
+                {formatWindowRange(shownQuote?.openAt, shownQuote?.closeAt)}
               </span>
               {liveOn ? (
                 <span className="tape-live-flag">
@@ -792,7 +801,7 @@ function TapeRow({
           </div>
         </div>
         <div className="tape-head-tools">
-          <CloseClock closeAt={quote?.closeAt} />
+          <CloseClock closeAt={shownQuote?.closeAt} />
           <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
             {status}
           </p>
@@ -807,7 +816,7 @@ function TapeRow({
           <p className="tape-num" data-testid={`beat-value-${id}`}>
             {formatLive(id, beat || null)}
           </p>
-          <p className="mark-sub">{quote?.clock || '—'}</p>
+          <p className="mark-sub">{shownQuote?.clock || '—'}</p>
         </div>
         <div className="mark-now live-read glyph-plate" data-testid={`live-plate-${id}`}>
           <p className="mark-label">NOW</p>
@@ -858,8 +867,8 @@ function TapeRow({
         <div className="tape-cents">
           <p className="hud-label">UP / DOWN ¢</p>
           <p className="tape-ask" data-testid={`ask-${id}`}>
-            <span className="tone-up">UP {Number.isFinite(quote?.yesAsk) ? `${quote!.yesAsk}¢` : '—'}</span>
-            <span className="tone-down">DOWN {Number.isFinite(quote?.noAsk) ? `${quote!.noAsk}¢` : '—'}</span>
+            <span className="tone-up">UP {Number.isFinite(shownQuote?.yesAsk) ? `${shownQuote!.yesAsk}¢` : '—'}</span>
+            <span className="tone-down">DOWN {Number.isFinite(shownQuote?.noAsk) ? `${shownQuote!.noAsk}¢` : '—'}</span>
           </p>
         </div>
       </div>
@@ -869,11 +878,11 @@ function TapeRow({
         beat={beat}
         live={live}
         displayLive={shownLive}
-        points={quote?.points}
+        points={shownQuote?.points}
         clock={clock}
         chart={chart}
-        openAt={quote?.openAt}
-        closeAt={quote?.closeAt}
+        openAt={shownQuote?.openAt}
+        closeAt={shownQuote?.closeAt}
         onChart={onChart}
       />
 
