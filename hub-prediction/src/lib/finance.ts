@@ -279,28 +279,32 @@ export function bookRealizedPnl(state: FinanceState) {
   ) / 100
 }
 
+export function hitFromMs(now = Date.now(), fromMs?: number) {
+  if (fromMs != null && Number.isFinite(Number(fromMs)) && Number(fromMs) > 0) return Number(fromMs)
+  return now - 24 * 60 * 60 * 1000
+}
+
 export function last24hBets(
   state: FinanceState,
-  hits: { tapes: Record<TapeId, { w: number; l: number }>; events?: Array<{ tape: TapeId; at: number; spent?: number; pnl?: number }> },
+  hits: {
+    tapes: Record<TapeId, { w: number; l: number }>
+    events?: Array<{ tape: TapeId; ticker?: string; win?: boolean; at: number; spent?: number; pnl?: number }>
+  },
   now = Date.now(),
   tapes: readonly TapeId[] = TAPE_IDS,
   fromMs?: number,
 ) {
   const allow = new Set(hydrateBetsFilter([...tapes]))
-  const from = Number.isFinite(fromMs) ? Number(fromMs) : now - 24 * 60 * 60 * 1000
+  const from = hitFromMs(now, fromMs)
   const recent = state.bets.filter((b) => allow.has(b.tape) && betStamp(b) >= from)
   const settled = recent.filter((b) => b.status === 'settled')
   const liveRecent = recent.filter((b) => isLiveBet(b))
   const liveSettled = settled.filter((b) => isLiveBet(b))
   const open = recent.filter((b) => b.status === 'open').length
-  const bookW = settled.filter((b) => (b.pnl ?? 0) > 0).length
-  const bookL = settled.filter((b) => (b.pnl ?? 0) < 0).length
   const selected = TAPE_IDS.filter((id) => allow.has(id))
-  const hitW = selected.reduce((s, id) => s + (hits.tapes[id]?.w ?? 0), 0)
-  const hitL = selected.reduce((s, id) => s + (hits.tapes[id]?.l ?? 0), 0)
-  const lifetime = fromMs != null
-  const w = lifetime && recent.length > 0 ? bookW : hitW + hitL > 0 ? hitW : bookW
-  const l = lifetime && recent.length > 0 ? bookL : hitW + hitL > 0 ? hitL : bookL
+  const cells = selected.map((id) => tapeHitCell(id, hits, state.bets, now, from))
+  const w = cells.reduce((s, c) => s + c.w, 0)
+  const l = cells.reduce((s, c) => s + c.l, 0)
   const ev = (hits.events ?? []).filter((e) => allow.has(e.tape) && e.at >= from)
   const placed =
     recent.length > 0
@@ -315,12 +319,25 @@ export function last24hBets(
   return { placed, w, l, pnl, open, pct }
 }
 
-/** Tape chip W–L: latch first, else last-24h booked rows so a miss does not paint 0. */
+function betWon(b: { pnl: number | null; win?: boolean }): boolean | null {
+  if (b.pnl != null && b.pnl !== 0) return b.pnl > 0
+  if (typeof b.win === 'boolean') return b.win
+  return null
+}
+
+/**
+ * Per-tape Hit percent. Union latch events + booked settled in the same window as the bets strip.
+ * A stale 0W–2L latch must not hide a fuller Kalshi book.
+ */
 export function tapeHitCell(
   id: TapeId,
-  hits: { tapes: Record<TapeId, { w: number; l: number }> },
+  hits: {
+    tapes: Record<TapeId, { w: number; l: number }>
+    events?: Array<{ tape: TapeId; ticker?: string; win?: boolean; at: number; pnl?: number }>
+  },
   bets: Array<{
     tape: TapeId
+    ticker?: string
     status: 'open' | 'settled'
     pnl: number | null
     settledAt?: number | null
@@ -328,26 +345,58 @@ export function tapeHitCell(
     filledAt?: number
   }>,
   now = Date.now(),
+  fromMs?: number,
 ) {
-  const cell = hits.tapes[id] ?? { w: 0, l: 0 }
-  if (cell.w + cell.l > 0) return cell
-  const from = now - 24 * 60 * 60 * 1000
-  const settled = bets.filter(
-    (b) => b.tape === id && b.status === 'settled' && b.pnl != null && betStamp(b) >= from,
-  )
-  return {
-    w: settled.filter((b) => (b.pnl ?? 0) > 0).length,
-    l: settled.filter((b) => (b.pnl ?? 0) < 0).length,
+  const from = hitFromMs(now, fromMs)
+  const byTicker = new Map<string, boolean>()
+  for (const e of hits.events ?? []) {
+    if (e.tape !== id || !e.ticker || e.at < from) continue
+    if (typeof e.win === 'boolean') byTicker.set(e.ticker, e.win)
+    else if (e.pnl != null && e.pnl !== 0) byTicker.set(e.ticker, e.pnl > 0)
   }
+  for (const b of bets) {
+    if (b.tape !== id || b.status !== 'settled' || betStamp(b) < from) continue
+    const ticker = typeof b.ticker === 'string' && b.ticker ? b.ticker : ''
+    if (!ticker || byTicker.has(ticker)) continue
+    const won = betWon(b)
+    if (won == null) continue
+    byTicker.set(ticker, won)
+  }
+  let w = 0
+  let l = 0
+  for (const win of byTicker.values()) {
+    if (win) w += 1
+    else l += 1
+  }
+  const unionN = w + l
+  const cell = hits.tapes[id] ?? { w: 0, l: 0 }
+  const cellN = cell.w + cell.l
+  if (unionN === 0 && cellN > 0) return cell
+  if (!(hits.events && hits.events.length) && cellN > unionN) return cell
+  return { w, l }
+}
+
+function dayStartMs(now: number) {
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  return start.getTime()
 }
 
 export function dailyRealizedPnl(state: FinanceState, now = Date.now()) {
-  const start = new Date(now)
-  start.setHours(0, 0, 0, 0)
-  const from = start.getTime()
+  const from = dayStartMs(now)
   return Math.round(
     state.bets
       .filter((b) => isLiveBet(b) && b.status === 'settled' && b.settledAt != null && b.settledAt >= from && b.pnl != null)
+      .reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
+  ) / 100
+}
+
+/** Today’s desk-posted live P/L. Imported Kalshi history must not sit the bot. */
+export function deskDailyRealizedPnl(state: FinanceState, now = Date.now()) {
+  const from = dayStartMs(now)
+  return Math.round(
+    state.bets
+      .filter((b) => isDeskLiveBet(b) && b.status === 'settled' && b.settledAt != null && b.settledAt >= from && b.pnl != null)
       .reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
   ) / 100
 }
@@ -429,6 +478,36 @@ export function liveBotCall(opts: {
   return 'live'
 }
 
+/** Why this tape is sitting / paper / live — shown on the desk so Live cash ON is not silent. */
+export function tapeBotNote(opts: {
+  botOn: boolean
+  liveBets: boolean
+  liveCash: boolean
+  rehabPaper: boolean
+  hostCreds: boolean
+  tradingActive: boolean
+  inArm: boolean
+  askOk: boolean
+  lean: 'up' | 'down' | 'sit'
+  hitOk: boolean
+  armFromMin: number
+  armToMin: number
+}) {
+  if (!opts.botOn) return 'Bot OFF'
+  if (opts.rehabPaper) return 'Live cash HALT — paper rehab, not sent to Kalshi'
+  if (opts.tradingActive === false) return 'Kalshi window closed — sit'
+  if (!opts.inArm) return `Sit — arm ${opts.armFromMin}–${opts.armToMin} min`
+  if (opts.lean === 'sit') return 'Sit — no through / hug'
+  if (!opts.askOk) return 'Sit — ask out of band'
+  if (!opts.hitOk) return `Sit — under ${HIT_FLOOR}% goal`
+  if (opts.liveCash && !opts.liveBets) {
+    return 'Live cash ON · master Live OFF · paper only, not sent to Kalshi'
+  }
+  if (!opts.liveCash) return 'PAPER — Live cash OFF, not sent to Kalshi'
+  if (!opts.hostCreds) return 'Kalshi keys missing on this PC — cannot POST'
+  return 'LIVE — next through posts to Kalshi'
+}
+
 /** Sit when the tape is under the 83% goal after enough settled results. */
 export function hitFloorGate(w: number, l: number): Gate {
   const n = Math.max(0, Math.round(w) + Math.round(l))
@@ -480,7 +559,7 @@ export function liveSendGate(
   if (!askAllowedByGold(opts.tape, opts.ask)) {
     return { ok: false, reason: `Ask ${opts.ask}¢ blocked (≥${ASK_CAP} unless gold lock)` }
   }
-  const daily = dailyRealizedPnl(state, now)
+  const daily = deskDailyRealizedPnl(state, now)
   if (daily <= DAILY_PNL_FLOOR_PAPER) {
     return { ok: false, reason: `Daily P/L floor ${DAILY_PNL_FLOOR_PAPER} — KILL / sit` }
   }
@@ -574,7 +653,7 @@ export function mergeSettlementEventsToBook(
       spent: e.spent ?? 0,
       orderId: `settled-${e.ticker}`.slice(0, 48),
       status: 'settled',
-      pnl: e.pnl ?? (e.win ? 0 : 0),
+      pnl: e.pnl ?? (e.win ? 0.01 : -0.01),
       filledAt: e.at,
       settledAt: e.at,
       kind: 'live',
@@ -717,7 +796,7 @@ export function betsFromKalshiSettlements(raw: unknown, fromMs = 0, now = Date.n
     spent: e.spent ?? 0,
     orderId: `settled-${e.ticker}`.slice(0, 48),
     status: 'settled' as const,
-    pnl: e.pnl ?? (e.win ? 0 : 0),
+    pnl: e.pnl ?? (e.win ? 0.01 : -0.01),
     filledAt: e.at,
     settledAt: e.at,
     kind: 'live' as const,
@@ -855,7 +934,7 @@ export function isRecipeRetune(patch: Partial<TapeRecipe>) {
 /** Session is chasing if KILL is on or today's booked P/L is red. */
 export function chasingLosses(state: FinanceState, now = Date.now()) {
   if (state.killed) return true
-  return dailyRealizedPnl(state, now) < 0
+  return deskDailyRealizedPnl(state, now) < 0
 }
 
 export function recipeRetuneGate(state: FinanceState, patch: Partial<TapeRecipe>, now = Date.now()): Gate {

@@ -5,10 +5,12 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const PUBLIC_PORT = Number(process.env.DESK_PUBLIC_PORT || 8080)
-/** Old Vite port. Always answers so a Chrome refresh on 18080 cannot refuse. */
+/** Old Vite ports. Always answer so Chrome refresh cannot refuse. */
 export const ALIAS_PORT = Number(process.env.DESK_ALIAS_PORT || 18080)
-/** Inner Vite only. The browser stays on 8080. */
-export const VITE_PORT = Number(process.env.DESK_VITE_PORT || 18081)
+export const ALIAS_PORT_B = Number(process.env.DESK_ALIAS_PORT_B || 18081)
+export const ALIAS_PORTS = [ALIAS_PORT, ALIAS_PORT_B]
+/** Inner Vite only. Soft FAIL browser on this port. */
+export const VITE_PORT = Number(process.env.DESK_VITE_PORT || 18082)
 const DIR = path.dirname(fileURLToPath(import.meta.url))
 
 export function splashHtml() {
@@ -193,15 +195,17 @@ async function bindPublic(create, port) {
 
 export async function startDeskHost() {
   const server = await bindPublic(() => createDeskHost(), PUBLIC_PORT)
-  try {
-    await bindPublic(() => createAliasHost(), ALIAS_PORT)
-    console.log(`[desk-host] ${ALIAS_PORT} redirects to port ${PUBLIC_PORT} on the same host`)
-  } catch (e) {
-    console.error(`[desk-host] could not bind ${ALIAS_PORT} (old Vite still there?) — 8080 still up`, e)
+  for (const alias of ALIAS_PORTS) {
+    try {
+      await bindPublic(() => createAliasHost({ aliasPort: alias }), alias)
+      console.log(`[desk-host] ${alias} redirects to port ${PUBLIC_PORT} on the same host`)
+    } catch (e) {
+      console.error(`[desk-host] could not bind ${alias} — 8080 still up`, e)
+    }
   }
   console.log(`[desk-host] This PC: http://127.0.0.1:${PUBLIC_PORT}`)
   console.log(`[desk-host] Our tunnel (phone / iPad / other PC): http://10.77.0.1:${PUBLIC_PORT}`)
-  console.log('[desk-host] Leave this window open. Browser refresh cannot refuse 8080 or 18080.')
+  console.log('[desk-host] Leave this window open. Browser refresh cannot refuse 8080, 18080, or 18081.')
   process.on('uncaughtException', (e) => {
     console.error('[desk-host] kept 8080 alive after error', e)
   })

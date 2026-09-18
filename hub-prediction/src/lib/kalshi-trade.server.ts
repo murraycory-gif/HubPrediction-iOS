@@ -144,6 +144,25 @@ export async function fetchBalance(keyId: string, pem: string) {
   return { cash: cashFromBalancePayload(json), raw: json }
 }
 
+export function rowsFromKalshiPage(json: unknown, listKeys: string[]) {
+  if (!json || typeof json !== 'object') return { rows: [] as unknown[], cursor: '' }
+  const o = json as Record<string, unknown>
+  const nested = o.data && typeof o.data === 'object' ? (o.data as Record<string, unknown>) : null
+  let rows: unknown[] = []
+  for (const key of listKeys) {
+    if (Array.isArray(o[key])) {
+      rows = o[key] as unknown[]
+      break
+    }
+    if (nested && Array.isArray(nested[key])) {
+      rows = nested[key] as unknown[]
+      break
+    }
+  }
+  const cursor = o.cursor ?? nested?.cursor ?? ''
+  return { rows, cursor: cursor ? String(cursor) : '' }
+}
+
 async function paginatedList(
   keyId: string,
   pem: string,
@@ -159,15 +178,10 @@ async function paginatedList(
     const q = `limit=200${extraQuery}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
     const json = (await signed(keyId, pem, 'GET', `${path}?${q}`)) as Record<string, unknown>
     last = json
-    for (const key of listKeys) {
-      if (Array.isArray(json?.[key])) {
-        rows.push(...(json[key] as unknown[]))
-        break
-      }
-    }
-    const next = json?.cursor
-    if (!next) break
-    cursor = String(next)
+    const page = rowsFromKalshiPage(json, listKeys)
+    rows.push(...page.rows)
+    if (!page.cursor) break
+    cursor = page.cursor
   }
   return { last, rows }
 }

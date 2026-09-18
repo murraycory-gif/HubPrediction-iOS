@@ -343,8 +343,8 @@ export async function loadDeskBoard(clocks: Record<TapeId, TapeClock> = defaultC
   const key = clocksKey(clocks)
   const rolling = boardNeedsRollover(lastBoard, now)
   const freshMs = rolling ? ROLLOVER_FRESH_MS : QUOTE_FRESH_MS
-  if (lastBoard && lastClocksKey === key && now - lastBoardAt < freshMs) return lastBoard
-  if (boardInflight && lastClocksKey === key) return boardInflight
+  if (!rolling && lastBoard && lastClocksKey === key && now - lastBoardAt < freshMs) return lastBoard
+  if (!rolling && boardInflight && lastClocksKey === key) return boardInflight
 
   const job = (async () => {
     const rows = await Promise.all(
@@ -365,7 +365,7 @@ export async function loadDeskBoard(clocks: Record<TapeId, TapeClock> = defaultC
     }
     latched = latchDeskBoard({ tapes, fetchedAt: Date.now() }, lastBoard) ?? latched
     lastBoard = latched
-    lastBoardAt = Date.now()
+    lastBoardAt = boardNeedsRollover(latched, Date.now()) ? 0 : Date.now()
     lastClocksKey = key
     return lastBoard
   })()

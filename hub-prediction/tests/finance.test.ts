@@ -528,6 +528,37 @@ describe('finance Soft KEEP', () => {
       w: 3,
       l: 1,
     })
+    const staleGld = { tapes: { ...emptyLatch.tapes, gld: { w: 0, l: 2 } }, events: [] as Array<{ tape: 'gld'; ticker: string; win: boolean; at: number }> }
+    const gldBook = [
+      {
+        tape: 'gld' as const,
+        ticker: 'KXGOLD15M-A',
+        status: 'settled' as const,
+        pnl: 0.6,
+        settledAt: now,
+        closeAt: now,
+        filledAt: now,
+      },
+      {
+        tape: 'gld' as const,
+        ticker: 'KXGOLD15M-B',
+        status: 'settled' as const,
+        pnl: -0.4,
+        settledAt: now,
+        closeAt: now,
+        filledAt: now,
+      },
+      {
+        tape: 'gld' as const,
+        ticker: 'KXGOLD15M-C',
+        status: 'settled' as const,
+        pnl: 0.55,
+        settledAt: now,
+        closeAt: now,
+        filledAt: now,
+      },
+    ]
+    expect(tapeHitCell('gld', staleGld, gldBook, now)).toEqual({ w: 2, l: 1 })
     expect(betKind({ betId: 'bet_ord-real-12345', orderId: 'ord-real-12345', kind: 'live' })).toBe('live')
     const importedCash = cashAfterEachBet(
       [

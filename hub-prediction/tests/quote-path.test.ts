@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadDeskBoard, loadLivePrints, pickOpen, resetDeskBoardForTests } from '../src/lib/kalshi.server'
-import { BOARD_CLOSED_MS, BOARD_STRUCTURE_MS, LIVE_TRAIL_DOTS, boardPollMs, holdLiveEvents, latchDeskBoard, liveRangeFromCharts, loadHeldBoard, mergeLiveOntoBoard, nextBoardRolloverWait, saveHeldBoard, slimLivePoints } from '../src/lib/tapes'
+import { BOARD_CLOSED_MS, BOARD_STRUCTURE_MS, LIVE_TRAIL_DOTS, boardPollMs, holdLiveEvents, holdTapeQuote, latchDeskBoard, liveRangeFromCharts, loadHeldBoard, mergeLiveOntoBoard, nextBoardRolloverWait, saveHeldBoard, slimLivePoints } from '../src/lib/tapes'
 import type { DeskBoard } from '../src/lib/types'
 
 afterEach(() => {
@@ -554,6 +554,22 @@ describe('desk never blanks on a Kalshi miss', () => {
       ...partial,
     }
   }
+
+  it('latchDeskBoard drops a finished run and takes the next ticker — Soft FAIL sit on dead clock', () => {
+    const now = Date.now()
+    const dead = q({ ticker: 'KXBTC15M-DEAD', closeAt: now - 1000, tradingActive: true, clock: '9:00 PM' })
+    const next = q({ ticker: 'KXBTC15M-NEXT', closeAt: now + 15 * 60_000, tradingActive: true, clock: '9:15 PM', beat: 81200 })
+    const prev: DeskBoard = { fetchedAt: 1, tapes: { btc: dead, ng: null, cu: null, gld: null } }
+    const hole: DeskBoard = { fetchedAt: 2, tapes: { btc: null, ng: null, cu: null, gld: null } }
+    const heldDead = latchDeskBoard(hole, prev, now)
+    expect(heldDead?.tapes.btc?.ticker).toBe('KXBTC15M-DEAD')
+    expect(heldDead?.tapes.btc?.tradingActive).toBe(false)
+    const rolled = latchDeskBoard({ fetchedAt: 3, tapes: { btc: next, ng: null, cu: null, gld: null } }, prev, now)
+    expect(rolled?.tapes.btc?.ticker).toBe('KXBTC15M-NEXT')
+    expect(rolled?.tapes.btc?.tradingActive).toBe(true)
+    expect(holdTapeQuote(null, dead, now)?.tradingActive).toBe(false)
+    expect(holdTapeQuote(next, dead, now)?.ticker).toBe('KXBTC15M-NEXT')
+  })
 
   it('latchDeskBoard keeps the last good clock when the next poll is holes', () => {
     const prev: DeskBoard = {

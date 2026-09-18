@@ -9,6 +9,7 @@ import {
   fetchDeposits,
   loadKalshiHostCreds,
   resetKalshiHostCredsForTests,
+  rowsFromKalshiPage,
   signRequestPath,
 } from '../src/lib/kalshi-trade.server'
 import { eventsFromKalshiSettlements, hydrateCashFromKalshi, hydrateSettings } from '../src/lib/tapes'
@@ -153,6 +154,12 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
     expect(strip.placed).toBeCloseTo(0.69)
     expect(strip.pnl).toBeCloseTo(0.31)
     expect(eventsFromKalshiSettlements({ settlements: [] })).toEqual([])
+    const nested = rowsFromKalshiPage(
+      { data: { settlements: [{ ticker: 'KXGOLD15M-NEST' }], cursor: 'next-1' } },
+      ['settlements'],
+    )
+    expect(nested.rows).toHaveLength(1)
+    expect(nested.cursor).toBe('next-1')
   })
 
   it('server fns keep PEM on the host — Soft FAIL send to the browser', async () => {

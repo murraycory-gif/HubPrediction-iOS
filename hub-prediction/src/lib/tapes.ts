@@ -204,16 +204,48 @@ export function quoteHasClock(q: TapeQuote | null | undefined) {
   return Boolean(q && q.ticker && (Number(q.beat) > 0 || (q.live != null && q.live > 0) || Number(q.closeAt) > 0))
 }
 
-/** Never publish a hole. A miss keeps the last good clock so the desk does not blank. */
-export function latchDeskBoard(incoming: DeskBoard | null | undefined, prev: DeskBoard | null | undefined): DeskBoard | null {
-  if (!incoming) return prev ?? null
-  if (!prev) return incoming
+/** Open clock only. Soft FAIL holding a finished run as if it were live. */
+export function quoteIsLiveClock(q: TapeQuote | null | undefined, now = Date.now()) {
+  if (!quoteHasClock(q) || !q) return false
+  if (q.tradingActive === false) return false
+  if (Number(q.closeAt) > 0 && Number(q.closeAt) <= now) return false
+  return true
+}
+
+export function expireClosedQuote<T extends TapeQuote | null | undefined>(q: T, now = Date.now()): T {
+  if (!q || quoteIsLiveClock(q, now) || q.tradingActive === false) return q
+  return { ...q, tradingActive: false }
+}
+
+export function expireClosedBoard(board: DeskBoard, now = Date.now()): DeskBoard {
+  const tapes = { ...board.tapes }
+  let changed = false
+  for (const id of TAPE_IDS) {
+    const next = expireClosedQuote(tapes[id], now)
+    if (next !== tapes[id]) {
+      tapes[id] = next
+      changed = true
+    }
+  }
+  return changed ? { ...board, tapes } : board
+}
+
+/** Hold only an OPEN clock across a hole. A closed run never blocks the next ticker. */
+export function latchDeskBoard(
+  incoming: DeskBoard | null | undefined,
+  prev: DeskBoard | null | undefined,
+  now = Date.now(),
+): DeskBoard | null {
+  if (!incoming) return prev ? expireClosedBoard(prev, now) : null
+  if (!prev) return expireClosedBoard(incoming, now)
   const tapes = { ...incoming.tapes }
   let changed = false
   for (const id of TAPE_IDS) {
     const next = tapes[id]
     const hold = prev.tapes[id]
-    if (quoteHasClock(next)) {
+    const nextLive = quoteIsLiveClock(next, now)
+    const holdLive = quoteIsLiveClock(hold, now)
+    if (nextLive) {
       if (hold && hold.ticker === next!.ticker && (next!.live == null || !next!.points.length)) {
         tapes[id] = {
           ...next!,
@@ -225,13 +257,42 @@ export function latchDeskBoard(incoming: DeskBoard | null | undefined, prev: Des
       }
       continue
     }
-    if (quoteHasClock(hold)) {
+    if (next && quoteHasClock(next) && next.ticker && next.ticker !== hold?.ticker) {
+      tapes[id] = expireClosedQuote(next, now)
+      changed = true
+      continue
+    }
+    if (holdLive && !quoteHasClock(next)) {
       tapes[id] = hold
+      changed = true
+      continue
+    }
+    if (hold && !holdLive) {
+      tapes[id] = next && quoteHasClock(next) ? expireClosedQuote(next, now) : expireClosedQuote(hold, now)
+      changed = true
+    } else if (next && quoteHasClock(next) && !nextLive) {
+      tapes[id] = expireClosedQuote(next, now)
       changed = true
     }
   }
-  if (!changed) return incoming
-  return { ...incoming, tapes, fetchedAt: Math.max(incoming.fetchedAt || 0, prev.fetchedAt || 0) }
+  return expireClosedBoard(
+    { ...incoming, tapes, fetchedAt: Math.max(incoming.fetchedAt || 0, prev.fetchedAt || 0) },
+    now,
+  )
+}
+
+/** Tape row hold. Soft FAIL showing a dead clock after the run ends. */
+export function holdTapeQuote(
+  incoming: TapeQuote | null | undefined,
+  held: TapeQuote | null | undefined,
+  now = Date.now(),
+): TapeQuote | null {
+  if (quoteIsLiveClock(incoming, now)) return incoming ?? null
+  if (incoming && incoming.ticker && incoming.ticker !== held?.ticker) return expireClosedQuote(incoming, now) ?? null
+  if (quoteIsLiveClock(held, now) && !quoteHasClock(incoming)) return held ?? null
+  if (incoming && quoteHasClock(incoming)) return expireClosedQuote(incoming, now) ?? null
+  if (held) return expireClosedQuote(held, now) ?? null
+  return incoming ?? held ?? null
 }
 
 export const BOARD_HOLD_KEY = 'hub.desk.board.hold.v1'
@@ -247,7 +308,7 @@ export function loadHeldBoard(): DeskBoard | null {
     const tapes = {} as DeskBoard['tapes']
     for (const id of TAPE_IDS) tapes[id] = quoteHasClock(o.tapes[id]) ? o.tapes[id] : null
     if (!TAPE_IDS.some((id) => tapes[id])) return null
-    return { tapes, fetchedAt: Number(o.fetchedAt) || 0 }
+    return expireClosedBoard({ tapes, fetchedAt: Number(o.fetchedAt) || 0 })
   } catch {
     return null
   }
@@ -293,6 +354,7 @@ export function mergeLiveOntoBoard(
     const q = tapes[id]
     const p = prints.tapes[id]
     if (!q || !p || !p.eventTicker || p.eventTicker !== q.eventTicker) continue
+    if (!quoteIsLiveClock(q, p.fetchedAt || Date.now())) continue
     const live = p.live ?? q.live
     const liveSource = p.liveSource ?? q.liveSource
     if (live === q.live && liveSource === q.liveSource && !p.points.length) continue
@@ -769,13 +831,13 @@ export function eventsFromKalshiSettlements(raw: unknown, now = Date.now(), minA
   const out: HitEvent[] = []
   for (const s of list) {
     if (!s || typeof s !== 'object') continue
-    const ticker = String(s.ticker ?? '')
+    const ticker = String(s.ticker ?? s.market_ticker ?? '')
     const tape = seriesToTape(ticker)
     if (!tape) continue
     const at = settlementAt(s, now)
     if (at < minAt) continue
-    const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? num(s.yes_total_cost_fp) ?? 0
-    const no = num(s.no_count_fp) ?? num(s.no_count) ?? num(s.no_total_cost_fp) ?? 0
+    const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? num(s.yes_contracts) ?? num(s.yes_total_cost_fp) ?? 0
+    const no = num(s.no_count_fp) ?? num(s.no_count) ?? num(s.no_contracts) ?? num(s.no_total_cost_fp) ?? 0
     const result = String(s.market_result ?? s.result ?? '').toLowerCase()
     const revenueDollars = num(s.revenue_dollars) ?? num(s.revenue_fp)
     const revenue =
@@ -799,8 +861,14 @@ export function eventsFromKalshiSettlements(raw: unknown, now = Date.now(), minA
     if (yes > 0 && no <= 0) win = result === 'yes'
     else if (no > 0 && yes <= 0) win = result === 'no'
     else win = revenue > spent || (result === 'yes' && yesCost > noCost) || (result === 'no' && noCost > yesCost)
-    const pnl = spent > 0 || revenue > 0 ? Math.round((revenue - spent) * 100) / 100 : undefined
-    out.push({ tape, ticker, win, at, ...(spent > 0 ? { spent } : {}), ...(pnl != null ? { pnl } : {}) })
+    const rawPnl = spent > 0 || revenue > 0 ? Math.round((revenue - spent) * 100) / 100 : null
+    const pnl =
+      rawPnl != null && rawPnl !== 0
+        ? rawPnl
+        : win
+          ? Math.round(Math.max(spent > 0 ? 1 - spent : 0.01, 0.01) * 100) / 100
+          : -Math.round(Math.max(spent, 0.01) * 100) / 100
+    out.push({ tape, ticker, win, at, ...(spent > 0 ? { spent } : {}), pnl })
   }
   return out
 }

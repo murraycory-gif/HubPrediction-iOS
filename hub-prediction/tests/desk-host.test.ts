@@ -123,4 +123,27 @@ describe('desk-host Soft FAIL refresh refused', () => {
     expect(loc).toBe('http://10.77.0.1:8080/')
     server.close()
   })
+
+  it('redirects a 18081 refresh to 8080 — Soft FAIL CONNECTION_REFUSED', async () => {
+    const { server } = createAliasHost({ publicPort: 8080, aliasPort: 0 })
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, '127.0.0.1', () => resolve())
+      server.once('error', reject)
+    })
+    const addr = server.address()
+    const port = typeof addr === 'object' && addr ? addr.port : 0
+    const loc = await new Promise<string>((resolve, reject) => {
+      const req = httpRequest(
+        { hostname: '127.0.0.1', port, path: '/', headers: { host: '127.0.0.1:18081' } },
+        (res) => {
+          resolve(String(res.headers.location || ''))
+          res.resume()
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(loc).toBe('http://127.0.0.1:8080/')
+    server.close()
+  })
 })

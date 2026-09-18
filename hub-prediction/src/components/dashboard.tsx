@@ -17,6 +17,8 @@ import {
   latchDeskBoard,
   loadHeldBoard,
   quoteHasClock,
+  quoteIsLiveClock,
+  holdTapeQuote,
   saveHeldBoard,
   mergeLiveOntoBoard,
   askInBand,
@@ -53,7 +55,6 @@ import {
   tabIsOpen,
   tapeLean,
   ticketStatus,
-  ttlFromHits,
   upsertTicket,
   weThinkPair,
   type DeskSettings,
@@ -79,6 +80,7 @@ import {
   HIT_FLOOR,
   last24hBets,
   tapeHitCell,
+  tapeBotNote,
   liveBotCall,
   liveArmGate,
   mergeKalshiHistoryToBook,
@@ -126,7 +128,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const next = hydrateCashFromKalshi(r, loadCash())
     setCash(next.cash)
     setHits(next.hits)
-    if (r.hostCreds === true) setHostCreds(true)
+    setHostCreds(r.hostCreds === true)
     if (r.settlements != null || r.fills != null || r.positions != null) {
       setBook((prev) =>
         mergeKalshiHistoryToBook(prev, {
@@ -210,6 +212,18 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     }, wait)
     return () => window.clearTimeout(id)
   }, [rolloverKey, boardQuery.refetch])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = Date.now()
+      const board = heldBoard.current
+      if (!board) return
+      if (TAPE_IDS.some((tape) => board.tapes[tape] && !quoteIsLiveClock(board.tapes[tape], now))) {
+        void boardQuery.refetch()
+      }
+    }, 250)
+    return () => window.clearInterval(id)
+  }, [boardQuery.refetch])
 
   const liveEventKey = TAPE_IDS.map((id) => structure?.tapes[id]?.eventTicker ?? '').join('|')
   const liveEvents = useMemo(() => {
@@ -442,7 +456,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       }
       void sendLive(id, lean, quote)
     }
-  }, [board?.fetchedAt, settings, tickets, book.killed, hits, rehab])
+  }, [board, printsQuery.dataUpdatedAt, settings, tickets, book, hits, rehab])
 
   useEffect(() => {
     if (book.killed) return
@@ -460,8 +474,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     if (next.msg) setMsg(next.msg)
   }, [board, book.bets, book.killed, hits, rehab, settings])
 
-  const ttl = ttlFromHits(hits)
-  const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter, cash.firstDepositAt ?? 0)
+  const hitFrom = cash.firstDepositAt ?? 0
+  const ttl = last24hBets(book, hits, Date.now(), TAPE_IDS)
+  const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter, hitFrom)
   const cashByBet = useMemo(
     () => cashAfterEachBet(book.bets, cash.cash, cash.deposits),
     [book.bets, cash.cash, cash.deposits],
@@ -515,6 +530,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           />
           <Stat label="KALSHI CASH" value={formatCash(cash.cash)} testId="kalshi-cash" />
         </div>
+        <p className="settings-note" data-testid="kalshi-link">
+          {hostCreds
+            ? 'Kalshi keys on this PC — Live + Live cash + Bot ON posts to Kalshi.'
+            : 'Kalshi host keys missing on this PC — Live POST cannot run. Cash latch stays.'}
+        </p>
         {liveConfirm ? (
           <div className="live-banner" data-testid="live-banner">
             <p>
@@ -526,19 +546,29 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               className="chip-btn toggle-hot"
               data-testid="confirm-live"
               onClick={() => {
-                const gate = liveArmGate(book, {
-                  cash: cash.cash,
-                  deposits: cash.deposits,
-                  hasKeys: hostCreds,
-                })
-                setLiveConfirm(false)
-                if (!gate.ok) {
-                  setSettings(setLiveBets(settings, false))
-                  setMsg(gate.reason)
-                  return
-                }
-                setSettings(setLiveBets(settings, true))
-                setMsg('LIVE armed — confirm + keys + floor')
+                void (async () => {
+                  let keys = hostCreds
+                  try {
+                    const r = await getKalshiBalance()
+                    applyCashAndSettlements(r)
+                    keys = r.hostCreds === true
+                  } catch {
+                    /* host miss */
+                  }
+                  const gate = liveArmGate(book, {
+                    cash: cash.cash,
+                    deposits: cash.deposits,
+                    hasKeys: keys,
+                  })
+                  setLiveConfirm(false)
+                  if (!gate.ok) {
+                    setSettings(setLiveBets(settings, false))
+                    setMsg(gate.reason)
+                    return
+                  }
+                  setSettings(setLiveBets(settings, true))
+                  setMsg('LIVE armed — confirm + keys + floor')
+                })()
               }}
             >
               Confirm LIVE
@@ -558,13 +588,39 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               id={id}
               quote={board?.tapes[id] ?? null}
               ticket={ticketFor(tickets, id, board?.tapes[id]?.ticker)}
-              hits={tapeHitCell(id, hits, book.bets)}
+              hits={tapeHitCell(id, hits, book.bets, Date.now(), hitFrom)}
               recipe={settings.tapes[id]}
               clock={settings.clocks[id]}
               chart={settings.charts?.[id] ?? DEFAULT_CHART}
               liveBets={settings.liveBets}
               rehabPaper={isRehabPaper(rehab, id)}
               recipeLocked={chasingLosses(book) || book.killed}
+              botNote={(() => {
+                const quote = board?.tapes[id]
+                const recipe = settings.tapes[id]
+                const lean = tapeLean({
+                  id,
+                  live: quote?.live ?? null,
+                  beat: quote?.beat ?? 0,
+                  recipe,
+                })
+                const ask = lean === 'down' ? quote?.noAsk : quote?.yesAsk
+                const cell = tapeHitCell(id, hits, book.bets, Date.now(), hitFrom)
+                return tapeBotNote({
+                  botOn: recipe.botOn,
+                  liveBets: settings.liveBets,
+                  liveCash: recipe.liveOn,
+                  rehabPaper: isRehabPaper(rehab, id),
+                  hostCreds,
+                  tradingActive: quote?.tradingActive !== false,
+                  inArm: quote?.closeAt ? inArmWindow(recipe, quote.closeAt) : false,
+                  askOk: ask != null && askInBand(ask, recipe),
+                  lean,
+                  hitOk: hitFloorGate(cell.w, cell.l).ok,
+                  armFromMin: recipe.armFromMin,
+                  armToMin: recipe.armToMin,
+                })
+              })()}
               onClock={(next) => setSettings(setTapeClock(settings, id, next))}
               onChart={(next) => setSettings(setTapeChart(settings, id, next))}
               onTape={(patch) => {
@@ -764,6 +820,7 @@ function TapeRow({
   liveBets,
   rehabPaper,
   recipeLocked,
+  botNote,
   onClock,
   onChart,
   onTape,
@@ -778,6 +835,7 @@ function TapeRow({
   liveBets: boolean
   rehabPaper: boolean
   recipeLocked: boolean
+  botNote: string
   onClock: (clock: TapeClock) => void
   onChart: (chart: ChartRange) => void
   onTape: (patch: Partial<TapeRecipe>) => void
@@ -785,8 +843,8 @@ function TapeRow({
   const status = ticketStatus(ticket)
   const pct = hitPct(hits)
   const heldQuote = useRef(quote)
-  if (quoteHasClock(quote)) heldQuote.current = quote
-  const shownQuote = quoteHasClock(quote) ? quote : heldQuote.current
+  heldQuote.current = holdTapeQuote(quote, heldQuote.current)
+  const shownQuote = heldQuote.current
   const live = shownQuote?.live ?? null
   const shownLive = useSmoothedLive(live)
   const beat = shownQuote?.beat ?? 0
@@ -930,6 +988,11 @@ function TapeRow({
       {paper || ticket ? (
         <p className="tape-banner glyph-plate" data-testid={`banner-${id}`}>
           {ticket ? `${ticket.orderId.startsWith('deskfill') ? 'PAPER' : 'LIVE'} ${status}` : 'PAPER'}
+        </p>
+      ) : null}
+      {botNote ? (
+        <p className="settings-note" data-testid={`bot-note-${id}`}>
+          {botNote}
         </p>
       ) : null}
 
