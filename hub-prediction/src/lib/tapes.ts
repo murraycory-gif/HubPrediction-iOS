@@ -228,7 +228,7 @@ export function isRealOrderId(id: unknown): id is string {
   if (typeof id !== 'string') return false
   const s = id.trim()
   if (s.length < 8) return false
-  if (/^(arm|armed|paper|local|fake|pending|wait)$/i.test(s)) return false
+  if (/^(arm|armed|arming|paper|local|fake|pending|wait)/i.test(s)) return false
   return true
 }
 

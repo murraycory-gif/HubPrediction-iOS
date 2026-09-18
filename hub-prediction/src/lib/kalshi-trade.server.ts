@@ -73,7 +73,36 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-/** Legacy order API first, IOC, sticky client_order_id, 3–4 retries then release. */
+export const V2_EVENTS_ORDERS = `${ROOT}/portfolio/events/orders`
+
+function centsToPrice(cents: number) {
+  const n = Math.max(1, Math.min(99, Math.round(cents)))
+  return (n / 100).toFixed(4)
+}
+
+/** V2 events/orders body. DOWN is side ask at (1 − no_ask), never bid + no_ask. */
+export function v2EventsOrderBody(args: {
+  ticker: string
+  side: 'up' | 'down'
+  count: number
+  yesAsk: number
+  noAsk: number
+  clientOrderId: string
+}) {
+  const count = Math.max(1, Math.floor(args.count))
+  const price = args.side === 'up' ? centsToPrice(args.yesAsk) : (1 - Number(centsToPrice(args.noAsk))).toFixed(4)
+  return {
+    ticker: args.ticker,
+    side: args.side === 'up' ? 'bid' : 'ask',
+    count: String(count),
+    price,
+    time_in_force: 'immediate_or_cancel',
+    self_trade_prevention_type: 'taker_at_cross',
+    client_order_id: args.clientOrderId,
+  }
+}
+
+/** V2 events/orders primary. Sticky client_order_id on every retry. Soft FAIL Live send from tests. */
 export async function placeContract(args: {
   keyId: string
   pem: string
@@ -84,41 +113,23 @@ export async function placeContract(args: {
   noAsk: number
   clientOrderId?: string
 }) {
-  const count = Math.max(1, Math.floor(args.count))
-  const priceCents = args.side === 'up' ? args.yesAsk : args.noAsk
-  const price = (Math.max(1, Math.min(99, priceCents)) / 100).toFixed(4)
   const clientOrderId = args.clientOrderId || crypto.randomUUID()
-  const legacy = {
+  const body = v2EventsOrderBody({
     ticker: args.ticker,
-    side: args.side === 'up' ? 'yes' : 'no',
-    action: 'buy',
-    count,
-    type: 'limit',
-    time_in_force: 'immediate_or_cancel',
-    yes_price: args.side === 'up' ? priceCents : undefined,
-    no_price: args.side === 'down' ? priceCents : undefined,
-    client_order_id: clientOrderId,
-  }
-  const v2 = {
-    ticker: args.ticker,
-    side: 'bid',
-    count: String(count),
-    price,
-    time_in_force: 'immediate_or_cancel',
-    client_order_id: clientOrderId,
-  }
+    side: args.side,
+    count: args.count,
+    yesAsk: args.yesAsk,
+    noAsk: args.noAsk,
+    clientOrderId,
+  })
   let last: unknown = null
   for (let i = 0; i < 4; i++) {
     try {
-      return await signed(args.keyId, args.pem, 'POST', `${ROOT}/portfolio/orders`, legacy)
+      return await signed(args.keyId, args.pem, 'POST', V2_EVENTS_ORDERS, body)
     } catch (e) {
       last = e
       await sleep(200)
     }
   }
-  try {
-    return await signed(args.keyId, args.pem, 'POST', `${ROOT}/portfolio/events/orders`, v2)
-  } catch {
-    throw last instanceof Error ? last : new Error('IOC miss — clock released')
-  }
+  throw last instanceof Error ? last : new Error('IOC miss — clock released')
 }
