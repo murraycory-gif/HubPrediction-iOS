@@ -655,14 +655,14 @@ body {
 
 .bets-log-row {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: 4.2rem minmax(12.5rem, 2fr) 4.6rem 4.8rem 4.8rem 5rem 5.2rem 5.2rem;
   gap: 8px;
   align-items: center;
   padding: 6px 4px;
   font-family: var(--mono);
   font-size: 13px;
   color: var(--ink);
-  min-width: 52rem;
+  min-width: 58rem;
 }
 
 .bets-log-row > span {
@@ -672,11 +672,27 @@ body {
   white-space: nowrap;
 }
 
+.bets-log-row > span.bets-window {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: nowrap;
+}
+
 .bets-log-row > span:nth-child(6),
 .bets-log-row > span:nth-child(7),
 .bets-log-row > span:nth-child(8) {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.mode-live {
+  color: var(--up);
+  font-weight: 700;
+}
+
+.mode-paper {
+  color: #ff8a3d;
+  font-weight: 700;
 }
 
 .bets-log-head {

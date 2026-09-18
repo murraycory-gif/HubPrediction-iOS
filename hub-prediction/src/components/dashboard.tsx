@@ -910,17 +910,22 @@ function Bets24Strip({
               const settled = b.status === 'settled' && b.pnl != null
               const result = b.status === 'open' ? 'OPEN' : (b.pnl ?? 0) > 0 ? 'WIN' : (b.pnl ?? 0) < 0 ? 'LOSS' : 'PUSH'
               const rowPnl = settled ? (b.pnl as number) : null
-              const mode = betKind(b).toUpperCase()
+              const mode = betKind(b)
+              const windowLabel = formatBetWindow(b.closeAt, betWindowMs(b), b.filledAt)
               const cashUp = cashUpdateForBet(b)
               const cashText =
                 cashUp.kind === 'paper' ? 'N/A' : cashUp.kind === 'open' || cashUp.amount == null ? '—' : formatPnl(cashUp.amount)
               return (
-                <li key={b.betId} className="bets-log-row" data-kind={betKind(b)}>
+                <li key={b.betId} className="bets-log-row" data-kind={mode}>
                   <span>{b.tape.toUpperCase()}</span>
-                  <span data-testid="bets-window">{formatBetWindow(b.closeAt, betWindowMs(b), b.filledAt)}</span>
+                  <span data-testid="bets-window" className="bets-window" title={windowLabel}>
+                    {windowLabel}
+                  </span>
                   <span>{b.side.toUpperCase()}</span>
                   <span>{result}</span>
-                  <span data-testid="bets-mode">{mode}</span>
+                  <span data-testid="bets-mode" className={mode === 'live' ? 'mode-live' : 'mode-paper'}>
+                    {mode.toUpperCase()}
+                  </span>
                   <span>{formatCash(b.spent)}</span>
                   <span
                     className={rowPnl == null ? undefined : rowPnl > 0 ? 'tone-up' : rowPnl < 0 ? 'tone-down' : undefined}
