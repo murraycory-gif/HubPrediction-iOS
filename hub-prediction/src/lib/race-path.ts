@@ -27,7 +27,7 @@ export function mergeRaceTrail(
   if (live != null && Number.isFinite(live) && live > 0) {
     let lastT = 0
     for (const t of bag.keys()) if (t > lastT) lastT = t
-    if (now - lastT > 180 || bag.get(lastT) !== live) bag.set(now, live)
+    if (bag.get(lastT) !== live) bag.set(now, live)
   }
   return [...bag.entries()]
     .map(([t, px]) => ({ t, px }))
