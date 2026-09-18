@@ -117,6 +117,7 @@ export const LIVE_TRAIL_MS = 90_000
 export const LIVE_TRAIL_DOTS = 90
 export const BOARD_STRUCTURE_MS = 2500
 export const BOARD_ROLLOVER_MS = 350
+export const BOARD_CLOSED_MS = 200
 
 export function slimLivePoints(
   points: { t: number; px: number }[] | undefined,
@@ -142,11 +143,41 @@ export function boardPollMs(
   if (!board) return 400
   for (const id of TAPE_IDS) {
     const q = board.tapes[id]
-    if (!q) return BOARD_ROLLOVER_MS
-    if (q.tradingActive === false) return BOARD_ROLLOVER_MS
+    if (!q) return BOARD_CLOSED_MS
+    if (q.tradingActive === false) return BOARD_CLOSED_MS
+    if (Number(q.closeAt) > 0 && Number(q.closeAt) <= now) return BOARD_CLOSED_MS
     if (Number(q.closeAt) > 0 && Number(q.closeAt) - now <= 8000) return BOARD_ROLLOVER_MS
   }
   return BOARD_STRUCTURE_MS
+}
+
+/** Wait until the soonest close + 50ms, or a short nudge when a tape already sat. */
+export function nextBoardRolloverWait(
+  board:
+    | { tapes: Record<TapeId, { tradingActive?: boolean; closeAt?: number } | null> }
+    | null
+    | undefined,
+  now = Date.now(),
+) {
+  if (!board) return BOARD_CLOSED_MS
+  let next = Infinity
+  let dead = false
+  for (const id of TAPE_IDS) {
+    const q = board.tapes[id]
+    if (!q) {
+      dead = true
+      continue
+    }
+    const closeAt = Number(q.closeAt)
+    if (q.tradingActive === false || (closeAt > 0 && closeAt <= now)) {
+      dead = true
+      continue
+    }
+    if (closeAt > now && closeAt < next) next = closeAt
+  }
+  if (dead) return BOARD_CLOSED_MS
+  if (Number.isFinite(next) && next < Infinity) return Math.max(0, next - now + 50)
+  return null
 }
 
 export function liveRangeFromCharts(charts?: Partial<Record<TapeId, ChartRange>> | null) {
@@ -1027,7 +1058,7 @@ export function marketTradingActive(
   if (Number.isFinite(close) && now >= close) return false
   const open = Date.parse(String(m.open_time ?? ''))
   if (Number.isFinite(open) && now < open) return false
-  return status === 'open' || status === 'active' || m.status == null
+  return status === 'open' || status === 'active' || status === 'initialized' || m.status == null
 }
 
 export function askCentsFromMarket(m: Record<string, unknown>, yes: boolean) {

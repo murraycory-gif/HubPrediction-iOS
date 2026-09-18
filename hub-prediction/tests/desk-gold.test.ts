@@ -300,6 +300,30 @@ describe('marketTradingActive Soft KEEP open window', () => {
       ),
     ).toBe(false)
   })
+
+  it('is true for initialized once the window is open, false before it opens', () => {
+    const now = 1_700_000_000_000
+    expect(
+      marketTradingActive(
+        {
+          status: 'initialized',
+          open_time: new Date(now - 1_000).toISOString(),
+          close_time: new Date(now + 14 * 60_000).toISOString(),
+        },
+        now,
+      ),
+    ).toBe(true)
+    expect(
+      marketTradingActive(
+        {
+          status: 'initialized',
+          open_time: new Date(now + 60_000).toISOString(),
+          close_time: new Date(now + 16 * 60_000).toISOString(),
+        },
+        now,
+      ),
+    ).toBe(false)
+  })
 })
 
 describe('arm / pulse / send tab', () => {

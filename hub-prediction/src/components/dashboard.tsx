@@ -14,6 +14,7 @@ import {
   applyBetsFilter,
   boardEventTickers,
   boardPollMs,
+  nextBoardRolloverWait,
   mergeLiveOntoBoard,
   askInBand,
   cashGates,
@@ -165,6 +166,20 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   })
 
   const structure = boardQuery.data ?? seedBoard
+  const rolloverKey = TAPE_IDS.map((id) => {
+    const q = structure?.tapes[id]
+    return `${q?.ticker ?? ''}:${q?.closeAt ?? 0}:${q?.tradingActive === false ? 0 : 1}`
+  }).join('|')
+
+  useEffect(() => {
+    const wait = nextBoardRolloverWait(structure)
+    if (wait == null) return
+    const id = window.setTimeout(() => {
+      void boardQuery.refetch()
+    }, wait)
+    return () => window.clearTimeout(id)
+  }, [rolloverKey, boardQuery.refetch])
+
   const liveEventKey = TAPE_IDS.map((id) => structure?.tapes[id]?.eventTicker ?? '').join('|')
   const liveEvents = useMemo(() => boardEventTickers(structure), [liveEventKey])
 

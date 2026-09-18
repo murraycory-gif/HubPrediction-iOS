@@ -28,7 +28,8 @@ const TICKER_ABORT = 900
 const LIVE_ABORT = 1200
 const PRINT_ABORT = 600
 const PRINT_FRESH_MS = 80
-const LIST_LIMIT = 16
+const LIST_LIMIT = 32
+const NEAR_CLOSE_MS = 12_000
 
 type Market = Record<string, unknown>
 
@@ -117,6 +118,32 @@ function stillOpen(openAt: number, closeAt: number, now: number) {
   return openAt > 0 && closeAt > now && openAt <= now
 }
 
+function mergeMarkets(...lists: Market[][]) {
+  const bag = new Map<string, Market>()
+  for (const list of lists) {
+    for (const m of list ?? []) {
+      const ticker = String(m.ticker ?? '')
+      if (ticker) bag.set(ticker, m)
+    }
+  }
+  return [...bag.values()]
+}
+
+/** Open + unfiltered. Next 15m clocks are status=initialized and missing from status=open. */
+async function listSeriesMarkets(series: string, limit: number): Promise<Market[]> {
+  const openUrl = `${KALSHI}/markets?series_ticker=${series}&status=open&limit=${limit}`
+  const allUrl = `${KALSHI}/markets?series_ticker=${series}&limit=${limit}`
+  const [open, all] = await Promise.all([
+    fetchJson<{ markets?: Market[] }>(openUrl, LIST_ABORT).catch(() => ({ markets: [] as Market[] })),
+    fetchJson<{ markets?: Market[] }>(allUrl, LIST_ABORT).catch(() => ({ markets: [] as Market[] })),
+  ])
+  return mergeMarkets(open.markets ?? [], all.markets ?? [])
+}
+
+function listedWindow(m: Market | null, now: number) {
+  return Boolean(m && (isLiveWindow(m, now) || isUpcomingWindow(m, now)))
+}
+
 function clocksKey(clocks: Record<TapeId, TapeClock>) {
   return TAPE_IDS.map((id) => clocks[id]).join(',')
 }
@@ -128,17 +155,14 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
   const sameSeries = prev?.series === series
 
   const prevLive = Boolean(sameSeries && prev?.ticker && stillOpen(prev.openAt, prev.closeAt, now))
-  const nearClose = Boolean(prev?.closeAt && prev.closeAt - now <= 8000)
+  const nearClose = Boolean(prev?.closeAt && prev.closeAt - now <= NEAR_CLOSE_MS)
   const reuse = prevLive && !nearClose
   if (!reuse) {
-    const markets = await fetchJson<{ markets?: Market[] }>(
-      `${KALSHI}/markets?series_ticker=${series}&status=open&limit=${clock === '1h' ? 32 : LIST_LIMIT}`,
-      LIST_ABORT,
-    ).catch(() => ({ markets: [] as Market[] }))
-    listed = pickOpen(markets.markets ?? [], now, sameSeries ? prev?.live ?? prev?.beat : null)
+    const markets = await listSeriesMarkets(series, clock === '1h' ? 48 : LIST_LIMIT)
+    listed = pickOpen(markets, now, sameSeries ? prev?.live ?? prev?.beat : null)
   }
 
-  const listedLive = listed ? isLiveWindow(listed, now) || isUpcomingWindow(listed, now) : false
+  const listedLive = listedWindow(listed, now)
   const ticker = String((listedLive && listed?.ticker) || (prevLive ? prev?.ticker : '') || '')
   const eventTicker = String(
     (listedLive && listed?.event_ticker) || (prevLive ? prev?.eventTicker : '') || '',
@@ -157,13 +181,17 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
   ])
 
   const m = unwrapMarket(freshPayload, listed)
-  if (!m) return prev
+  if (!m) {
+    if (prevLive && prev) return prev
+    return sameSeries && prev ? { ...prev, tradingActive: false } : null
+  }
 
-  const yesAsk = askCentsFromMarket(m, true) || (prev?.ticker === ticker ? prev.yesAsk : 0)
-  const noAsk = askCentsFromMarket(m, false) || (prev?.ticker === ticker ? prev.noAsk : 0)
-  const beat = num(m.floor_strike) ?? num(m.strike_price) ?? prev?.beat ?? 0
-  const openAt = Date.parse(String(m.open_time ?? '')) || prev?.openAt || 0
-  const closeAt = Date.parse(String(m.close_time ?? '')) || prev?.closeAt || 0
+  const sameTicker = Boolean(prev && prev.ticker === ticker)
+  const yesAsk = askCentsFromMarket(m, true) || (sameTicker && prev ? prev.yesAsk : 0)
+  const noAsk = askCentsFromMarket(m, false) || (sameTicker && prev ? prev.noAsk : 0)
+  const beat = num(m.floor_strike) ?? num(m.strike_price) ?? (sameTicker && prev ? prev.beat : 0)
+  const openAt = Date.parse(String(m.open_time ?? '')) || (sameTicker && prev ? prev.openAt : 0)
+  const closeAt = Date.parse(String(m.close_time ?? '')) || (sameTicker && prev ? prev.closeAt : 0)
 
   let live: number | null = null
   let liveSource: TapeQuote['liveSource'] = null
@@ -281,7 +309,7 @@ function boardNeedsRollover(board: DeskBoard | null, now: number) {
     if (!q) return true
     if (q.tradingActive === false) return true
     if (!stillOpen(q.openAt, q.closeAt, now)) return true
-    return q.closeAt - now <= 8000
+    return q.closeAt - now <= NEAR_CLOSE_MS
   })
 }
 

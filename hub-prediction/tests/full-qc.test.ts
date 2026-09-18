@@ -57,6 +57,7 @@ describe('QC2 wires', () => {
     const dash = await readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8')
     expect(dash).toMatch(/refetchInterval:\s*\(q\)\s*=>\s*boardPollMs\(q\.state\.data\)/)
     expect(dash).toMatch(/boardPollMs/)
+    expect(dash).toMatch(/nextBoardRolloverWait/)
     expect(dash).toMatch(/queryFn:\s*\(\)\s*=>\s*getDeskBoard\(\{ data: \{ clocks: settings\.clocks \} \}\)/)
     expect(dash).toMatch(/getLivePrints/)
     expect(dash).toMatch(/mergeLiveOntoBoard/)
