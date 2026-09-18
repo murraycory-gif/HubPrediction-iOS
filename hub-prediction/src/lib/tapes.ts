@@ -110,6 +110,24 @@ export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
   return TAPE_SERIES[id][hydrateClock(clock)]
 }
 
+/** Fast poll near close / between runs so the next Kalshi clock latches without 00:00 WAIT lag. */
+export function boardPollMs(
+  board:
+    | { tapes: Record<TapeId, { tradingActive?: boolean; closeAt?: number } | null> }
+    | null
+    | undefined,
+  now = Date.now(),
+) {
+  if (!board) return 400
+  for (const id of TAPE_IDS) {
+    const q = board.tapes[id]
+    if (!q) return 350
+    if (q.tradingActive === false) return 350
+    if (Number(q.closeAt) > 0 && Number(q.closeAt) - now <= 8000) return 350
+  }
+  return 800
+}
+
 export function clockFromTicker(ticker: string): TapeClock | '' {
   const s = ticker.toUpperCase()
   if (s.includes('5M')) return '5m'

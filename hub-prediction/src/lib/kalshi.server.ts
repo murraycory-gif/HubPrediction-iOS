@@ -20,9 +20,11 @@ import type { DeskBoard, Point, Settled, TapeQuote } from './types'
 
 const KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
 const QUOTE_FRESH_MS = 350
-const LIST_ABORT = 1200
+const ROLLOVER_FRESH_MS = 150
+const LIST_ABORT = 1400
 const TICKER_ABORT = 900
 const LIVE_ABORT = 1200
+const LIST_LIMIT = 16
 
 type Market = Record<string, unknown>
 
@@ -52,15 +54,34 @@ function strikeOf(m: Market) {
   return num(m.floor_strike) ?? num(m.strike_price) ?? num(m.cap_strike)
 }
 
-function pickOpen(markets: Market[], now: number, hintPx?: number | null) {
+function marketOpenAt(m: Market) {
+  return Date.parse(String(m.open_time ?? ''))
+}
+
+function marketCloseAt(m: Market) {
+  return Date.parse(String(m.close_time ?? ''))
+}
+
+function isLiveWindow(m: Market, now: number) {
+  const open = marketOpenAt(m)
+  const close = marketCloseAt(m)
+  return Number.isFinite(open) && Number.isFinite(close) && open <= now && now < close
+}
+
+function isUpcomingWindow(m: Market, now: number) {
+  const open = marketOpenAt(m)
+  const close = marketCloseAt(m)
+  return Number.isFinite(open) && Number.isFinite(close) && open > now && close > open
+}
+
+/** Soft FAIL picking a just-closed clock when the next run is already listed. */
+export function pickOpen(markets: Market[], now: number, hintPx?: number | null) {
   const list = Array.isArray(markets) ? markets : []
-  const live = list.filter((m) => {
-    const open = Date.parse(String(m.open_time ?? ''))
-    const close = Date.parse(String(m.close_time ?? ''))
-    return Number.isFinite(open) && Number.isFinite(close) && open <= now && now < close
-  })
-  const pool = live.length ? live : list
-  if (hintPx != null && Number.isFinite(hintPx) && pool.length > 1) {
+  const live = list.filter((m) => isLiveWindow(m, now))
+  const upcoming = list.filter((m) => isUpcomingWindow(m, now)).sort((a, b) => marketOpenAt(a) - marketOpenAt(b))
+  const pool = live.length ? live : upcoming
+  if (!pool.length) return null
+  if (hintPx != null && Number.isFinite(hintPx) && pool.length > 1 && live.length) {
     pool.sort((a, b) => {
       const da = Math.abs((strikeOf(a) ?? hintPx) - hintPx)
       const db = Math.abs((strikeOf(b) ?? hintPx) - hintPx)
@@ -68,8 +89,11 @@ function pickOpen(markets: Market[], now: number, hintPx?: number | null) {
     })
     return pool[0] ?? null
   }
-  pool.sort((a, b) => Date.parse(String(a.close_time ?? '')) - Date.parse(String(b.close_time ?? '')))
-  return pool[0] ?? null
+  if (live.length) {
+    pool.sort((a, b) => marketCloseAt(a) - marketCloseAt(b))
+    return pool[0] ?? null
+  }
+  return upcoming[0] ?? null
 }
 
 function unwrapMarket(payload: unknown, fallback: Market | null): Market | null {
@@ -95,18 +119,23 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
   let listed: Market | null = null
   const sameSeries = prev?.series === series
 
-  const reuse = Boolean(sameSeries && prev?.ticker && stillOpen(prev.openAt, prev.closeAt, now))
+  const prevLive = Boolean(sameSeries && prev?.ticker && stillOpen(prev.openAt, prev.closeAt, now))
+  const nearClose = Boolean(prev?.closeAt && prev.closeAt - now <= 8000)
+  const reuse = prevLive && !nearClose
   if (!reuse) {
     const markets = await fetchJson<{ markets?: Market[] }>(
-      `${KALSHI}/markets?series_ticker=${series}&status=open&limit=${clock === '1h' ? 32 : 4}`,
+      `${KALSHI}/markets?series_ticker=${series}&status=open&limit=${clock === '1h' ? 32 : LIST_LIMIT}`,
       LIST_ABORT,
     ).catch(() => ({ markets: [] as Market[] }))
     listed = pickOpen(markets.markets ?? [], now, sameSeries ? prev?.live ?? prev?.beat : null)
   }
 
-  const ticker = String(listed?.ticker ?? (sameSeries ? prev?.ticker : '') ?? '')
-  const eventTicker = String(listed?.event_ticker ?? (sameSeries ? prev?.eventTicker : '') ?? '')
-  if (!ticker) return sameSeries ? prev : null
+  const listedLive = listed ? isLiveWindow(listed, now) || isUpcomingWindow(listed, now) : false
+  const ticker = String((listedLive && listed?.ticker) || (prevLive ? prev?.ticker : '') || '')
+  const eventTicker = String(
+    (listedLive && listed?.event_ticker) || (prevLive ? prev?.eventTicker : '') || '',
+  )
+  if (!ticker) return prevLive ? prev : sameSeries && prev ? { ...prev, tradingActive: false } : null
 
   const [freshPayload, livePayload] = await Promise.all([
     fetchJson<unknown>(`${KALSHI}/markets/${encodeURIComponent(ticker)}`, TICKER_ABORT).catch(() => null),
@@ -175,10 +204,23 @@ export function resetDeskBoardForTests() {
   lastClocksKey = ''
 }
 
+function boardNeedsRollover(board: DeskBoard | null, now: number) {
+  if (!board) return true
+  return TAPE_IDS.some((id) => {
+    const q = board.tapes[id]
+    if (!q) return true
+    if (q.tradingActive === false) return true
+    if (!stillOpen(q.openAt, q.closeAt, now)) return true
+    return q.closeAt - now <= 8000
+  })
+}
+
 export async function loadDeskBoard(clocks: Record<TapeId, TapeClock> = defaultClocks()): Promise<DeskBoard> {
   const now = Date.now()
   const key = clocksKey(clocks)
-  if (lastBoard && lastClocksKey === key && now - lastBoardAt < QUOTE_FRESH_MS) return lastBoard
+  const rolling = boardNeedsRollover(lastBoard, now)
+  const freshMs = rolling ? ROLLOVER_FRESH_MS : QUOTE_FRESH_MS
+  if (lastBoard && lastClocksKey === key && now - lastBoardAt < freshMs) return lastBoard
 
   const rows = await Promise.all(
     TAPE_IDS.map((id) => loadTape(id, now, hydrateClock(clocks[id])).catch(() => lastBoard?.tapes[id] ?? null)),

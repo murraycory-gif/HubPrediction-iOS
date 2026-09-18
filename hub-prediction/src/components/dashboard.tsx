@@ -11,6 +11,7 @@ import {
   defaultChartRanges,
   GOLD_RECIPES,
   applyBetsFilter,
+  boardPollMs,
   askInBand,
   cashGates,
   claimSend,
@@ -153,10 +154,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const boardQuery = useQuery({
     queryKey: ['desk-board', settings.clocks],
     queryFn: () => getDeskBoard({ data: { clocks: settings.clocks } }),
-    refetchInterval: 1000,
+    refetchInterval: (q) => boardPollMs(q.state.data),
+    refetchIntervalInBackground: true,
     placeholderData: keepPreviousData,
     initialData: seedBoard ?? undefined,
-    staleTime: 400,
+    staleTime: 200,
   })
 
   const board = boardQuery.data ?? seedBoard

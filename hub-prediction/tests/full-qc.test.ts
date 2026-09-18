@@ -55,7 +55,8 @@ describe('QC0 defaults Soft FAIL Live / live-cash ON', () => {
 describe('QC2 wires', () => {
   it('quotes poll + send require an OPEN tab — Soft FAIL hidden-tab-only', async () => {
     const dash = await readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8')
-    expect(dash).toMatch(/refetchInterval:\s*1000/)
+    expect(dash).toMatch(/refetchInterval:\s*\(q\)\s*=>\s*boardPollMs\(q\.state\.data\)/)
+    expect(dash).toMatch(/boardPollMs/)
     expect(dash).toMatch(/queryFn:\s*\(\)\s*=>\s*getDeskBoard\(\{ data: \{ clocks: settings\.clocks \} \}\)/)
     expect(dash).toMatch(/if \(!tabIsOpen\(\)\)/)
     expect(dash).toMatch(/if \(!board \|\| !tabIsOpen\(\) \|\| book\.killed\) return/)

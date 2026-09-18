@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadDeskBoard, resetDeskBoardForTests } from '../src/lib/kalshi.server'
+import { loadDeskBoard, pickOpen, resetDeskBoardForTests } from '../src/lib/kalshi.server'
+import { boardPollMs } from '../src/lib/tapes'
 
 afterEach(() => {
   resetDeskBoardForTests()
@@ -225,5 +226,61 @@ describe('one fast quote path Soft KEEP same ticker/second', () => {
     expect(calls.some((u) => u.includes('series_ticker=KXBTCD'))).toBe(true)
     expect(calls.some((u) => u.includes('range=1h'))).toBe(true)
     expect(calls.some((u) => /events\/orders/.test(u))).toBe(false)
+  })
+
+  it('between runs picks the next open clock — Soft FAIL keep the 00:00 WAIT ticker', async () => {
+    const now = Date.now()
+    const dead = {
+      ticker: 'KXBTC15M-DEAD',
+      event_ticker: 'KXBTC15M-DEAD-E',
+      status: 'open',
+      yes_ask: 70,
+      no_ask: 31,
+      floor_strike: 80850,
+      open_time: new Date(now - 15 * 60_000).toISOString(),
+      close_time: new Date(now - 1000).toISOString(),
+    }
+    const next = {
+      ticker: 'KXBTC15M-NEXT',
+      event_ticker: 'KXBTC15M-NEXT-E',
+      status: 'open',
+      yes_ask: 68,
+      no_ask: 33,
+      floor_strike: 80880,
+      open_time: new Date(now - 500).toISOString(),
+      close_time: new Date(now + 15 * 60_000).toISOString(),
+    }
+    expect(pickOpen([dead, next], now)?.ticker).toBe('KXBTC15M-NEXT')
+    expect(pickOpen([dead], now)).toBeNull()
+    vi.stubGlobal(
+      'fetch',
+      async (url: string) => {
+        const u = String(url)
+        if (u.includes('/markets?series_ticker=KXBTC15M')) return json({ markets: [dead, next] })
+        if (u.includes('/markets?')) return json({ markets: [] })
+        if (u.includes('/markets/KXBTC15M-NEXT')) {
+          return json({ market: { ...next, yes_ask: 69, no_ask: 32 } })
+        }
+        if (u.includes('/markets/KXBTC15M-DEAD')) throw new Error('Soft FAIL closed ticker')
+        if (u.includes('/live_data/events/KXBTC15M-NEXT-E')) {
+          return json({ live_data: { details: { last: 80890 } } })
+        }
+        if (u.includes('/live_data/')) return json({ live_data: { details: { last: 1 } } })
+        throw new Error(u)
+      },
+    )
+    const board = await loadDeskBoard()
+    expect(board.tapes.btc?.ticker).toBe('KXBTC15M-NEXT')
+    expect(board.tapes.btc?.tradingActive).toBe(true)
+    expect(board.tapes.btc?.live).toBeCloseTo(80890)
+    const liveTapes = {
+      btc: { tradingActive: true, closeAt: now + 60_000 },
+      ng: { tradingActive: true, closeAt: now + 60_000 },
+      cu: { tradingActive: true, closeAt: now + 60_000 },
+      gld: { tradingActive: true, closeAt: now + 60_000 },
+    }
+    expect(boardPollMs({ tapes: liveTapes }, now)).toBe(800)
+    expect(boardPollMs({ tapes: { ...liveTapes, btc: { tradingActive: false, closeAt: now - 1 } } }, now)).toBe(350)
+    expect(boardPollMs({ tapes: { ...liveTapes, btc: { tradingActive: true, closeAt: now + 4000 } } }, now)).toBe(350)
   })
 })
