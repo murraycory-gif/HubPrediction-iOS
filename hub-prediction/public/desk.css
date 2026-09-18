@@ -244,9 +244,9 @@ body {
 }
 
 .tape-row {
-  display: grid;
-  grid-template-columns: 4.6rem minmax(6.4rem, 1fr) 5.2rem minmax(7rem, 1.3fr) 4.6rem minmax(7rem, 1.2fr);
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
   align-items: center;
 }
 
@@ -563,10 +563,15 @@ button {
   }
 }
 
-@media (max-width: 860px) {
-  .tape-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.tape-row .count,
+.tape-row .tape-status,
+.tape-row .tape-num {
+  flex: 0 0 auto;
+}
+
+.tape-row .tape-name,
+.tape-row .tape-ticket {
+  flex: 1 1 7rem;
 }
 
 @media (max-width: 520px) {
