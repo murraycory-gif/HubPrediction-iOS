@@ -62,6 +62,25 @@ export function formatDayLabel(ms: number) {
   }).format(new Date(ms))
 }
 
+/** Compact Chicago window for the bets log: Sep 18, 11:30–11:45 AM */
+export function formatBetWindow(closeAt?: number | null, windowMs?: number, filledAt?: number | null) {
+  const end = Number(closeAt) > 1e11 ? Number(closeAt) : Number(filledAt) > 1e11 ? Number(filledAt) : 0
+  if (!end) return '—'
+  const start = windowMs && windowMs > 0 ? end - windowMs : 0
+  const day = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(end))
+  if (start > 0) {
+    const open = formatClock(start)
+    const close = formatClock(end)
+    const same = /[AP]M$/i.test(open) && open.slice(-2).toUpperCase() === close.slice(-2).toUpperCase()
+    return `${day}, ${same ? open.replace(/\s?[AP]M$/i, '') : open}–${close}`
+  }
+  return `${day}, ${formatClock(end)}`
+}
+
 /** Kalshi-style window: September 18, 11:30 – 11:45 AM CDT */
 export function formatWindowRange(openAt?: number, closeAt?: number) {
   if (!openAt || !closeAt || !Number.isFinite(openAt) || !Number.isFinite(closeAt)) return '—'

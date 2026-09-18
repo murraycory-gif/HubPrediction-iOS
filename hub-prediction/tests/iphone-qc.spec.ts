@@ -248,6 +248,23 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
               filledAt: ts - 2000,
               settledAt: ts,
             },
+            {
+              betId: 'bet_cu_paper',
+              tape: 'cu',
+              ticker: 'KXCOPPER15M-A',
+              clock: '15m',
+              closeAt: Date.parse('2026-09-18T16:45:00-05:00'),
+              side: 'up',
+              count: 1,
+              ask: 40,
+              spent: 8,
+              orderId: 'deskfill-cu-aaaaaaaa',
+              status: 'settled',
+              pnl: -8,
+              filledAt: ts - 3000,
+              settledAt: ts,
+              kind: 'paper',
+            },
           ],
         }),
       )
@@ -261,8 +278,13 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.getByTestId('bets-filter-all')).toBeVisible()
   await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('bets-placed')).toContainText('$30.00')
-  await expect(page.getByTestId('bets-wl')).toContainText('1W–1L')
+  await expect(page.getByTestId('bets-wl')).toContainText('1W–2L')
   await expect(page.getByTestId('bets-pnl')).toContainText('−$15.00')
+  await expect(page.getByTestId('bets-log')).toContainText('LIVE')
+  await expect(page.getByTestId('bets-log')).toContainText('PAPER')
+  await expect(page.getByTestId('bets-log')).toContainText('Sep 18')
+  await expect(page.locator('.bets-log-head')).toContainText('WINDOW')
+  await expect(page.locator('.bets-log-head')).toContainText('MODE')
   await page.getByTestId('bets-filter-btc').click()
   await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'false')
   await expect(page.getByTestId('bets-placed')).toContainText('$10.00')
@@ -271,6 +293,11 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await page.getByTestId('bets-filter-ng').click()
   await expect(page.getByTestId('bets-placed')).toContainText('$30.00')
   await expect(page.getByTestId('bets-wl')).toContainText('1W–1L')
+  await page.getByTestId('bets-filter-all').click()
+  await page.getByTestId('bets-filter-cu').click()
+  await expect(page.getByTestId('bets-placed')).toContainText('—')
+  await expect(page.getByTestId('bets-wl')).toContainText('0W–1L')
+  await expect(page.getByTestId('bets-pnl')).toContainText('$0.00')
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-bets-filter.png' })
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
   await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')

@@ -109,6 +109,19 @@ export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
   return TAPE_SERIES[id][hydrateClock(clock)]
 }
 
+export function clockFromTicker(ticker: string): TapeClock | '' {
+  const s = ticker.toUpperCase()
+  if (s.includes('5M')) return '5m'
+  if (s.includes('15M')) return '15m'
+  if (s.includes('1H') || s.endsWith('H') || s.includes('BTCD') || s.includes('GOLDH')) return '1h'
+  return ''
+}
+
+export function windowMsForClock(clock: string) {
+  const id = isTapeClock(clock) ? clock : clockFromTicker(clock)
+  return id ? CLOCK_MS[id] : 0
+}
+
 export type DeskSettings = {
   liveBets: boolean
   tapes: Record<TapeId, TapeRecipe>

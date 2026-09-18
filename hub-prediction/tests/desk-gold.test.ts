@@ -41,6 +41,7 @@ import {
   weThinkPair,
 } from '../src/lib/tapes'
 import { emptyFinance, last24hBets } from '../src/lib/finance'
+import { formatBetWindow } from '../src/lib/chicago-time'
 
 afterEach(() => {
   if (typeof localStorage !== 'undefined') localStorage.clear()
@@ -417,6 +418,7 @@ describe('gold race path', () => {
     expect(kept.charts.ng).toBe('live')
     expect(hydrateSettings(null).liveBets).toBe(false)
     expect(GOLD_RECIPES.btc.centLo).toBe(69)
+    expect(formatBetWindow(Date.parse('2026-09-18T16:45:00-05:00'), 15 * 60_000)).toBe('Sep 18, 4:30–4:45 PM')
   })
 })
 

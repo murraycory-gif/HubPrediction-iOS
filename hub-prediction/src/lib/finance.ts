@@ -11,6 +11,8 @@ import {
   nextBetsFilter,
   num,
   seriesToTape,
+  clockFromTicker,
+  windowMsForClock,
   type DeskTicket,
   type TapeId,
   type TapeRecipe,
@@ -64,6 +66,8 @@ export const PAPER_HOURS = 48
 export const DAILY_PNL_FLOOR_PAPER = -50
 export const HIT_FLOOR = 85
 
+export type BetKind = 'live' | 'paper'
+
 export type BookedBet = {
   betId: string
   tape: TapeId
@@ -79,6 +83,30 @@ export type BookedBet = {
   pnl: number | null
   filledAt: number
   settledAt: number | null
+  kind: BetKind
+}
+
+export function isPaperOrderId(id: unknown) {
+  return typeof id === 'string' && /^deskfill-/i.test(id.trim())
+}
+
+export function betKind(b: { kind?: unknown; orderId?: unknown; betId?: unknown }): BetKind {
+  if (b.kind === 'paper' || b.kind === 'live') return b.kind
+  if (isPaperOrderId(b.orderId)) return 'paper'
+  if (typeof b.betId === 'string' && /^paper:/i.test(b.betId)) return 'paper'
+  return 'live'
+}
+
+export function isPaperBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  return betKind(b) === 'paper'
+}
+
+export function isLiveBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  return !isPaperBet(b)
+}
+
+export function betWindowMs(b: { clock?: string; ticker?: string }) {
+  return windowMsForClock(b.clock || '') || windowMsForClock(b.ticker || '')
 }
 
 export type FinanceState = {
@@ -96,15 +124,17 @@ export function hydrateFinance(raw: unknown): FinanceState {
   if (!raw || typeof raw !== 'object') return base
   const o = raw as Partial<FinanceState>
   const bets = Array.isArray(o.bets)
-    ? o.bets.filter((b): b is BookedBet => {
-        return (
-          !!b &&
-          isTapeId(b.tape) &&
-          (isRealOrderId(b.orderId) || (typeof b.betId === 'string' && b.betId.startsWith('kalshi:'))) &&
-          (b.side === 'up' || b.side === 'down') &&
-          typeof b.ticker === 'string'
-        )
-      })
+    ? o.bets
+        .filter((b): b is BookedBet => {
+          return (
+            !!b &&
+            isTapeId(b.tape) &&
+            (isRealOrderId(b.orderId) || (typeof b.betId === 'string' && b.betId.startsWith('kalshi:'))) &&
+            (b.side === 'up' || b.side === 'down') &&
+            typeof b.ticker === 'string'
+          )
+        })
+        .map((b) => ({ ...b, kind: betKind(b) }))
     : []
   return {
     killed: o.killed === true,
@@ -152,7 +182,9 @@ export function pnlVsDeposits(cash: number | null | undefined, deposits: number 
 
 export function bookRealizedPnl(state: FinanceState) {
   return Math.round(
-    state.bets.filter((b) => b.status === 'settled' && b.pnl != null).reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
+    state.bets
+      .filter((b) => isLiveBet(b) && b.status === 'settled' && b.pnl != null)
+      .reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
   ) / 100
 }
 
@@ -167,6 +199,8 @@ export function last24hBets(
   const from = Number.isFinite(fromMs) ? Number(fromMs) : now - 24 * 60 * 60 * 1000
   const recent = state.bets.filter((b) => allow.has(b.tape) && (b.filledAt || b.settledAt || 0) >= from)
   const settled = recent.filter((b) => b.status === 'settled')
+  const liveRecent = recent.filter((b) => isLiveBet(b))
+  const liveSettled = settled.filter((b) => isLiveBet(b))
   const open = recent.filter((b) => b.status === 'open').length
   const bookW = settled.filter((b) => (b.pnl ?? 0) > 0).length
   const bookL = settled.filter((b) => (b.pnl ?? 0) < 0).length
@@ -179,11 +213,11 @@ export function last24hBets(
   const ev = (hits.events ?? []).filter((e) => allow.has(e.tape) && e.at >= from)
   const placed =
     recent.length > 0
-      ? Math.round(recent.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
+      ? Math.round(liveRecent.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
       : Math.round(ev.reduce((s, e) => s + (Number(e.spent) || 0), 0) * 100) / 100
   const pnl =
     recent.length > 0
-      ? Math.round(settled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
+      ? Math.round(liveSettled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
       : Math.round(ev.reduce((s, e) => s + (Number(e.pnl) || 0), 0) * 100) / 100
   const n = w + l
   const pct = n ? Math.round((w / n) * 100) : 0
@@ -196,7 +230,7 @@ export function dailyRealizedPnl(state: FinanceState, now = Date.now()) {
   const from = start.getTime()
   return Math.round(
     state.bets
-      .filter((b) => b.status === 'settled' && b.settledAt != null && b.settledAt >= from && b.pnl != null)
+      .filter((b) => isLiveBet(b) && b.status === 'settled' && b.settledAt != null && b.settledAt >= from && b.pnl != null)
       .reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
   ) / 100
 }
@@ -310,6 +344,7 @@ export function bookFill(
     pnl: null,
     filledAt: Date.now(),
     settledAt: null,
+    kind: isPaperOrderId(input.orderId) ? 'paper' : 'live',
   }
   const next = saveFinance({ ...state, bets: [...state.bets, bet] })
   return { ok: true, state: next, bet }
@@ -360,6 +395,7 @@ export function mergeSettlementEventsToBook(
       pnl: e.pnl ?? (e.win ? 0 : 0),
       filledAt: e.at,
       settledAt: e.at,
+      kind: 'live',
     })
   }
   if (!extra.length) return state
@@ -386,14 +422,6 @@ function kalshiAt(row: Record<string, unknown>, keys: string[], fallback = 0) {
     if (Number.isFinite(parsed)) return parsed
   }
   return fallback
-}
-
-function clockFromTicker(ticker: string) {
-  const s = ticker.toUpperCase()
-  if (s.includes('5M')) return '5m'
-  if (s.includes('15M')) return '15m'
-  if (s.includes('1H') || s.endsWith('H') || s.includes('BTCD') || s.includes('GOLDH')) return '1h'
-  return ''
 }
 
 function dollarsFrom(row: Record<string, unknown>, dollarKeys: string[], centKeys: string[] = []) {
@@ -488,6 +516,7 @@ export function betsFromKalshiFills(raw: unknown, fromMs = 0): BookedBet[] {
       pnl: null,
       filledAt: g.filledAt,
       settledAt: null,
+      kind: 'live',
     })
   }
   return out
@@ -509,6 +538,7 @@ export function betsFromKalshiSettlements(raw: unknown, fromMs = 0, now = Date.n
     pnl: e.pnl ?? (e.win ? 0 : 0),
     filledAt: e.at,
     settledAt: e.at,
+    kind: 'live' as const,
   }))
 }
 
@@ -540,6 +570,7 @@ export function betsFromKalshiPositions(raw: unknown, fromMs = 0): BookedBet[] {
       pnl: null,
       filledAt: at,
       settledAt: null,
+      kind: 'live',
     })
   }
   return out
@@ -567,6 +598,7 @@ export function mergeKalshiHistoryToBook(
       spent: cur.spent || b.spent,
       orderId: isRealOrderId(b.orderId) ? b.orderId : cur.orderId,
       filledAt: Math.min(cur.filledAt || b.filledAt, b.filledAt || cur.filledAt),
+      kind: 'live',
     })
   }
   for (const b of betsFromKalshiPositions(input.positions, fromMs)) {
@@ -575,7 +607,7 @@ export function mergeKalshiHistoryToBook(
   const kalshi = [...byTicker.values()]
   if (!kalshi.length) return state
   const taken = new Set(kalshi.map((b) => b.ticker))
-  const local = state.bets.filter((b) => !taken.has(b.ticker) && !String(b.betId).startsWith('kalshi:'))
+  const local = state.bets.filter((b) => isPaperBet(b) || (!taken.has(b.ticker) && !String(b.betId).startsWith('kalshi:')))
   return saveFinance({ ...state, bets: [...local, ...kalshi] })
 }
 

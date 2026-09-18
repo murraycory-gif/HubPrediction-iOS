@@ -14,6 +14,8 @@ import {
   pnlVsDeposits,
   chasingLosses,
   last24hBets,
+  hydrateFinance,
+  bookRealizedPnl,
   mergeKalshiHistoryToBook,
   loadBetsFilter,
   recipeRetuneGate,
@@ -342,5 +344,82 @@ describe('finance Soft KEEP', () => {
     expect(cu?.status).toBe('open')
     expect(cu?.side).toBe('up')
     expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(btc?.kind).toBe('live')
+    expect(ng?.kind).toBe('live')
+  })
+
+  it('counts paper in hit W–L only — live-only P&L and placed', () => {
+    const now = Date.now()
+    const hits = { tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } } }
+    const paper = bookFill(emptyFinance(), {
+      tape: 'cu',
+      ticker: 'KXCOPPER15M-PAPER',
+      clock: '15m',
+      closeAt: now,
+      side: 'up',
+      count: 1,
+      ask: 40,
+      orderId: 'deskfill-cu-aaaaaaaa',
+    })
+    expect(paper.ok).toBe(true)
+    if (!paper.ok) return
+    expect(paper.bet.kind).toBe('paper')
+    const withPaper = {
+      ...paper.state,
+      bets: paper.state.bets.map((b) => ({ ...b, status: 'settled' as const, pnl: -8, settledAt: now })),
+    }
+    const live = {
+      ...withPaper,
+      bets: [
+        ...withPaper.bets,
+        {
+          betId: 'bet_btc',
+          tape: 'btc' as const,
+          ticker: 'KXBTC15M-A',
+          clock: '15m',
+          closeAt: now,
+          side: 'up' as const,
+          count: 1,
+          ask: 70,
+          spent: 10,
+          orderId: 'ord-btc-aaaaaa',
+          status: 'settled' as const,
+          pnl: 5,
+          filledAt: now - 1000,
+          settledAt: now,
+          kind: 'live' as const,
+        },
+      ],
+    }
+    const all = last24hBets(live, hits, now)
+    expect(all.w).toBe(1)
+    expect(all.l).toBe(1)
+    expect(all.placed).toBeCloseTo(10)
+    expect(all.pnl).toBeCloseTo(5)
+    expect(bookRealizedPnl(live)).toBeCloseTo(5)
+    expect(chasingLosses(withPaper, now)).toBe(false)
+    const cu = last24hBets(live, hits, now, ['cu'])
+    expect(cu.w).toBe(0)
+    expect(cu.l).toBe(1)
+    expect(cu.placed).toBe(0)
+    expect(cu.pnl).toBe(0)
+    const hydrated = hydrateFinance(live)
+    expect(hydrated.bets.find((b) => b.orderId.startsWith('deskfill-'))?.kind).toBe('paper')
+    const kept = mergeKalshiHistoryToBook(live, {
+      settlements: {
+        settlements: [
+          {
+            ticker: 'KXBTC15M-A',
+            market_result: 'yes',
+            yes_count_fp: '1',
+            no_count_fp: '0',
+            yes_total_cost_dollars: 10,
+            revenue_dollars: 15,
+            settled_time: new Date(now).toISOString(),
+          },
+        ],
+      },
+    }, now)
+    expect(kept.bets.some((b) => b.kind === 'paper' && b.ticker === 'KXCOPPER15M-PAPER')).toBe(true)
   })
 })

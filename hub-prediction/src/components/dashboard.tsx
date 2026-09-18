@@ -60,6 +60,8 @@ import {
 import { ticketCost } from '../lib/size-cash'
 import type { DeskBoard, TapeQuote } from '../lib/types'
 import {
+  betKind,
+  betWindowMs,
   bookFill,
   clearKill,
   engageKill,
@@ -79,7 +81,7 @@ import {
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
-import { formatWindowRange } from '../lib/chicago-time'
+import { formatBetWindow, formatWindowRange } from '../lib/chicago-time'
 import { RaceChart } from './race-chart'
 import { SettingsPanel } from './settings-panel'
 import { TapeIcon } from './tape-icon'
@@ -235,7 +237,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const booked = bookFill(book, {
       tape,
       ticker: quote.ticker,
-      clock: quote.clock,
+      clock: quote.clockId || quote.clock,
       closeAt: quote.closeAt,
       side,
       count: ticket.contracts,
@@ -310,15 +312,15 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       const booked = bookFill(book, {
         tape,
         ticker: quote.ticker,
-        clock: quote.clock,
-        closeAt: quote.closeAt,
-        side,
-        count: ticket.contracts,
-        ask,
-        orderId: ticket.orderId,
-      })
-      if (booked.ok) setBook(booked.state)
-      setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
+      clock: quote.clockId || quote.clock,
+      closeAt: quote.closeAt,
+      side,
+      count: ticket.contracts,
+      ask,
+      orderId: ticket.orderId,
+    })
+    if (booked.ok) setBook(booked.state)
+    setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
       await refreshCash()
     } catch (e) {
       releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
@@ -834,6 +836,11 @@ function Bets24Strip({
     status: 'open' | 'settled'
     spent: number
     pnl: number | null
+    clock?: string
+    closeAt?: number
+    filledAt?: number
+    kind?: 'live' | 'paper'
+    orderId?: string
   }>
   filter: TapeId[]
   onFilter: (chip: 'all' | TapeId) => void
@@ -841,7 +848,7 @@ function Bets24Strip({
   const allOn = isAllBetsFilter(filter)
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
-      <p className="hud-label">Bets since first deposit · P&L is cash − deposits · hit floor {HIT_FLOOR}%</p>
+      <p className="hud-label">Bets since first deposit · P&L is live only · paper in hit · hit floor {HIT_FLOOR}%</p>
       <div className="bets-filter" data-testid="bets-filter">
         <button
           type="button"
@@ -886,8 +893,10 @@ function Bets24Strip({
         <div className="bets-log-wrap">
           <div className="bets-log-row bets-log-head" aria-hidden>
             <span>TAPE</span>
+            <span>WINDOW</span>
             <span>SIDE</span>
             <span>RESULT</span>
+            <span>MODE</span>
             <span>SPENT</span>
             <span>P&L</span>
           </div>
@@ -896,11 +905,14 @@ function Bets24Strip({
               const settled = b.status === 'settled' && b.pnl != null
               const result = b.status === 'open' ? 'OPEN' : (b.pnl ?? 0) > 0 ? 'WIN' : (b.pnl ?? 0) < 0 ? 'LOSS' : 'PUSH'
               const rowPnl = settled ? (b.pnl as number) : null
+              const mode = betKind(b).toUpperCase()
               return (
-                <li key={b.betId} className="bets-log-row">
+                <li key={b.betId} className="bets-log-row" data-kind={betKind(b)}>
                   <span>{b.tape.toUpperCase()}</span>
+                  <span data-testid="bets-window">{formatBetWindow(b.closeAt, betWindowMs(b), b.filledAt)}</span>
                   <span>{b.side.toUpperCase()}</span>
                   <span>{result}</span>
+                  <span data-testid="bets-mode">{mode}</span>
                   <span>{formatCash(b.spent)}</span>
                   <span
                     className={rowPnl == null ? undefined : rowPnl > 0 ? 'tone-up' : rowPnl < 0 ? 'tone-down' : undefined}
