@@ -61,7 +61,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [pem, setPem] = useState('')
   const [msg, setMsg] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(true)
-  const [ready, setReady] = useState(false)
   const sentRef = useRef<Record<string, string>>({})
 
   useEffect(() => {
@@ -71,7 +70,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     setCash(loadCash())
     setKeyId(readLocal(KEY_ID))
     setPem(readLocal(KEY_PEM))
-    setReady(true)
   }, [])
 
   const boardQuery = useQuery({
@@ -246,7 +244,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
         {msg ? <p className="desk-msg">{msg}</p> : null}
 
-        {settingsOpen && ready ? (
+        {settingsOpen ? (
           <SettingsPanel
             settings={settings}
             keyId={keyId}
