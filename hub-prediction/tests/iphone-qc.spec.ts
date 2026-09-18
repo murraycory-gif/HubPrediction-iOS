@@ -9,6 +9,31 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
 
   await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
   await expect(page.getByTestId('desk-title')).not.toHaveText(/HUBEB|PREDICTTIONS|HUBPREDICTIONS/)
+  await expect(page.locator('.rain-col')).toHaveCount(0)
+  await expect(page.getByTestId('rain')).toBeEmpty()
+  const rainIso = await page.evaluate(() => {
+    const head = document.querySelector('[data-testid="desk-head"]') as HTMLElement
+    const rain = document.querySelector('[data-testid="rain"]') as HTMLElement
+    const title = document.querySelector('[data-testid="desk-title"]') as HTMLElement
+    const plate = document.querySelector('[data-testid="wordmark"]') as HTMLElement
+    const cs = (el: HTMLElement) => getComputedStyle(el)
+    const before = getComputedStyle(head, '::before').content
+    return {
+      before,
+      rainZ: Number(cs(rain).zIndex) || 0,
+      titleZ: Number(cs(title).zIndex) || 0,
+      plateZ: Number(cs(plate).zIndex) || 0,
+      titleBg: cs(title).backgroundColor,
+      plateBg: cs(plate).backgroundColor,
+      rainText: (rain.textContent || '').trim(),
+    }
+  })
+  expect(rainIso.before === 'none' || rainIso.before === 'normal').toBeTruthy()
+  expect(rainIso.rainText).toBe('')
+  expect(rainIso.plateZ).toBeGreaterThan(rainIso.rainZ)
+  expect(rainIso.titleZ).toBeGreaterThan(rainIso.rainZ)
+  expect(rainIso.titleBg).not.toMatch(/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)|transparent/i)
+  expect(rainIso.plateBg).not.toMatch(/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)|transparent/i)
   const head = page.getByTestId('desk-head')
   const box = await head.boundingBox()
   expect(box?.y).toBeLessThanOrEqual(2)
@@ -23,6 +48,12 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   }
 
   await expect(page.getByTestId('scoreboard')).toBeVisible()
+  const boardCss = await page.getByTestId('scoreboard').evaluate((el) => {
+    const s = getComputedStyle(el)
+    return { display: s.display, cols: s.gridTemplateColumns, dir: s.flexDirection, wrap: s.flexWrap }
+  })
+  expect(boardCss.display).toBe('grid')
+  expect(boardCss.cols.split(' ').length).toBe(3)
   const pnlBox = await page.getByTestId('pnl').boundingBox()
   const ttlBox = await page.getByTestId('ttl').boundingBox()
   const cashBox = await page.getByTestId('kalshi-cash').boundingBox()
@@ -31,6 +62,14 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   expect((cashBox?.x ?? 0)).toBeGreaterThan((ttlBox?.x ?? 0) + (ttlBox?.width ?? 0) - 2)
   expect(Math.abs((pnlBox?.y ?? 0) - (ttlBox?.y ?? 0))).toBeLessThan(8)
   expect(Math.abs((ttlBox?.y ?? 0) - (cashBox?.y ?? 0))).toBeLessThan(8)
+  for (const id of ['pnl', 'ttl', 'kalshi-cash']) {
+    const dir = await page.getByTestId(id).evaluate((el) => getComputedStyle(el).flexDirection)
+    expect(dir).toBe('column')
+    const labelBox = await page.getByTestId(`${id}-label`).boundingBox()
+    const valueBox = await page.getByTestId(`${id}-value`).boundingBox()
+    expect(labelBox && valueBox).toBeTruthy()
+    expect((valueBox?.y ?? 0)).toBeGreaterThan((labelBox?.y ?? 0) + (labelBox?.height ?? 0) - 2)
+  }
   const settingsBox = await page.getByTestId('settings-toggle').boundingBox()
   expect((settingsBox?.x ?? 0) + (settingsBox?.width ?? 0)).toBeLessThanOrEqual(392)
   expect((settingsBox?.y ?? 0)).toBeGreaterThanOrEqual(0)

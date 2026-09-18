@@ -49,6 +49,12 @@ body {
   padding: 0 12px 10px;
 }
 
+/* Soft FAIL 692676d: ::before full-bleed rain painted over HUB / PREDICTIONS. */
+.desk-head::before,
+.desk-head::after {
+  content: none;
+}
+
 .brand-bar {
   position: relative;
   z-index: 1;
@@ -67,6 +73,7 @@ body {
   z-index: 0;
   pointer-events: none;
   opacity: 0.14;
+  overflow: hidden;
   background-image:
     repeating-linear-gradient(
       180deg,
@@ -82,19 +89,33 @@ body {
   background-size: 100% 80px, 22px 100%;
 }
 
-.desk-head h1 {
+/* Soft FAIL 692676d: 22 .rain-col binary streams over the wordmark. */
+.rain-col {
+  display: none;
+}
+
+.wordmark {
   position: relative;
-  z-index: 2;
-  margin: 0;
+  z-index: 3;
+  isolation: isolate;
   flex: 1 1 auto;
   min-width: 0;
+  background: #020403;
+  mix-blend-mode: normal;
+  padding: 4px 8px 4px 0;
+}
+
+.desk-head h1 {
+  position: relative;
+  z-index: 3;
+  margin: 0;
   font-family: var(--mono);
   font-size: clamp(17px, 4.4vw, 22px);
   letter-spacing: 0.1em;
   line-height: 1.15;
   color: var(--up);
   background: #020403;
-  padding: 4px 8px 4px 0;
+  mix-blend-mode: normal;
   white-space: nowrap;
 }
 
@@ -654,8 +675,10 @@ button {
   .tape-reads {
     grid-template-columns: 1fr;
   }
-  .desk-head h1 {
+  .wordmark {
     flex: 1 1 100%;
+  }
+  .desk-head h1 {
     letter-spacing: 0.08em;
     font-size: 18px;
   }

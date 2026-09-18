@@ -288,8 +288,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     <div className="desk">
       <header className="desk-head" data-testid="desk-head">
         <div className="brand-bar">
-          <div className="rain" aria-hidden="true" />
-          <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
+          <div className="rain" data-testid="rain" aria-hidden="true" />
+          <div className="wordmark" data-testid="wordmark">
+            <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
+          </div>
           <div className="brand-actions">
             <label className={`toggle ${settings.liveBets ? 'toggle-hot' : ''}`}>
               <input
@@ -498,8 +500,12 @@ function Stat({
 }) {
   return (
     <div className="stat" data-testid={testId}>
-      <p className="hud-label">{label}</p>
-      <p className={`stat-value ${tone ? `tone-${tone}` : ''}`}>{value}</p>
+      <p className="hud-label" data-testid={`${testId}-label`}>
+        {label}
+      </p>
+      <p className={`stat-value ${tone ? `tone-${tone}` : ''}`} data-testid={`${testId}-value`}>
+        {value}
+      </p>
     </div>
   )
 }
