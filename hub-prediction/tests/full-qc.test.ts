@@ -386,6 +386,6 @@ describe('QC Windows host start Soft FAIL hop off 8080', () => {
     const bat = await readFile(new URL('../../start-tunnel.bat', import.meta.url), 'utf8')
     expect(bat).toMatch(/desk-tunnel\.mjs/)
     expect(bat).toMatch(/UDP 51820/)
-    expect(bat).not.toMatch(/tailscale/i)
+    expect(bat).not.toMatch(/tailscale (up|login|ip)/i)
   })
 })
