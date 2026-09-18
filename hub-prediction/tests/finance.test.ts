@@ -14,6 +14,7 @@ import {
   pnlVsDeposits,
   chasingLosses,
   last24hBets,
+  mergeKalshiHistoryToBook,
   loadBetsFilter,
   recipeRetuneGate,
   recommendSize,
@@ -35,6 +36,7 @@ describe('finance Soft KEEP', () => {
     expect(liveCashFloor(760)).toBe(152)
     expect(liveCashFloor(100)).toBe(LIVE_FLOOR_MIN)
     expect(pnlVsDeposits(293.36, 760)).toBeCloseTo(-466.64)
+    expect(pnlVsDeposits(263, 760)).toBe(-497)
   })
 
   it('recommends gold contract sizes and does not retune recipes', () => {
@@ -266,5 +268,79 @@ describe('finance Soft KEEP', () => {
     expect(loadSettings().betsFilter).toEqual(['btc', 'ng'])
     expect(loadSettings().liveBets).toBe(false)
     expect(loadSettings().tapes.btc.armFromMin).toBe(8)
+  })
+
+  it('books Kalshi fills + settlements + open positions from first deposit', () => {
+    const now = Date.now()
+    const first = now - 10 * 86400000
+    const next = mergeKalshiHistoryToBook(emptyFinance(), {
+      fromMs: first,
+      fills: {
+        fills: [
+          {
+            fill_id: 'fill-btc-1',
+            order_id: 'ord-kalshi-btc-hist-01',
+            ticker: 'KXBTC15M-HIST',
+            outcome_side: 'yes',
+            count_fp: '1.00',
+            yes_price_dollars: '0.72',
+            no_price_dollars: '0.28',
+            created_time: new Date(now - 2000).toISOString(),
+          },
+          {
+            fill_id: 'fill-ng-open',
+            order_id: 'ord-kalshi-ng-open-01',
+            ticker: 'KXNATGAS15M-OPEN',
+            outcome_side: 'no',
+            count_fp: '2.00',
+            yes_price_dollars: '0.60',
+            no_price_dollars: '0.40',
+            created_time: new Date(now - 1000).toISOString(),
+          },
+        ],
+      },
+      settlements: {
+        settlements: [
+          {
+            ticker: 'KXBTC15M-HIST',
+            market_result: 'yes',
+            yes_count_fp: '1',
+            no_count_fp: '0',
+            yes_total_cost_dollars: 0.72,
+            revenue_dollars: 1,
+            settled_time: new Date(now - 500).toISOString(),
+          },
+        ],
+      },
+      positions: {
+        market_positions: [
+          {
+            ticker: 'KXNATGAS15M-OPEN',
+            position_fp: '-2.00',
+            market_exposure_dollars: '0.80',
+            last_updated_ts: new Date(now - 1000).toISOString(),
+          },
+          {
+            ticker: 'KXCOPPER15M-LIVE',
+            position_fp: '1.00',
+            market_exposure_dollars: '0.55',
+            last_updated_ts: new Date(now - 800).toISOString(),
+          },
+        ],
+      },
+    }, now)
+    const btc = next.bets.find((b) => b.ticker === 'KXBTC15M-HIST')
+    const ng = next.bets.find((b) => b.ticker === 'KXNATGAS15M-OPEN')
+    const cu = next.bets.find((b) => b.ticker === 'KXCOPPER15M-LIVE')
+    expect(btc?.status).toBe('settled')
+    expect(btc?.side).toBe('up')
+    expect(btc?.pnl).toBeCloseTo(0.28)
+    expect(btc?.spent).toBeCloseTo(0.72)
+    expect(ng?.status).toBe('open')
+    expect(ng?.side).toBe('down')
+    expect(ng?.spent).toBeCloseTo(0.8)
+    expect(cu?.status).toBe('open')
+    expect(cu?.side).toBe('up')
+    expect(hydrateSettings(null).liveBets).toBe(false)
   })
 })

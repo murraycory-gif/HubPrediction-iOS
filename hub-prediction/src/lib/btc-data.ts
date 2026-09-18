@@ -43,17 +43,20 @@ export const getKalshiBalance = createServerFn({ method: 'GET' }).handler(async 
 })
 
 export const getKalshiCash = createServerFn({ method: 'GET' }).handler(async () => {
-  const { loadKalshiHostCreds, fetchBalance, fetchDeposits, fetchSettlements } = await import(
-    './kalshi-trade.server'
-  )
+  const { loadKalshiHostCreds, fetchBalance, fetchDeposits, fetchSettlements, fetchFills, fetchPositions } =
+    await import('./kalshi-trade.server')
   const creds = loadKalshiHostCreds()
-  if (!creds) return { cash: null, deposits: null, settlements: null, hostCreds: false }
-  const [bal, deposits, settlements] = await Promise.all([
+  if (!creds) {
+    return { cash: null, deposits: null, settlements: null, fills: null, positions: null, hostCreds: false }
+  }
+  const [bal, deposits, settlements, fills, positions] = await Promise.all([
     fetchBalance(creds.keyId, creds.pem),
     fetchDeposits(creds.keyId, creds.pem).catch(() => null),
     fetchSettlements(creds.keyId, creds.pem).catch(() => null),
+    fetchFills(creds.keyId, creds.pem).catch(() => null),
+    fetchPositions(creds.keyId, creds.pem).catch(() => null),
   ])
-  return { ...bal, deposits, settlements, hostCreds: true }
+  return { ...bal, deposits, settlements, fills, positions, hostCreds: true }
 })
 
 export const placeKalshi = createServerFn({ method: 'POST' })

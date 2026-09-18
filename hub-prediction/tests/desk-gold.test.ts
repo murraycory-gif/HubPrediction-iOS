@@ -468,6 +468,14 @@ describe('Kalshi-settled 24h latch', () => {
     })
     expect(desk.cash.deposits).toBeCloseTo(760)
     expect(desk.cash.pnl).toBeCloseTo(293.37 - 760)
+    const official = hydrateCashFromKalshi({
+      cash: 263,
+      deposits: {
+        deposits: [{ amount_cents: 76000, status: 'applied', created_ts: Math.floor((now - 40 * 86400000) / 1000) }],
+      },
+    })
+    expect(official.cash.deposits).toBe(760)
+    expect(official.cash.pnl).toBe(-497)
     expect(desk.cash.firstDepositAt).toBeGreaterThan(0)
     expect(hydrateSettings(null).liveBets).toBe(false)
     expect(GOLD_RECIPES.btc.centLo).toBe(69)

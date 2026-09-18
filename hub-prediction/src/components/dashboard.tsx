@@ -13,7 +13,6 @@ import {
   claimSend,
   clampContracts,
   disarmAllBots,
-  eventsFromKalshiSettlements,
   eventsFromTickets,
   extractOrderId,
   formatCash,
@@ -63,7 +62,7 @@ import {
   HIT_FLOOR,
   last24hBets,
   liveArmGate,
-  mergeSettlementEventsToBook,
+  mergeKalshiHistoryToBook,
   liveSendGate,
   loadFinance,
   recipeRetuneGate,
@@ -95,14 +94,24 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     cash?: number | null
     deposits?: unknown
     settlements?: unknown
+    fills?: unknown
+    positions?: unknown
     hostCreds?: boolean
   }) {
     const next = hydrateCashFromKalshi(r, loadCash())
     setCash(next.cash)
     setHits(next.hits)
     if (r.hostCreds === true) setHostCreds(true)
-    const life = eventsFromKalshiSettlements(r.settlements, Date.now(), next.cash.firstDepositAt ?? 0)
-    if (life.length) setBook((prev) => mergeSettlementEventsToBook(prev, life))
+    if (r.settlements != null || r.fills != null || r.positions != null) {
+      setBook((prev) =>
+        mergeKalshiHistoryToBook(prev, {
+          fills: r.fills,
+          settlements: r.settlements,
+          positions: r.positions,
+          fromMs: next.cash.firstDepositAt ?? 0,
+        }),
+      )
+    }
   }
 
   useLayoutEffect(() => {
@@ -370,14 +379,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         </div>
         <div className="stat-row scoreboard-row" data-testid="scoreboard">
           <Stat
-            label="P&L VS DEPOSITS"
-            value={
-              cash.pnl == null || cash.deposits == null
-                ? cash.cash != null && cash.deposits == null
-                  ? `${formatCash(cash.cash)} cash · deposits pending`
-                  : '—'
-                : `${formatPnl(cash.pnl)} from ${formatCash(cash.deposits)}`
-            }
+            label="P&L"
+            value={cash.pnl != null ? formatPnl(cash.pnl) : '—'}
             testId="pnl"
             tone={cash.pnl != null && cash.pnl < 0 ? 'down' : cash.pnl != null && cash.pnl > 0 ? 'up' : undefined}
           />
@@ -458,8 +461,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           rows={book.bets
             .filter((b) => settings.betsFilter.includes(b.tape))
             .slice()
-            .sort((a, b) => (b.filledAt || 0) - (a.filledAt || 0))
-            .slice(0, 24)}
+            .sort((a, b) => (b.filledAt || b.settledAt || 0) - (a.filledAt || a.settledAt || 0))
+            .slice(0, 120)}
           filter={settings.betsFilter}
           onFilter={(chip) => setSettings((cur) => applyBetsFilter(cur, chip))}
         />
@@ -839,7 +842,7 @@ function Bets24Strip({
           ))}
         </ul>
       ) : (
-        <p className="settings-note">No desk bets yet. Bot ON + Live cash OFF books paper fills. Soft FAIL Live POST.</p>
+        <p className="settings-note">No Kalshi fills since first deposit. Soft FAIL Live POST.</p>
       )}
     </section>
   )

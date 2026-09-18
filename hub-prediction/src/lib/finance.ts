@@ -4,10 +4,13 @@ import {
   GOLD_RECIPES,
   TAPE_IDS,
   TAPE_META,
+  eventsFromKalshiSettlements,
   hydrateBetsFilter,
   isRealOrderId,
   isTapeId,
   nextBetsFilter,
+  num,
+  seriesToTape,
   type DeskTicket,
   type TapeId,
   type TapeRecipe,
@@ -97,7 +100,7 @@ export function hydrateFinance(raw: unknown): FinanceState {
         return (
           !!b &&
           isTapeId(b.tape) &&
-          isRealOrderId(b.orderId) &&
+          (isRealOrderId(b.orderId) || (typeof b.betId === 'string' && b.betId.startsWith('kalshi:'))) &&
           (b.side === 'up' || b.side === 'down') &&
           typeof b.ticker === 'string'
         )
@@ -170,8 +173,9 @@ export function last24hBets(
   const selected = TAPE_IDS.filter((id) => allow.has(id))
   const hitW = selected.reduce((s, id) => s + (hits.tapes[id]?.w ?? 0), 0)
   const hitL = selected.reduce((s, id) => s + (hits.tapes[id]?.l ?? 0), 0)
-  const w = hitW + hitL > 0 ? hitW : bookW
-  const l = hitW + hitL > 0 ? hitL : bookL
+  const lifetime = fromMs != null
+  const w = lifetime && recent.length > 0 ? bookW : hitW + hitL > 0 ? hitW : bookW
+  const l = lifetime && recent.length > 0 ? bookL : hitW + hitL > 0 ? hitL : bookL
   const ev = (hits.events ?? []).filter((e) => allow.has(e.tape) && e.at >= from)
   const placed =
     recent.length > 0
@@ -360,6 +364,209 @@ export function mergeSettlementEventsToBook(
   }
   if (!extra.length) return state
   return saveFinance({ ...state, bets: [...state.bets, ...extra] })
+}
+
+function listFromPayload(raw: unknown, keys: string[]) {
+  if (Array.isArray(raw)) return raw as Record<string, unknown>[]
+  if (!raw || typeof raw !== 'object') return []
+  const o = raw as Record<string, unknown>
+  const nested = o.data && typeof o.data === 'object' ? (o.data as Record<string, unknown>) : null
+  for (const key of keys) {
+    if (Array.isArray(o[key])) return o[key] as Record<string, unknown>[]
+    if (nested && Array.isArray(nested[key])) return nested[key] as Record<string, unknown>[]
+  }
+  return []
+}
+
+function kalshiAt(row: Record<string, unknown>, keys: string[], fallback = 0) {
+  for (const key of keys) {
+    const raw = row[key]
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw < 1e12 ? raw * 1000 : raw
+    const parsed = Date.parse(String(raw ?? ''))
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function clockFromTicker(ticker: string) {
+  const s = ticker.toUpperCase()
+  if (s.includes('5M')) return '5m'
+  if (s.includes('15M')) return '15m'
+  if (s.includes('1H') || s.endsWith('H') || s.includes('BTCD') || s.includes('GOLDH')) return '1h'
+  return ''
+}
+
+function dollarsFrom(row: Record<string, unknown>, dollarKeys: string[], centKeys: string[] = []) {
+  for (const key of dollarKeys) {
+    const n = num(row[key])
+    if (n != null) return n
+  }
+  for (const key of centKeys) {
+    const n = num(row[key])
+    if (n != null) return n / 100
+  }
+  return 0
+}
+
+function fillSide(row: Record<string, unknown>): 'up' | 'down' {
+  const outcome = String(row.outcome_side ?? row.side ?? '').toLowerCase()
+  if (outcome === 'no') return 'down'
+  if (outcome === 'yes') return 'up'
+  const book = String(row.book_side ?? '').toLowerCase()
+  if (book === 'ask') return 'down'
+  return 'up'
+}
+
+export function betsFromKalshiFills(raw: unknown, fromMs = 0): BookedBet[] {
+  const groups = new Map<
+    string,
+    { tape: TapeId; ticker: string; upSpent: number; downSpent: number; upCount: number; downCount: number; filledAt: number; orderId: string }
+  >()
+  for (const row of listFromPayload(raw, ['fills'])) {
+    if (!row || typeof row !== 'object') continue
+    const ticker = String(row.ticker ?? row.market_ticker ?? '')
+    const tape = seriesToTape(ticker)
+    if (!tape) continue
+    const at = kalshiAt(row, ['created_time', 'ts', 'created_ts'], 0)
+    if (at && at < fromMs) continue
+    const side = fillSide(row)
+    const count = Math.abs(num(row.count_fp) ?? num(row.count) ?? 0)
+    const yesPx = dollarsFrom(row, ['yes_price_dollars'], ['yes_price'])
+    const noPx = dollarsFrom(row, ['no_price_dollars'], ['no_price'])
+    const px = side === 'up' ? yesPx || noPx : noPx || yesPx
+    const spent = Math.round(count * px * 100) / 100
+    const orderId = String(row.order_id ?? row.fill_id ?? row.trade_id ?? `fill-${ticker}`).trim()
+    const cur = groups.get(ticker) ?? {
+      tape,
+      ticker,
+      upSpent: 0,
+      downSpent: 0,
+      upCount: 0,
+      downCount: 0,
+      filledAt: at || Date.now(),
+      orderId,
+    }
+    if (side === 'up') {
+      cur.upSpent += spent
+      cur.upCount += count
+    } else {
+      cur.downSpent += spent
+      cur.downCount += count
+    }
+    if (at && at < cur.filledAt) cur.filledAt = at
+    if (isRealOrderId(orderId)) cur.orderId = orderId
+    groups.set(ticker, cur)
+  }
+  const out: BookedBet[] = []
+  for (const g of groups.values()) {
+    const side: 'up' | 'down' = g.upSpent >= g.downSpent ? 'up' : 'down'
+    const spent = Math.round((g.upSpent + g.downSpent) * 100) / 100
+    const count = Math.max(1, Math.round(side === 'up' ? g.upCount : g.downCount) || 1)
+    const ask = count > 0 ? Math.round(((side === 'up' ? g.upSpent : g.downSpent) / count) * 100) : 50
+    out.push({
+      betId: `kalshi:${g.ticker}`,
+      tape: g.tape,
+      ticker: g.ticker,
+      clock: clockFromTicker(g.ticker),
+      closeAt: 0,
+      side,
+      count,
+      ask: Number.isFinite(ask) && ask > 0 ? ask : 50,
+      spent,
+      orderId: isRealOrderId(g.orderId) ? g.orderId : `fill-${g.ticker}`.slice(0, 48),
+      status: 'open',
+      pnl: null,
+      filledAt: g.filledAt,
+      settledAt: null,
+    })
+  }
+  return out
+}
+
+export function betsFromKalshiSettlements(raw: unknown, fromMs = 0, now = Date.now()): BookedBet[] {
+  return eventsFromKalshiSettlements(raw, now, fromMs).map((e) => ({
+    betId: `kalshi:${e.ticker}`,
+    tape: e.tape,
+    ticker: e.ticker,
+    clock: clockFromTicker(e.ticker),
+    closeAt: e.at,
+    side: e.win ? ('up' as const) : ('down' as const),
+    count: 1,
+    ask: 50,
+    spent: e.spent ?? 0,
+    orderId: `settled-${e.ticker}`.slice(0, 48),
+    status: 'settled' as const,
+    pnl: e.pnl ?? (e.win ? 0 : 0),
+    filledAt: e.at,
+    settledAt: e.at,
+  }))
+}
+
+export function betsFromKalshiPositions(raw: unknown, fromMs = 0): BookedBet[] {
+  const out: BookedBet[] = []
+  for (const row of listFromPayload(raw, ['market_positions', 'positions'])) {
+    if (!row || typeof row !== 'object') continue
+    const ticker = String(row.ticker ?? '')
+    const tape = seriesToTape(ticker)
+    if (!tape) continue
+    const pos = num(row.position_fp) ?? num(row.position) ?? 0
+    if (pos === 0) continue
+    const at = kalshiAt(row, ['last_updated_ts', 'updated_ts', 'ts'], Date.now())
+    if (at < fromMs) continue
+    const spent = dollarsFrom(row, ['market_exposure_dollars', 'total_traded_dollars'], ['market_exposure', 'total_traded'])
+    const count = Math.max(1, Math.round(Math.abs(pos)))
+    out.push({
+      betId: `kalshi:${ticker}`,
+      tape,
+      ticker,
+      clock: clockFromTicker(ticker),
+      closeAt: 0,
+      side: pos < 0 ? 'down' : 'up',
+      count,
+      ask: count > 0 && spent > 0 ? Math.round((spent / count) * 100) : 50,
+      spent: Math.round(spent * 100) / 100,
+      orderId: `pos-${ticker}`.slice(0, 48),
+      status: 'open',
+      pnl: null,
+      filledAt: at,
+      settledAt: null,
+    })
+  }
+  return out
+}
+
+export function mergeKalshiHistoryToBook(
+  state: FinanceState,
+  input: { fills?: unknown; settlements?: unknown; positions?: unknown; fromMs?: number },
+  now = Date.now(),
+): FinanceState {
+  const fromMs = Number.isFinite(input.fromMs) ? Number(input.fromMs) : 0
+  const byTicker = new Map<string, BookedBet>()
+  for (const b of betsFromKalshiSettlements(input.settlements, fromMs, now)) byTicker.set(b.ticker, b)
+  for (const b of betsFromKalshiFills(input.fills, fromMs)) {
+    const cur = byTicker.get(b.ticker)
+    if (!cur) {
+      byTicker.set(b.ticker, b)
+      continue
+    }
+    byTicker.set(b.ticker, {
+      ...cur,
+      side: b.side,
+      count: b.count || cur.count,
+      ask: b.ask || cur.ask,
+      spent: b.spent || cur.spent,
+      orderId: isRealOrderId(b.orderId) ? b.orderId : cur.orderId,
+      filledAt: Math.min(cur.filledAt || b.filledAt, b.filledAt || cur.filledAt),
+    })
+  }
+  for (const b of betsFromKalshiPositions(input.positions, fromMs)) {
+    if (!byTicker.has(b.ticker)) byTicker.set(b.ticker, b)
+  }
+  const kalshi = [...byTicker.values()]
+  if (!kalshi.length) return state
+  const taken = new Set(kalshi.map((b) => b.ticker))
+  const local = state.bets.filter((b) => !taken.has(b.ticker) && !String(b.betId).startsWith('kalshi:'))
+  return saveFinance({ ...state, bets: [...local, ...kalshi] })
 }
 
 export function settleBook(

@@ -6,8 +6,10 @@ import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   fetchBalance,
+  fetchDeposits,
   loadKalshiHostCreds,
   resetKalshiHostCredsForTests,
+  signRequestPath,
 } from '../src/lib/kalshi-trade.server'
 import { eventsFromKalshiSettlements, hydrateCashFromKalshi, hydrateSettings } from '../src/lib/tapes'
 import { emptyFinance, last24hBets } from '../src/lib/finance'
@@ -96,6 +98,34 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
     expect(bal.cash).toBe(293.37)
   })
 
+  it('signs deposits / fills / settlements without the query string', async () => {
+    expect(signRequestPath('/trade-api/v2/portfolio/deposits?limit=200')).toBe('/trade-api/v2/portfolio/deposits')
+    expect(signRequestPath('/trade-api/v2/portfolio/fills?limit=200&cursor=abc')).toBe('/trade-api/v2/portfolio/fills')
+    expect(signRequestPath('/trade-api/v2/portfolio/balance')).toBe('/trade-api/v2/portfolio/balance')
+    const pem = testPem()
+    process.env.KALSHI_KEY_ID = 'host-env-key'
+    process.env.KALSHI_PRIVATE_KEY = pem
+    resetKalshiHostCredsForTests()
+    const creds = loadKalshiHostCreds()
+    const urls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      async (url: string) => {
+        urls.push(String(url))
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              deposits: [{ amount_cents: 76000, status: 'applied', created_ts: 1_700_000_000 }],
+            }),
+        }
+      },
+    )
+    const dep = await fetchDeposits(creds!.keyId, creds!.pem)
+    expect(urls[0]).toContain('/trade-api/v2/portfolio/deposits?limit=200')
+    expect((dep as { deposits: unknown[] }).deposits).toHaveLength(1)
+  })
+
   it('settlements hydrate cash + 24H chips without a phone book', () => {
     const now = Date.now()
     const desk = hydrateCashFromKalshi({
@@ -136,6 +166,14 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
     expect(dash).not.toMatch(/KEY_PEM/)
     expect(dash).toMatch(/getKalshiBalance\(\)/)
     expect(dash).toMatch(/getKalshiCash\(\)/)
+    expect(dash).toMatch(/mergeKalshiHistoryToBook/)
+    expect(dash).toMatch(/label="P&L"/)
+    expect(dash).toMatch(/cash\.pnl != null \? formatPnl\(cash\.pnl\) : '—'/)
+    expect(dash).not.toMatch(/deposits pending/)
+    const trade = await readFile(new URL('../src/lib/kalshi-trade.server.ts', import.meta.url), 'utf8')
+    expect(trade).toMatch(/timestamp \+ method \+ signRequestPath\(path\)/)
+    expect(trade).toMatch(/export async function fetchFills/)
+    expect(trade).toMatch(/export async function fetchPositions/)
     expect(ignore).toMatch(/\.secrets\//)
     expect(ignore).toMatch(/\*\.pem/)
   })

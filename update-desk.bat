@@ -40,6 +40,10 @@ if errorlevel 1 (
 echo Checking out %BRANCH%...
 git checkout -B %BRANCH% origin/%BRANCH%
 if errorlevel 1 (
+  echo origin/%BRANCH% missing after fetch — using FETCH_HEAD.
+  git checkout -B %BRANCH% FETCH_HEAD
+)
+if errorlevel 1 (
   echo Could not checkout %BRANCH%. If I gave you a new branch name, run:
   echo   update-desk.bat cursor/new-name-be4f
   pause

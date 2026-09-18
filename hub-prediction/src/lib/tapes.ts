@@ -527,7 +527,13 @@ export function eventsFromKalshiSettlements(raw: unknown, now = Date.now(), minA
     const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? num(s.yes_total_cost_fp) ?? 0
     const no = num(s.no_count_fp) ?? num(s.no_count) ?? num(s.no_total_cost_fp) ?? 0
     const result = String(s.market_result ?? s.result ?? '').toLowerCase()
-    const revenue = settlementDollars(s.revenue_dollars ?? s.revenue_fp ?? s.revenue)
+    const revenueDollars = num(s.revenue_dollars) ?? num(s.revenue_fp)
+    const revenue =
+      revenueDollars != null
+        ? revenueDollars
+        : num(s.revenue) != null
+          ? Number(s.revenue) / 100
+          : 0
     const yesCost = settlementDollars(s.yes_total_cost_dollars) || settlementDollars(s.yes_total_cost)
     const noCost = settlementDollars(s.no_total_cost_dollars) || settlementDollars(s.no_total_cost)
     const spent = Math.round((yesCost + noCost) * 100) / 100
@@ -689,10 +695,12 @@ export function saveCash(cash: CashLatch) {
 }
 
 function depositRowDollars(d: Record<string, unknown>) {
+  const officialCents = num(d.amount_cents)
+  if (officialCents != null) return officialCents / 100
   const dollars =
     num(d.amount_dollars) ?? num(d.deposit_dollars) ?? num(d.usd) ?? num(d.amount_usd) ?? num(d.value_dollars)
   if (dollars != null) return dollars
-  const cents = num(d.amount) ?? num(d.deposit) ?? num(d.amount_cents) ?? num(d.value)
+  const cents = num(d.amount) ?? num(d.deposit) ?? num(d.value)
   if (cents == null) return 0
   if (Number.isInteger(cents) && Math.abs(cents) >= 50) return cents / 100
   return cents
@@ -743,6 +751,8 @@ export function depositsMeta(raw: unknown): { total: number; firstAt: number | n
   let firstAt: number | null = null
   for (const d of list) {
     if (!d || typeof d !== 'object') continue
+    const status = String(d.status ?? 'applied').toLowerCase()
+    if (status === 'failed' || status === 'returned') continue
     sum += depositRowDollars(d)
     const at = depositRowAt(d)
     if (at != null && (firstAt == null || at < firstAt)) firstAt = at

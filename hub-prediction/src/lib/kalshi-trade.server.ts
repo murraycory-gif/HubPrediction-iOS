@@ -82,9 +82,15 @@ export function hasKalshiHostCreds() {
   return loadKalshiHostCreds() != null
 }
 
+/** Kalshi signs the URL path only — query string must not be in the signature. */
+export function signRequestPath(path: string) {
+  const i = path.indexOf('?')
+  return i === -1 ? path : path.slice(0, i)
+}
+
 function sign(pem: string, timestamp: string, method: string, path: string) {
   const signer = createSign('RSA-SHA256')
-  signer.update(timestamp + method + path)
+  signer.update(timestamp + method + signRequestPath(path))
   signer.end()
   return signer.sign(
     {
@@ -138,42 +144,79 @@ export async function fetchBalance(keyId: string, pem: string) {
   return { cash: cashFromBalancePayload(json), raw: json }
 }
 
+async function paginatedList(
+  keyId: string,
+  pem: string,
+  path: string,
+  listKeys: string[],
+  extraQuery = '',
+  pages = 16,
+) {
+  const rows: unknown[] = []
+  let cursor = ''
+  let last: unknown = null
+  for (let i = 0; i < pages; i++) {
+    const q = `limit=200${extraQuery}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
+    const json = (await signed(keyId, pem, 'GET', `${path}?${q}`)) as Record<string, unknown>
+    last = json
+    for (const key of listKeys) {
+      if (Array.isArray(json?.[key])) {
+        rows.push(...(json[key] as unknown[]))
+        break
+      }
+    }
+    const next = json?.cursor
+    if (!next) break
+    cursor = String(next)
+  }
+  return { last, rows }
+}
+
 export async function fetchSettlements(keyId: string, pem: string, minTs = 0) {
   const since = Math.max(0, Math.floor(minTs))
-  const settlements: unknown[] = []
-  let cursor = ''
-  for (let i = 0; i < 8; i++) {
-    const path = `${ROOT}/portfolio/settlements?limit=200&min_ts=${since}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
-    const json = (await signed(keyId, pem, 'GET', path)) as { settlements?: unknown[]; cursor?: string }
-    if (Array.isArray(json?.settlements)) settlements.push(...json.settlements)
-    if (!json?.cursor) break
-    cursor = json.cursor
-  }
-  return { settlements }
+  const extra = since > 0 ? `&min_ts=${since}` : ''
+  const { rows } = await paginatedList(keyId, pem, `${ROOT}/portfolio/settlements`, ['settlements'], extra)
+  return { settlements: rows }
 }
 
 export async function fetchDeposits(keyId: string, pem: string) {
-  const deposits: unknown[] = []
-  let cursor = ''
-  let last: unknown = null
-  for (let i = 0; i < 8; i++) {
-    const path = `${ROOT}/portfolio/deposits?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
-    const json = (await signed(keyId, pem, 'GET', path)) as {
-      deposits?: unknown[]
-      deposit_history?: unknown[]
-      cursor?: string
-    }
-    last = json
-    const rows = Array.isArray(json?.deposits)
-      ? json.deposits
-      : Array.isArray(json?.deposit_history)
-        ? json.deposit_history
-        : []
-    deposits.push(...rows)
-    if (!json?.cursor) break
-    cursor = json.cursor
+  const { last, rows } = await paginatedList(keyId, pem, `${ROOT}/portfolio/deposits`, [
+    'deposits',
+    'deposit_history',
+  ])
+  return last && typeof last === 'object' ? { ...(last as object), deposits: rows } : { deposits: rows }
+}
+
+export async function fetchFills(keyId: string, pem: string) {
+  const current = await paginatedList(keyId, pem, `${ROOT}/portfolio/fills`, ['fills'])
+  let historical: unknown[] = []
+  try {
+    historical = (await paginatedList(keyId, pem, `${ROOT}/historical/fills`, ['fills'])).rows
+  } catch {
+    historical = []
   }
-  return last && typeof last === 'object' ? { ...(last as object), deposits } : { deposits }
+  const seen = new Set<string>()
+  const fills: unknown[] = []
+  for (const row of [...current.rows, ...historical]) {
+    if (!row || typeof row !== 'object') continue
+    const o = row as Record<string, unknown>
+    const id = String(o.fill_id ?? o.trade_id ?? `${o.order_id ?? ''}:${o.ticker ?? ''}:${o.ts ?? ''}`)
+    if (seen.has(id)) continue
+    seen.add(id)
+    fills.push(row)
+  }
+  return { fills }
+}
+
+export async function fetchPositions(keyId: string, pem: string) {
+  const { rows } = await paginatedList(
+    keyId,
+    pem,
+    `${ROOT}/portfolio/positions`,
+    ['market_positions', 'positions'],
+    '&count_filter=position,total_traded',
+  )
+  return { market_positions: rows, positions: rows }
 }
 
 function sleep(ms: number) {
