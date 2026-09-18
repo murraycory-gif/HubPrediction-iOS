@@ -9,6 +9,7 @@ import {
   createDeskHost,
   listTailscaleDeskUrls,
   publicDeskUrl,
+  hushViteLine,
   reclaimDeskPort,
   reclaimDeskPortCommand,
   rewritePublicLocation,
@@ -66,6 +67,12 @@ describe('desk-host Soft FAIL refresh refused', () => {
       return ''
     }, 'win32')
     expect(ran.join(' ')).toMatch(/LocalPort 8080/)
+  })
+
+  it('hides Vite Local URLs so 12783 never becomes the desk address', () => {
+    expect(hushViteLine('  ➜  Local:   http://127.0.0.1:12783/')).toBe(true)
+    expect(hushViteLine('  ➜  Network: http://127.0.0.1:18082/')).toBe(true)
+    expect(hushViteLine('[desk-host] Desk: http://127.0.0.1:8080')).toBe(false)
   })
 
   it('pins one desk address at 8080 and keeps Vite off 1808x', () => {

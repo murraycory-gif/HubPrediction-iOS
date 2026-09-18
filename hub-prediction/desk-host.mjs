@@ -75,8 +75,17 @@ export function listTailscaleDeskUrls(publicPort = PUBLIC_PORT, run = execFileSy
   }
 }
 
-function viteBin() {
-  return path.join(DIR, 'node_modules', '.bin', process.platform === 'win32' ? 'vite.cmd' : 'vite')
+function viteEntry() {
+  return path.join(DIR, 'node_modules', 'vite', 'bin', 'vite.js')
+}
+
+/** Soft FAIL printing an inner Vite URL. One address: 8080. */
+export function hushViteLine(line, vitePort = VITE_PORT) {
+  const text = String(line)
+  if (/(Local|Network):/.test(text)) return true
+  if (/https?:\/\/\S+:1808\d\b/.test(text)) return true
+  if (new RegExp(`:${Number(vitePort)}\\b`).test(text) && /https?:\/\//.test(text)) return true
+  return false
 }
 
 export function forwardUpgrade(req, socket, head, port = VITE_PORT) {
@@ -98,23 +107,27 @@ let stopping = false
 let viteChild = null
 
 function hushViteLog(stream, dest) {
-  stream.on('data', (buf) => {
-    const text = String(buf)
-    if (/(Local|Network):\s+https?:\/\//.test(text)) return
-    if (new RegExp(`:${VITE_PORT}\\b`).test(text) && /https?:\/\//.test(text)) return
-    dest.write(buf)
+  let hold = ''
+  stream.on('data', (chunk) => {
+    hold += String(chunk)
+    const lines = hold.split(/\r?\n/)
+    hold = lines.pop() ?? ''
+    for (const line of lines) {
+      if (hushViteLine(line)) continue
+      dest.write(`${line}\n`)
+    }
   })
 }
 
 function bootVite() {
   if (stopping) return null
   const child = spawn(
-    viteBin(),
-    ['dev', '--port', String(VITE_PORT), '--strictPort', '--host', '127.0.0.1'],
+    process.execPath,
+    [viteEntry(), 'dev', '--port', String(VITE_PORT), '--strictPort', '--host', '127.0.0.1'],
     {
       cwd: DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: process.platform === 'win32',
+      windowsHide: true,
       env: {
         ...process.env,
         DESK_PUBLIC_PORT: String(PUBLIC_PORT),
