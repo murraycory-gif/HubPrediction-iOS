@@ -105,7 +105,7 @@ export function isLiveBet(b: { kind?: unknown; orderId?: unknown; betId?: unknow
   return !isPaperBet(b)
 }
 
-/** Live settled rows carry the Kalshi cash move. Paper never touches cash. */
+/** Live settled W/L move Kalshi cash. Paper and open rows do not. */
 export function cashUpdateForBet(b: {
   kind?: unknown
   orderId?: unknown
@@ -116,6 +116,53 @@ export function cashUpdateForBet(b: {
   if (isPaperBet(b)) return { kind: 'paper', amount: null }
   if (b.status !== 'settled' || b.pnl == null) return { kind: 'open', amount: null }
   return { kind: 'live', amount: b.pnl }
+}
+
+function money(n: number) {
+  return Math.round(n * 100) / 100
+}
+
+export function betStamp(b: { settledAt?: number | null; closeAt?: number; filledAt?: number }) {
+  return Number(b.settledAt) || Number(b.closeAt) || Number(b.filledAt) || 0
+}
+
+/**
+ * Actual Kalshi cash after each row. Live settled W/L add P&L.
+ * Paper and open rows carry the same cash. Soft FAIL paper P&L into cash.
+ */
+export function cashAfterEachBet(
+  bets: Array<{
+    betId: string
+    kind?: unknown
+    orderId?: unknown
+    status: 'open' | 'settled'
+    pnl: number | null
+    settledAt?: number | null
+    closeAt?: number
+    filledAt?: number
+  }>,
+  currentCash: number | null | undefined,
+  deposits: number | null | undefined = null,
+): Record<string, number | null> {
+  const ordered = [...bets].sort((a, b) => {
+    const dt = betStamp(a) - betStamp(b)
+    return dt !== 0 ? dt : String(a.betId).localeCompare(String(b.betId))
+  })
+  const realized = ordered.reduce((s, b) => {
+    if (isLiveBet(b) && b.status === 'settled' && b.pnl != null) return s + b.pnl
+    return s
+  }, 0)
+  let cursor: number | null = null
+  if (Number.isFinite(currentCash ?? NaN)) cursor = money(Number(currentCash) - realized)
+  else if (Number.isFinite(deposits ?? NaN)) cursor = money(Number(deposits))
+  const out: Record<string, number | null> = {}
+  for (const b of ordered) {
+    if (cursor != null && isLiveBet(b) && b.status === 'settled' && b.pnl != null) {
+      cursor = money(cursor + b.pnl)
+    }
+    out[b.betId] = cursor
+  }
+  return out
 }
 
 export function betWindowMs(b: { clock?: string; ticker?: string }) {

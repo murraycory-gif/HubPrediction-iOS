@@ -66,7 +66,7 @@ import type { DeskBoard, TapeQuote } from '../lib/types'
 import {
   betKind,
   betWindowMs,
-  cashUpdateForBet,
+  cashAfterEachBet,
   bookFill,
   clearKill,
   engageKill,
@@ -372,6 +372,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const ttl = ttlFromHits(hits)
   const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter, cash.firstDepositAt ?? 0)
+  const cashByBet = useMemo(
+    () => cashAfterEachBet(book.bets, cash.cash, cash.deposits),
+    [book.bets, cash.cash, cash.deposits],
+  )
 
   return (
     <div className="desk">
@@ -492,6 +496,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             .filter((b) => settings.betsFilter.includes(b.tape))
             .slice()
             .sort((a, b) => (b.filledAt || b.settledAt || 0) - (a.filledAt || a.settledAt || 0))}
+          cashByBet={cashByBet}
           filter={settings.betsFilter}
           onFilter={(chip) => setSettings((cur) => applyBetsFilter(cur, chip))}
         />
@@ -841,6 +846,7 @@ function Bets24Strip({
   open,
   pct,
   rows,
+  cashByBet,
   filter,
   onFilter,
 }: {
@@ -864,6 +870,7 @@ function Bets24Strip({
     kind?: 'live' | 'paper'
     orderId?: string
   }>
+  cashByBet: Record<string, number | null>
   filter: TapeId[]
   onFilter: (chip: 'all' | TapeId) => void
 }) {
@@ -931,9 +938,8 @@ function Bets24Strip({
               const rowPnl = settled ? (b.pnl as number) : null
               const mode = betKind(b)
               const windowLabel = formatBetWindow(b.closeAt, betWindowMs(b), b.filledAt)
-              const cashUp = cashUpdateForBet(b)
-              const cashText =
-                cashUp.kind === 'paper' ? 'N/A' : cashUp.kind === 'open' || cashUp.amount == null ? '—' : formatPnl(cashUp.amount)
+              const cashAmt = cashByBet[b.betId]
+              const cashText = cashAmt == null ? '—' : formatCash(cashAmt)
               return (
                 <li key={b.betId} className="bets-log-row" data-kind={mode}>
                   <span>{b.tape.toUpperCase()}</span>
@@ -951,20 +957,7 @@ function Bets24Strip({
                   >
                     {rowPnl == null ? '—' : formatPnl(rowPnl)}
                   </span>
-                  <span
-                    data-testid="bets-cash"
-                    className={
-                      cashUp.kind === 'paper' || cashUp.amount == null
-                        ? undefined
-                        : cashUp.amount > 0
-                          ? 'tone-up'
-                          : cashUp.amount < 0
-                            ? 'tone-down'
-                            : undefined
-                    }
-                  >
-                    {cashText}
-                  </span>
+                  <span data-testid="bets-cash">{cashText}</span>
                 </li>
               )
             })}

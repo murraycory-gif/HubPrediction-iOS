@@ -15,6 +15,7 @@ import {
   chasingLosses,
   last24hBets,
   hydrateFinance,
+  cashAfterEachBet,
   cashUpdateForBet,
   bookRealizedPnl,
   mergeKalshiHistoryToBook,
@@ -427,5 +428,18 @@ describe('finance Soft KEEP', () => {
     expect(paperRow && cashUpdateForBet(paperRow)).toEqual({ kind: 'paper', amount: null })
     expect(liveRow && cashUpdateForBet(liveRow)).toEqual({ kind: 'live', amount: 5 })
     expect(cashUpdateForBet({ kind: 'live', status: 'open', pnl: null })).toEqual({ kind: 'open', amount: null })
+    const run = cashAfterEachBet(
+      [
+        { betId: 'live-win', kind: 'live', status: 'settled', pnl: 0.48, filledAt: 1, settledAt: 1 },
+        { betId: 'paper-win', kind: 'paper', status: 'settled', pnl: 5, filledAt: 2, settledAt: 2 },
+        { betId: 'live-loss', kind: 'live', status: 'settled', pnl: -1, filledAt: 3, settledAt: 3 },
+        { betId: 'live-open', kind: 'live', status: 'open', pnl: null, filledAt: 4 },
+      ],
+      499.48,
+    )
+    expect(run['live-win']).toBeCloseTo(500.48)
+    expect(run['paper-win']).toBeCloseTo(500.48)
+    expect(run['live-loss']).toBeCloseTo(499.48)
+    expect(run['live-open']).toBeCloseTo(499.48)
   })
 })

@@ -211,6 +211,10 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await page.addInitScript(
     ([ts]) => {
       localStorage.setItem(
+        'hub.desk.cash.v1',
+        JSON.stringify({ cash: 500, deposits: 500, pnl: 0, firstDepositAt: ts, asOf: ts }),
+      )
+      localStorage.setItem(
         'hub.desk.finance.v1',
         JSON.stringify({
           killed: false,
@@ -290,9 +294,9 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.locator('.bets-log-scroll')).toBeVisible()
   await expect(page.locator('.bets-log-wrap')).toHaveCSS('overflow-x', 'auto')
   await expect(page.getByTestId('bets-log')).toHaveCSS('overflow-x', 'hidden')
-  await expect(page.getByTestId('bets-log')).toContainText('N/A')
   await expect(page.locator('[data-kind="live"] [data-testid="bets-cash"]').first()).toContainText('$')
-  await expect(page.locator('[data-kind="paper"] [data-testid="bets-cash"]').first()).toHaveText('N/A')
+  await expect(page.locator('[data-kind="paper"] [data-testid="bets-cash"]').first()).toContainText('$')
+  await expect(page.locator('[data-kind="paper"] [data-testid="bets-cash"]').first()).not.toHaveText('N/A')
   await page.getByTestId('bets-filter-btc').click()
   await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'false')
   await expect(page.getByTestId('bets-placed')).toContainText('$10.00')
