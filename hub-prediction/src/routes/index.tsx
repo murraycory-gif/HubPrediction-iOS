@@ -3,7 +3,13 @@ import { Dashboard } from '../components/dashboard'
 import { getDeskBoard } from '../lib/btc-data'
 
 export const Route = createFileRoute('/')({
-  loader: async () => getDeskBoard({ data: {} }),
+  loader: async () => {
+    try {
+      return await getDeskBoard({ data: {} })
+    } catch {
+      return null
+    }
+  },
   component: Home,
 })
 
