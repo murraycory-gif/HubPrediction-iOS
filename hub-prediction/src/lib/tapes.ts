@@ -330,6 +330,8 @@ export type DeskSettings = {
   betsFilter: TapeId[]
   clocks: Record<TapeId, TapeClock>
   charts: Record<TapeId, ChartRange>
+  /** User chose Bot / Live cash. Soft FAIL wiping those on refresh. */
+  togglesPicked?: boolean
 }
 
 export const TAPE_META: Record<
@@ -344,10 +346,10 @@ export const TAPE_META: Record<
 
 /** Final locked Grok Build recipes — Soft FAIL inventing new ones. */
 export const GOLD_RECIPES: Record<TapeId, TapeRecipe> = {
-  btc: { contracts: 1, botOn: false, liveOn: false, armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 },
-  ng: { contracts: 1, botOn: false, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
-  cu: { contracts: 1, botOn: false, liveOn: false, armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
-  gld: { contracts: 1, botOn: false, liveOn: false, armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 },
+  btc: { contracts: 1, botOn: true, liveOn: false, armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 },
+  ng: { contracts: 1, botOn: true, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
+  cu: { contracts: 1, botOn: true, liveOn: false, armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
+  gld: { contracts: 1, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 },
 }
 
 export const DEFAULT_SETTINGS: DeskSettings = {
@@ -434,21 +436,22 @@ export function clampTapeRecipe(id: TapeId, partial: Partial<TapeRecipe> | undef
 
 function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe, id: TapeId): TapeRecipe {
   const next = clampTapeRecipe(id, partial, gold)
-  next.botOn = false
+  next.botOn = true
   next.liveOn = false
   return next
 }
 
-/** Live boots OFF unless stored true. Bots may persist ON if stored (night paper). Soft FAIL live-cash ON by default. */
+/** Bots default ON. Live cash boots OFF unless stored true. User Bot / Live cash choices persist. Soft FAIL live-cash ON by default. */
 export function hydrateSettings(raw: unknown): DeskSettings {
   const o = raw && typeof raw === 'object' ? (raw as Partial<DeskSettings> & { tapes?: Partial<Record<TapeId, Partial<TapeRecipe>>> }) : {}
+  const picked = o.togglesPicked === true
   const tapes = {} as Record<TapeId, TapeRecipe>
   for (const id of TAPE_IDS) {
     const gold = GOLD_RECIPES[id]
     const stored = o.tapes?.[id]
     const next = recipeFrom(stored, gold, id)
     if (stored) {
-      next.botOn = stored.botOn === true
+      if (picked && typeof stored.botOn === 'boolean') next.botOn = stored.botOn === true
       next.liveOn = stored.liveOn === true
     }
     tapes[id] = next
@@ -459,17 +462,21 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     betsFilter: hydrateBetsFilter((o as { betsFilter?: unknown }).betsFilter),
     clocks: hydrateClocks((o as { clocks?: unknown }).clocks),
     charts: hydrateChartRanges((o as { charts?: unknown }).charts),
+    togglesPicked: picked,
   }
 }
 
 export function loadSettings(): DeskSettings {
+  const empty = hydrateSettings(null)
   const ls = deskStorage()
-  if (!ls) return hydrateSettings(null)
+  if (!ls) return saveSettings({ ...empty, togglesPicked: true })
   try {
     const raw = ls.getItem(SETTINGS_KEY)
-    return hydrateSettings(raw ? JSON.parse(raw) : null)
+    const next = hydrateSettings(raw ? JSON.parse(raw) : null)
+    if (next.togglesPicked === true && raw) return next
+    return saveSettings({ ...next, togglesPicked: true })
   } catch {
-    return hydrateSettings(null)
+    return saveSettings({ ...empty, togglesPicked: true })
   }
 }
 
@@ -486,8 +493,10 @@ export function saveSettings(settings: DeskSettings) {
 }
 
 export function patchTape(settings: DeskSettings, id: TapeId, patch: Partial<TapeRecipe>): DeskSettings {
+  const picked = settings.togglesPicked === true || 'botOn' in patch || 'liveOn' in patch
   return saveSettings({
     ...settings,
+    togglesPicked: picked,
     tapes: { ...settings.tapes, [id]: { ...settings.tapes[id], ...patch } },
   })
 }
@@ -529,7 +538,7 @@ export function disarmAllBots(settings: DeskSettings): DeskSettings {
   for (const id of TAPE_IDS) {
     tapes[id] = { ...tapes[id], botOn: false }
   }
-  return saveSettings({ ...settings, liveBets: false, tapes })
+  return saveSettings({ ...settings, liveBets: false, togglesPicked: true, tapes })
 }
 
 export function remainingMinutes(closeAt: number, now = Date.now()) {

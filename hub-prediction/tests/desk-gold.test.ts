@@ -63,12 +63,12 @@ describe('defaults Soft FAIL Live / bots ON', () => {
     expect(loadSettings().liveBets).toBe(false)
   })
 
-  it('boots live bets off and every bot / live-cash off', () => {
+  it('boots live bets off, bots on, live-cash off', () => {
     const s = hydrateSettings(null)
     expect(s.liveBets).toBe(false)
     expect(DEFAULT_SETTINGS.liveBets).toBe(false)
     for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
-      expect(s.tapes[id].botOn).toBe(false)
+      expect(s.tapes[id].botOn).toBe(true)
       expect(s.tapes[id].liveOn).toBe(false)
     }
   })
@@ -95,7 +95,7 @@ describe('defaults Soft FAIL Live / bots ON', () => {
     const s = hydrateSettings({ tapes: { btc: { contracts: 7 } } })
     expect(s.liveBets).toBe(false)
     expect(s.tapes.btc.liveOn).toBe(false)
-    expect(s.tapes.btc.botOn).toBe(false)
+    expect(s.tapes.btc.botOn).toBe(true)
     expect(s.tapes.btc.contracts).toBe(7)
   })
 })
@@ -146,6 +146,21 @@ describe('settings persist', () => {
     const again = loadSettings()
     expect(again.tapes.ng.contracts).toBe(4)
     expect(again.tapes.ng.botOn).toBe(true)
+    expect(again.liveBets).toBe(false)
+  })
+
+  it('keeps Bot OFF and Live cash ON after reload when the user picked them', () => {
+    const first = loadSettings()
+    expect(first.tapes.btc.botOn).toBe(true)
+    expect(first.tapes.btc.liveOn).toBe(false)
+    patchTape(first, 'btc', { botOn: false, liveOn: true })
+    patchTape(loadSettings(), 'ng', { botOn: false })
+    const again = loadSettings()
+    expect(again.tapes.btc.botOn).toBe(false)
+    expect(again.tapes.btc.liveOn).toBe(true)
+    expect(again.tapes.ng.botOn).toBe(false)
+    expect(again.tapes.ng.liveOn).toBe(false)
+    expect(again.tapes.cu.botOn).toBe(true)
     expect(again.liveBets).toBe(false)
   })
 

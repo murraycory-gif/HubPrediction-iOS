@@ -114,7 +114,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
     expect(start.tapes.btc.through).toBe(40)
     const next = applyAnalystAccept(start, 'btc', { ...GOLD_RECIPES.btc, through: 46, botOn: true, liveOn: true })
     expect(next.tapes.btc.through).toBe(46)
-    expect(next.tapes.btc.botOn).toBe(false)
+    expect(next.tapes.btc.botOn).toBe(true)
     expect(next.tapes.btc.liveOn).toBe(false)
     expect(next.liveBets).toBe(false)
     expect(loadSettings().tapes.btc.through).toBe(46)

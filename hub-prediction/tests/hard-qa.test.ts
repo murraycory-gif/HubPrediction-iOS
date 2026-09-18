@@ -79,7 +79,7 @@ describe('HARD QA 1–10', () => {
     expect(s.liveBets).toBe(false)
     expect(DEFAULT_SETTINGS.liveBets).toBe(false)
     for (const id of TAPE_IDS) {
-      expect(s.tapes[id].botOn).toBe(false)
+      expect(s.tapes[id].botOn).toBe(true)
       expect(s.tapes[id].liveOn).toBe(false)
       expect(cashGates(s, id).ok).toBe(false)
     }
