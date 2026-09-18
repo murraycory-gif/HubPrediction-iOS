@@ -1,31 +1,50 @@
 import { deskStorage } from './desk-storage'
 import type { HostDeskState } from './desk-persist'
-import { hydrateFinance, saveFinance } from './finance'
-import { SETTINGS_KEY, hydrateSettings, loadTickets, saveTickets, type DeskTicket } from './tapes'
+import { FINANCE_KEY, hydrateFinance, type BookedBet } from './finance'
+import { SETTINGS_KEY, TICKETS_KEY, hydrateSettings, loadSettings, loadTickets, type DeskTicket } from './tapes'
 
-/** Host .secrets/desk-state.json wins over an empty or new-origin localStorage. */
+/** Host fills an empty / new-origin store. Soft FAIL overwriting a newer local pick. */
 export function applyHostDeskState(host: HostDeskState | null | undefined) {
   if (!host) return false
   const ls = deskStorage()
+  if (!ls) return false
   let any = false
-  if (host.settings) {
-    const next = hydrateSettings(host.settings)
-    if (ls) {
-      try {
-        ls.setItem(SETTINGS_KEY, JSON.stringify(next))
-        any = true
-      } catch {
-        /* quota */
-      }
+  const local = loadSettings()
+  const localAt = Number(local.savedAt) || 0
+  const hostAt = Number(host.asOf) || 0
+  if (host.settings && hostAt >= localAt) {
+    try {
+      ls.setItem(SETTINGS_KEY, JSON.stringify(hydrateSettings({ ...(host.settings as object), savedAt: hostAt })))
+      any = true
+    } catch {
+      /* quota */
     }
   }
   if (Array.isArray(host.tickets)) {
-    saveTickets(host.tickets as DeskTicket[])
-    any = true
+    const byId = new Map<string, DeskTicket>()
+    for (const t of host.tickets as DeskTicket[]) {
+      if (t?.orderId) byId.set(t.orderId, t)
+    }
+    for (const t of loadTickets()) byId.set(t.orderId, t)
+    try {
+      ls.setItem(TICKETS_KEY, JSON.stringify([...byId.values()]))
+      any = true
+    } catch {
+      /* quota */
+    }
   }
   if (host.finance) {
-    saveFinance(hydrateFinance(host.finance))
-    any = true
+    const hostFin = hydrateFinance(host.finance)
+    const localFin = hydrateFinance(JSON.parse(ls.getItem(FINANCE_KEY) || 'null'))
+    const byId = new Map<string, BookedBet>()
+    for (const b of hostFin.bets) byId.set(b.betId, b)
+    for (const b of localFin.bets) byId.set(b.betId, b)
+    try {
+      ls.setItem(FINANCE_KEY, JSON.stringify({ ...localFin, bets: [...byId.values()] }))
+      any = true
+    } catch {
+      /* quota */
+    }
   }
-  return any || loadTickets().length > 0
+  return any
 }

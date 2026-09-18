@@ -407,6 +407,7 @@ export type DeskSettings = {
   charts: Record<TapeId, ChartRange>
   /** User chose Bot / Live cash. Soft FAIL wiping those on refresh. */
   togglesPicked?: boolean
+  savedAt?: number
 }
 
 export const TAPE_META: Record<
@@ -538,25 +539,27 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     clocks: hydrateClocks((o as { clocks?: unknown }).clocks),
     charts: hydrateChartRanges((o as { charts?: unknown }).charts),
     togglesPicked: picked,
+    savedAt: Number((o as { savedAt?: unknown }).savedAt) || undefined,
   }
 }
 
 export function loadSettings(): DeskSettings {
-  const empty = hydrateSettings(null)
+  const empty = { ...hydrateSettings(null), togglesPicked: true }
   const ls = deskStorage()
-  if (!ls) return saveSettings({ ...empty, togglesPicked: true })
+  if (!ls) return empty
   try {
     const raw = ls.getItem(SETTINGS_KEY)
-    const next = hydrateSettings(raw ? JSON.parse(raw) : null)
-    if (next.togglesPicked === true && raw) return next
+    if (!raw) return empty
+    const next = hydrateSettings(JSON.parse(raw))
+    if (next.togglesPicked === true) return next
     return saveSettings({ ...next, togglesPicked: true })
   } catch {
-    return saveSettings({ ...empty, togglesPicked: true })
+    return empty
   }
 }
 
 export function saveSettings(settings: DeskSettings) {
-  const next = hydrateSettings(settings)
+  const next = hydrateSettings({ ...settings, savedAt: Date.now(), togglesPicked: true })
   const ls = deskStorage()
   if (!ls) return next
   try {
