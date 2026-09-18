@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import type { TapeClock, TapeId } from './tapes'
+import type { ChartRange, TapeClock, TapeId } from './tapes'
 
 export const peekDesk = createServerFn({ method: 'GET' }).handler(async () => {
   const { peekDeskBoard, startWarm } = await import('./kalshi.server')
@@ -14,6 +14,17 @@ export const getDeskBoard = createServerFn({ method: 'POST' })
     const { hydrateClocks } = await import('./tapes')
     startWarm()
     return loadDeskBoard(hydrateClocks(data?.clocks))
+  })
+
+export const getLivePrints = createServerFn({ method: 'POST' })
+  .validator(
+    (d: { events?: Partial<Record<TapeId, string>>; charts?: Partial<Record<TapeId, ChartRange>> } | undefined) =>
+      d ?? {},
+  )
+  .handler(async ({ data }) => {
+    const { loadLivePrints } = await import('./kalshi.server')
+    const { liveRangeFromCharts } = await import('./tapes')
+    return loadLivePrints(data?.events ?? {}, liveRangeFromCharts(data?.charts))
   })
 
 export const getSettledTape = createServerFn({ method: 'POST' })

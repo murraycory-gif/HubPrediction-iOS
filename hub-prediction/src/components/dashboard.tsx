@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { getDeskBoard, getKalshiBalance, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { getDeskBoard, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, placeKalshi } from '../lib/btc-data'
 import {
   TAPE_IDS,
   TAPE_META,
@@ -8,10 +8,13 @@ import {
   CLOCK_CALLOUT,
   CLOCK_LABELS,
   DEFAULT_CHART,
+  LIVE_PRINT_MS,
   defaultChartRanges,
   GOLD_RECIPES,
   applyBetsFilter,
+  boardEventTickers,
   boardPollMs,
+  mergeLiveOntoBoard,
   askInBand,
   cashGates,
   claimSend,
@@ -161,7 +164,29 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     staleTime: 200,
   })
 
-  const board = boardQuery.data ?? seedBoard
+  const structure = boardQuery.data ?? seedBoard
+  const liveEvents = useMemo(
+    () => boardEventTickers(structure),
+    [
+      structure?.fetchedAt,
+      structure?.tapes.btc?.eventTicker,
+      structure?.tapes.ng?.eventTicker,
+      structure?.tapes.cu?.eventTicker,
+      structure?.tapes.gld?.eventTicker,
+    ],
+  )
+
+  const printsQuery = useQuery({
+    queryKey: ['live-prints', liveEvents, settings.charts],
+    queryFn: () => getLivePrints({ data: { events: liveEvents, charts: settings.charts } }),
+    enabled: Object.values(liveEvents).some(Boolean),
+    refetchInterval: LIVE_PRINT_MS,
+    refetchIntervalInBackground: true,
+    placeholderData: keepPreviousData,
+    staleTime: 80,
+  })
+
+  const board = mergeLiveOntoBoard(structure, printsQuery.data) ?? structure
 
   async function refreshCash() {
     try {
@@ -608,12 +633,12 @@ function TapeRow({
   const status = ticketStatus(ticket)
   const pct = hitPct(hits)
   const live = quote?.live ?? null
-  const shownLive = useSmoothedLive(live)
+  const shownLive = useSmoothedLive(live, 160)
   const beat = quote?.beat ?? 0
   const think = weThinkPair(live, beat, quote?.points ?? [])
   const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)
   const callout = CLOCK_CALLOUT[clock]
-  const tone = nowTone(live, beat)
+  const tone = nowTone(shownLive, beat)
   const liveOn = quote?.tradingActive === true
   const [draft, setDraft] = useState(recipe.contracts)
   const contractsRef = useRef<HTMLInputElement>(null)
@@ -738,6 +763,7 @@ function TapeRow({
         id={id}
         beat={beat}
         live={live}
+        displayLive={shownLive}
         points={quote?.points}
         clock={clock}
         chart={chart}

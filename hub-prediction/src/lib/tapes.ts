@@ -1,5 +1,6 @@
 import { deskStorage } from './desk-storage'
-import { pointTime } from './race-path'
+import { mergeRaceTrail, pointTime } from './race-path'
+import type { DeskBoard, LivePrints } from './types'
 
 export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
 export type TapeId = (typeof TAPE_IDS)[number]
@@ -110,7 +111,11 @@ export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
   return TAPE_SERIES[id][hydrateClock(clock)]
 }
 
-/** Fast poll near close / between runs so the next Kalshi clock latches without 00:00 WAIT lag. */
+/** Structure board only. Prints ride LIVE_PRINT_MS. Fast near close so the next clock latches. */
+export const LIVE_PRINT_MS = 200
+export const BOARD_STRUCTURE_MS = 2500
+export const BOARD_ROLLOVER_MS = 350
+
 export function boardPollMs(
   board:
     | { tapes: Record<TapeId, { tradingActive?: boolean; closeAt?: number } | null> }
@@ -121,11 +126,57 @@ export function boardPollMs(
   if (!board) return 400
   for (const id of TAPE_IDS) {
     const q = board.tapes[id]
-    if (!q) return 350
-    if (q.tradingActive === false) return 350
-    if (Number(q.closeAt) > 0 && Number(q.closeAt) - now <= 8000) return 350
+    if (!q) return BOARD_ROLLOVER_MS
+    if (q.tradingActive === false) return BOARD_ROLLOVER_MS
+    if (Number(q.closeAt) > 0 && Number(q.closeAt) - now <= 8000) return BOARD_ROLLOVER_MS
   }
-  return 800
+  return BOARD_STRUCTURE_MS
+}
+
+export function liveRangeFromCharts(charts?: Partial<Record<TapeId, ChartRange>> | null) {
+  for (const id of TAPE_IDS) {
+    const c = charts?.[id]
+    if (c === '15m' || c === '1h') return CLOCK_LIVE_RANGE['1h']
+  }
+  return CLOCK_LIVE_RANGE['5m']
+}
+
+export function boardEventTickers(
+  board: { tapes: Record<TapeId, { eventTicker?: string } | null> } | null | undefined,
+): Partial<Record<TapeId, string>> {
+  const out: Partial<Record<TapeId, string>> = {}
+  if (!board) return out
+  for (const id of TAPE_IDS) {
+    const ev = board.tapes[id]?.eventTicker
+    if (ev) out[id] = ev
+  }
+  return out
+}
+
+/** Overlay Kalshi last prints onto the slower structure board. Soft FAIL swap tickers. */
+export function mergeLiveOntoBoard(
+  board: DeskBoard | null | undefined,
+  prints: LivePrints | null | undefined,
+): DeskBoard | null {
+  if (!board) return null
+  if (!prints) return board
+  const tapes = { ...board.tapes }
+  let changed = false
+  for (const id of TAPE_IDS) {
+    const q = tapes[id]
+    const p = prints.tapes[id]
+    if (!q || !p || !p.eventTicker || p.eventTicker !== q.eventTicker) continue
+    tapes[id] = {
+      ...q,
+      live: p.live ?? q.live,
+      liveSource: p.liveSource ?? q.liveSource,
+      points: mergeRaceTrail(q.points, p.points, p.live ?? q.live, p.fetchedAt),
+      fetchedAt: Math.max(q.fetchedAt, p.fetchedAt),
+    }
+    changed = true
+  }
+  if (!changed) return board
+  return { ...board, tapes, fetchedAt: Math.max(board.fetchedAt, prints.fetchedAt) }
 }
 
 export function clockFromTicker(ticker: string): TapeClock | '' {

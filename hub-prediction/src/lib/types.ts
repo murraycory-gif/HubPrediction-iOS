@@ -94,3 +94,16 @@ export type DeskBoard = {
   tapes: Record<TapeId, TapeQuote | null>
   fetchedAt: number
 }
+
+export type LiveOverlay = {
+  eventTicker: string
+  live: number | null
+  liveSource: TapeQuote['liveSource']
+  points: Point[]
+  fetchedAt: number
+}
+
+export type LivePrints = {
+  tapes: Record<TapeId, LiveOverlay | null>
+  fetchedAt: number
+}

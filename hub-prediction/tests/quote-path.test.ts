@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadDeskBoard, pickOpen, resetDeskBoardForTests } from '../src/lib/kalshi.server'
-import { boardPollMs } from '../src/lib/tapes'
+import { loadDeskBoard, loadLivePrints, pickOpen, resetDeskBoardForTests } from '../src/lib/kalshi.server'
+import { BOARD_STRUCTURE_MS, boardPollMs, liveRangeFromCharts, mergeLiveOntoBoard } from '../src/lib/tapes'
+import type { DeskBoard } from '../src/lib/types'
 
 afterEach(() => {
   resetDeskBoardForTests()
@@ -279,8 +280,119 @@ describe('one fast quote path Soft KEEP same ticker/second', () => {
       cu: { tradingActive: true, closeAt: now + 60_000 },
       gld: { tradingActive: true, closeAt: now + 60_000 },
     }
-    expect(boardPollMs({ tapes: liveTapes }, now)).toBe(800)
+    expect(boardPollMs({ tapes: liveTapes }, now)).toBe(BOARD_STRUCTURE_MS)
     expect(boardPollMs({ tapes: { ...liveTapes, btc: { tradingActive: false, closeAt: now - 1 } } }, now)).toBe(350)
     expect(boardPollMs({ tapes: { ...liveTapes, btc: { tradingActive: true, closeAt: now + 4000 } } }, now)).toBe(350)
+  })
+
+  it('reuses an open ticker without refetching live_data — prints ride the fast path', async () => {
+    const now = Date.now()
+    const open = new Date(now - 4 * 60_000).toISOString()
+    const close = new Date(now + 11 * 60_000).toISOString()
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      async (url: string) => {
+        const u = String(url)
+        calls.push(u)
+        if (u.includes('/markets?series_ticker=KXBTC15M')) {
+          return json({
+            markets: [
+              {
+                ticker: 'KXBTC15M-LIVE',
+                event_ticker: 'KXBTC15M-LIVE-E',
+                status: 'active',
+                yes_ask: 70,
+                no_ask: 31,
+                floor_strike: 80870,
+                open_time: open,
+                close_time: close,
+              },
+            ],
+          })
+        }
+        if (u.includes('/markets?')) return json({ markets: [] })
+        if (u.includes('/markets/KXBTC15M-LIVE')) {
+          return json({
+            market: {
+              ticker: 'KXBTC15M-LIVE',
+              event_ticker: 'KXBTC15M-LIVE-E',
+              status: 'active',
+              yes_ask: 71,
+              no_ask: 30,
+              floor_strike: 80870,
+              open_time: open,
+              close_time: close,
+            },
+          })
+        }
+        if (u.includes('/live_data/events/KXBTC15M-LIVE-E')) {
+          return json({ live_data: { details: { last: 80880 } } })
+        }
+        if (u.includes('/live_data/')) return json({ live_data: { details: { last: 1 } } })
+        throw new Error(u)
+      },
+    )
+    const first = await loadDeskBoard()
+    expect(first.tapes.btc?.live).toBeCloseTo(80880)
+    await new Promise((r) => setTimeout(r, 400))
+    const before = calls.length
+    const second = await loadDeskBoard()
+    const replay = calls.slice(before)
+    expect(second.tapes.btc?.ticker).toBe('KXBTC15M-LIVE')
+    expect(replay.some((u) => u.includes('/live_data/'))).toBe(false)
+    expect(replay.some((u) => u.includes('/markets/KXBTC15M-LIVE'))).toBe(true)
+  })
+
+  it('loadLivePrints hits live_data only and merge overlays the board', async () => {
+    const now = Date.now()
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      async (url: string) => {
+        const u = String(url)
+        calls.push(u)
+        if (u.includes('/live_data/events/KXBTC15M-E')) {
+          return json({ live_data: { details: { last: 80910, timeseries: [{ t: now, v: 80910 }] } } })
+        }
+        throw new Error('Soft FAIL structure on print path ' + u)
+      },
+    )
+    const prints = await loadLivePrints({ btc: 'KXBTC15M-E' }, '5min')
+    expect(prints.tapes.btc?.live).toBeCloseTo(80910)
+    expect(prints.tapes.btc?.eventTicker).toBe('KXBTC15M-E')
+    expect(calls.every((u) => u.includes('/live_data/events/'))).toBe(true)
+    expect(calls.some((u) => u.includes('range=5min'))).toBe(true)
+    expect(liveRangeFromCharts({ btc: 'live', ng: '5m', cu: 'live', gld: 'live' })).toBe('5min')
+    expect(liveRangeFromCharts({ btc: '1h' })).toBe('1h')
+    const board: DeskBoard = {
+      fetchedAt: now - 1000,
+      tapes: {
+        btc: {
+          id: 'btc',
+          series: 'KXBTC15M',
+          ticker: 'KXBTC15M-LIVE',
+          eventTicker: 'KXBTC15M-E',
+          yesAsk: 70,
+          noAsk: 31,
+          beat: 80870,
+          live: 80800,
+          liveSource: 'kalshi-live',
+          points: [],
+          openAt: now - 60_000,
+          closeAt: now + 60_000,
+          fetchedAt: now - 1000,
+          clock: '—',
+          tradingActive: true,
+        },
+        ng: null,
+        cu: null,
+        gld: null,
+      },
+    }
+    const merged = mergeLiveOntoBoard(board, prints)
+    expect(merged?.tapes.btc?.live).toBeCloseTo(80910)
+    expect(merged?.tapes.btc?.yesAsk).toBe(70)
+    expect(mergeLiveOntoBoard(board, { ...prints, tapes: { ...prints.tapes, btc: { ...prints.tapes.btc!, eventTicker: 'OTHER' } } })?.tapes.btc?.live).toBeCloseTo(80800)
   })
 })

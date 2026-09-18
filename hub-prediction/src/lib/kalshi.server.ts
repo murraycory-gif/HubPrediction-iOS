@@ -16,7 +16,7 @@ import {
   type TapeId,
 } from './tapes'
 import { mergeRaceTrail } from './race-path'
-import type { DeskBoard, Point, Settled, TapeQuote } from './types'
+import type { DeskBoard, LivePrints, Point, Settled, TapeQuote } from './types'
 
 const KALSHI = 'https://external-api.kalshi.com/trade-api/v2'
 const QUOTE_FRESH_MS = 350
@@ -24,6 +24,8 @@ const ROLLOVER_FRESH_MS = 150
 const LIST_ABORT = 1400
 const TICKER_ABORT = 900
 const LIVE_ABORT = 1200
+const PRINT_ABORT = 600
+const PRINT_FRESH_MS = 80
 const LIST_LIMIT = 16
 
 type Market = Record<string, unknown>
@@ -31,6 +33,10 @@ type Market = Record<string, unknown>
 let lastBoard: DeskBoard | null = null
 let lastBoardAt = 0
 let lastClocksKey = ''
+let lastPrints: LivePrints | null = null
+let lastPrintsAt = 0
+let lastPrintsKey = ''
+let printsInflight: Promise<LivePrints> | null = null
 const settledCache: Record<string, { at: number; past: Settled[] }> = {}
 let warming = false
 
@@ -137,14 +143,15 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
   )
   if (!ticker) return prevLive ? prev : sameSeries && prev ? { ...prev, tradingActive: false } : null
 
+  const skipLive = reuse
   const [freshPayload, livePayload] = await Promise.all([
     fetchJson<unknown>(`${KALSHI}/markets/${encodeURIComponent(ticker)}`, TICKER_ABORT).catch(() => null),
-    eventTicker
-      ? fetchJson<unknown>(
+    skipLive || !eventTicker
+      ? Promise.resolve(null)
+      : fetchJson<unknown>(
           `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=${clock === '5m' ? CLOCK_LIVE_RANGE['5m'] : '1h'}`,
           LIVE_ABORT,
-        ).catch(() => null)
-      : Promise.resolve(null),
+        ).catch(() => null),
   ])
 
   const m = unwrapMarket(freshPayload, listed)
@@ -202,6 +209,65 @@ export function resetDeskBoardForTests() {
   lastBoard = null
   lastBoardAt = 0
   lastClocksKey = ''
+  lastPrints = null
+  lastPrintsAt = 0
+  lastPrintsKey = ''
+  printsInflight = null
+}
+
+export async function loadLivePrints(
+  events: Partial<Record<TapeId, string>> = {},
+  range = CLOCK_LIVE_RANGE['5m'],
+): Promise<LivePrints> {
+  const now = Date.now()
+  const key = `${TAPE_IDS.map((id) => `${id}:${events[id] ?? ''}`).join('|')}#${range}`
+  if (lastPrints && lastPrintsKey === key && now - lastPrintsAt < PRINT_FRESH_MS) return lastPrints
+  if (printsInflight && lastPrintsKey === key) return printsInflight
+
+  lastPrintsKey = key
+  const job = (async () => {
+    const rows = await Promise.all(
+      TAPE_IDS.map(async (id) => {
+        const eventTicker = events[id]
+        if (!eventTicker) return null
+        const livePayload = await fetchJson<unknown>(
+          `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=${range}`,
+          PRINT_ABORT,
+        ).catch(() => null)
+        if (!livePayload) {
+          const prev = lastPrints?.tapes[id]
+          return prev?.eventTicker === eventTicker ? prev : null
+        }
+        const print = lastPrintFromLiveData(livePayload)
+        const incoming = pointsFromLiveData(livePayload)
+        const prev = lastPrints?.tapes[id]
+        const live = print?.px ?? prev?.live ?? null
+        const liveSource = print?.source ?? prev?.liveSource ?? null
+        const points = mergeRaceTrail(
+          prev?.eventTicker === eventTicker ? prev.points : [],
+          incoming,
+          live,
+          Date.now(),
+        )
+        return { eventTicker, live, liveSource, points, fetchedAt: Date.now() }
+      }),
+    )
+    const tapes = {} as LivePrints['tapes']
+    TAPE_IDS.forEach((id, i) => {
+      tapes[id] = rows[i] ?? null
+    })
+    const next: LivePrints = { tapes, fetchedAt: Date.now() }
+    lastPrints = next
+    lastPrintsAt = Date.now()
+    return next
+  })()
+  printsInflight = job
+
+  try {
+    return await job
+  } finally {
+    if (printsInflight === job) printsInflight = null
+  }
 }
 
 function boardNeedsRollover(board: DeskBoard | null, now: number) {

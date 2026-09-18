@@ -736,6 +736,7 @@ body {
 .race-now-line {
   stroke-width: 1;
   stroke-dasharray: 2 3;
+  transition: y1 80ms linear, y2 80ms linear;
 }
 
 .race-now-pct {
@@ -765,7 +766,7 @@ body {
 
 .race-live {
   fill: #00e57a;
-  transition: cx 180ms linear, cy 180ms linear;
+  transition: cx 80ms linear, cy 80ms linear;
 }
 
 .tape-hit,

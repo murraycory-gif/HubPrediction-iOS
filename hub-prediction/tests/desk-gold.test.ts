@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanRacePoints, raceDomain } from '../src/components/race-chart'
 import { mergeRaceTrail, pointTime, raceLinePath, MAX_RACE_DOTS } from '../src/lib/race-path'
@@ -404,6 +405,15 @@ describe('gold race path', () => {
     expect(gold.hi - gold.lo).toBeLessThan(40)
     const btc = raceDomain('btc', 76500, 76540, [{ t: now, px: 76520 }])
     expect(btc.hi - btc.lo).toBeGreaterThan(70)
+  })
+
+  it('LIVE chart eases NOW and ticks the wall on rAF — Soft FAIL 250ms hop', async () => {
+    const src = await readFile(new URL('../src/components/race-chart.tsx', import.meta.url), 'utf8')
+    expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 160\)/)
+    expect(src).toMatch(/t - last >= 48/)
+    expect(src).toMatch(/requestAnimationFrame\(tick\)/)
+    expect(src).toMatch(/displayLive/)
+    expect(src).not.toMatch(/setInterval\(\(\) => setNow\(Date\.now\(\)\), 250\)/)
   })
 
   it('settlement cost in cents does not inflate spent to dollars', () => {

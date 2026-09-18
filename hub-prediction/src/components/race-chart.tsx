@@ -55,7 +55,7 @@ export function raceDomain(id: TapeId, beat: number, live: number | null, pts: P
 }
 
 /** Ease the on-screen NOW print toward the latest Kalshi last. Logic still uses raw live. */
-export function useSmoothedLive(live: number | null, ms = 280) {
+export function useSmoothedLive(live: number | null, ms = 160) {
   const [shown, setShown] = useState(live)
   const shownRef = useRef(live)
   useEffect(() => {
@@ -90,8 +90,17 @@ function useWallClock(on: boolean) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!on) return
-    const id = setInterval(() => setNow(Date.now()), 250)
-    return () => clearInterval(id)
+    let raf = 0
+    let last = 0
+    const tick = (t: number) => {
+      if (t - last >= 48) {
+        last = t
+        setNow(Date.now())
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
   }, [on])
   return now
 }
@@ -100,6 +109,7 @@ export function RaceChart({
   id,
   beat,
   live,
+  displayLive,
   points,
   clock = DEFAULT_CLOCK,
   chart = DEFAULT_CHART,
@@ -110,6 +120,7 @@ export function RaceChart({
   id: TapeId
   beat: number
   live: number | null
+  displayLive?: number | null
   points?: Point[]
   clock?: TapeClock
   chart?: ChartRange
@@ -132,13 +143,21 @@ export function RaceChart({
     setTrail(next)
   }, [points, live])
 
+  const shown =
+    displayLive != null && Number.isFinite(displayLive) && (displayLive as number) > 0 ? displayLive : live
   const now = chart === 'live' ? wall : trail.length ? trail[trail.length - 1]!.t : Date.now()
   const windowMs = CHART_MS[chart] ?? CLOCK_MS[clock]
   const pts = useMemo(
     () => cleanRacePoints(trail.length ? trail : points, now, windowMs, openAt, closeAt),
     [trail, points, now, windowMs, openAt, closeAt],
   )
-  const { lo, hi } = raceDomain(id, beat, live, pts)
+  const drawPts = useMemo(() => {
+    if (shown == null || !Number.isFinite(shown) || !pts.length) return pts
+    const last = pts[pts.length - 1]!
+    if (last.px === shown) return pts
+    return [...pts.slice(0, -1), { t: last.t, px: shown }]
+  }, [pts, shown])
+  const { lo, hi } = raceDomain(id, beat, shown, drawPts)
   const w = 640
   const h = 220
   const innerW = w - PAD.l - PAD.r
@@ -148,22 +167,22 @@ export function RaceChart({
   const span = Math.max(1, end - start)
   const range = Math.max(1e-9, hi - lo)
   const stroke = TAPE_STROKE[id]
-  const tone = nowTone(live, beat)
+  const tone = nowTone(shown, beat)
 
   const xOf = (t: number) => PAD.l + ((t - start) / span) * innerW
   const yOf = (px: number) => PAD.t + innerH - ((px - lo) / range) * innerH
 
-  const line = raceLinePath(pts, xOf, yOf)
-  const area = pts.length
-    ? `${line} L${xOf(pts[pts.length - 1]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} L${xOf(pts[0]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} Z`
+  const line = raceLinePath(drawPts, xOf, yOf)
+  const area = drawPts.length
+    ? `${line} L${xOf(drawPts[drawPts.length - 1]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} L${xOf(drawPts[0]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} Z`
     : ''
 
   const beatY = Number.isFinite(beat) && beat > 0 ? yOf(beat) : PAD.t + innerH / 2
-  const liveY = live != null && Number.isFinite(live) ? yOf(live) : null
-  const liveX = liveY != null ? (pts.length ? xOf(pts[pts.length - 1]!.t) : PAD.l + innerW) : null
+  const liveY = shown != null && Number.isFinite(shown) ? yOf(shown) : null
+  const liveX = liveY != null ? (drawPts.length ? xOf(drawPts[drawPts.length - 1]!.t) : PAD.l + innerW) : null
   const vsPct =
-    live != null && Number.isFinite(live) && Number.isFinite(beat) && beat > 0
-      ? ((live - beat) / beat) * 100
+    shown != null && Number.isFinite(shown) && Number.isFinite(beat) && beat > 0
+      ? ((shown - beat) / beat) * 100
       : null
 
   const xTicks = [0, 0.33, 0.66, 1].map((p) => start + span * p)
