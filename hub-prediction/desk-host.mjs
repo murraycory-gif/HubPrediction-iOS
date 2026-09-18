@@ -4,13 +4,21 @@ import { execFileSync, spawn } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+/** The only desk address. Soft FAIL changing this or printing another URL. */
 export const PUBLIC_PORT = Number(process.env.DESK_PUBLIC_PORT || 8080)
-/** Old Vite ports. Always answer so Chrome refresh cannot refuse. */
+export const DESK_URL = `http://127.0.0.1:${PUBLIC_PORT}`
+/** Old Vite tabs. Silent 302 to 8080. Soft FAIL advertising these. */
 export const ALIAS_PORT = Number(process.env.DESK_ALIAS_PORT || 18080)
 export const ALIAS_PORT_B = Number(process.env.DESK_ALIAS_PORT_B || 18081)
-export const ALIAS_PORTS = [ALIAS_PORT, ALIAS_PORT_B]
-/** Inner Vite only. Soft FAIL browser on this port. */
-export const VITE_PORT = Number(process.env.DESK_VITE_PORT || 18082)
+export const ALIAS_PORTS = [
+  ...new Set([
+    ALIAS_PORT,
+    ALIAS_PORT_B,
+    18080, 18081, 18082, 18083, 18084, 18085, 18086, 18087, 18088, 18089,
+  ]),
+]
+/** Inner Vite only — never a browser URL. Soft FAIL printing this. */
+export const VITE_PORT = Number(process.env.DESK_VITE_PORT || 12783)
 const DIR = path.dirname(fileURLToPath(import.meta.url))
 
 export function splashHtml() {
@@ -26,7 +34,7 @@ export function splashHtml() {
   </style>
 </head>
 <body>
-  <p>HUB Predictions is starting on this PC. Leave the desk window open. This page reloads itself — Chrome refresh cannot bring a stopped server back, so this host stays on port ${PUBLIC_PORT}.</p>
+  <p>HUB Predictions is starting on this PC. Leave the desk window open. The only address is ${DESK_URL}. This page reloads itself — Chrome refresh cannot bring a stopped server back.</p>
 </body>
 </html>`
 }
@@ -44,13 +52,17 @@ export function publicDeskUrl(pathName = '/', publicPort = PUBLIC_PORT, reqHost)
 }
 
 /** Soft FAIL leaking Vite's inner port. Keep the phone on our tunnel / LAN host. */
-export function rewritePublicLocation(loc, publicPort = PUBLIC_PORT, reqHost) {
+export function rewritePublicLocation(loc, publicPort = PUBLIC_PORT, reqHost, vitePort = VITE_PORT) {
   if (typeof loc !== 'string' || !loc) return loc
   const dest = `http://${hostNamePort(reqHost, publicPort)}`
+  const inner = Number(vitePort)
   return loc
     .replace(/https?:\/\/127\.0\.0\.1:1808\d\b/g, dest)
     .replace(/https?:\/\/localhost:1808\d\b/g, dest)
     .replace(/https?:\/\/\[::1\]:1808\d\b/g, dest)
+    .replace(new RegExp(`https?:\\/\\/127\\.0\\.0\\.1:${inner}\\b`, 'g'), dest)
+    .replace(new RegExp(`https?:\\/\\/localhost:${inner}\\b`, 'g'), dest)
+    .replace(new RegExp(`https?:\\/\\/\\[::1\\]:${inner}\\b`, 'g'), dest)
 }
 
 export function listTailscaleDeskUrls(publicPort = PUBLIC_PORT, run = execFileSync) {
@@ -85,6 +97,15 @@ export function forwardUpgrade(req, socket, head, port = VITE_PORT) {
 let stopping = false
 let viteChild = null
 
+function hushViteLog(stream, dest) {
+  stream.on('data', (buf) => {
+    const text = String(buf)
+    if (/(Local|Network):\s+https?:\/\//.test(text)) return
+    if (new RegExp(`:${VITE_PORT}\\b`).test(text) && /https?:\/\//.test(text)) return
+    dest.write(buf)
+  })
+}
+
 function bootVite() {
   if (stopping) return null
   const child = spawn(
@@ -92,7 +113,7 @@ function bootVite() {
     ['dev', '--port', String(VITE_PORT), '--strictPort', '--host', '127.0.0.1'],
     {
       cwd: DIR,
-      stdio: 'inherit',
+      stdio: ['ignore', 'pipe', 'pipe'],
       shell: process.platform === 'win32',
       env: {
         ...process.env,
@@ -103,6 +124,8 @@ function bootVite() {
     },
   )
   viteChild = child
+  if (child.stdout) hushViteLog(child.stdout, process.stdout)
+  if (child.stderr) hushViteLog(child.stderr, process.stderr)
   child.on('exit', (code) => {
     if (viteChild === child) viteChild = null
     if (stopping) return
@@ -202,9 +225,9 @@ export async function startDeskHost() {
       console.error(`[desk-host] could not bind ${alias} — 8080 still up`, e)
     }
   }
-  console.log(`[desk-host] Desk: http://127.0.0.1:${PUBLIC_PORT}`)
+  console.log(`[desk-host] Desk: ${DESK_URL}`)
   console.log(`[desk-host] Our tunnel (phone / iPad / other PC): http://10.77.0.1:${PUBLIC_PORT}`)
-  console.log('[desk-host] Leave this window open. One URL. Refresh stays on 8080.')
+  console.log('[desk-host] Leave this window open. One address. Refresh stays on 8080.')
   process.on('uncaughtException', (e) => {
     console.error('[desk-host] kept 8080 alive after error', e)
   })

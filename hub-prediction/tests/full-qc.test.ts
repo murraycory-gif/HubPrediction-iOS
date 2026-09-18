@@ -369,6 +369,8 @@ describe('QC Windows host start Soft FAIL hop off 8080', () => {
     expect(host).toMatch(/ALIAS_PORTS/)
     expect(host).toMatch(/18081/)
     expect(host).toMatch(/18082/)
+    expect(host).toMatch(/12783/)
+    expect(host).toMatch(/DESK_URL/)
     expect(host).toMatch(/createAliasHost/)
     expect(host).toMatch(/rewritePublicLocation/)
     expect(host).toMatch(/listTailscaleDeskUrls/)

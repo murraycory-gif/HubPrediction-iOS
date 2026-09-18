@@ -1,12 +1,24 @@
 import { createServer, request as httpRequest } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import { createAliasHost, createDeskHost, listTailscaleDeskUrls, publicDeskUrl, rewritePublicLocation, splashHtml } from '../desk-host.mjs'
+import {
+  ALIAS_PORTS,
+  DESK_URL,
+  PUBLIC_PORT,
+  VITE_PORT,
+  createAliasHost,
+  createDeskHost,
+  listTailscaleDeskUrls,
+  publicDeskUrl,
+  rewritePublicLocation,
+  splashHtml,
+} from '../desk-host.mjs'
 
 describe('desk-host Soft FAIL refresh refused', () => {
   it('serves a self-reloading splash when Vite is down so Chrome does not refuse 8080', async () => {
     const html = splashHtml()
     expect(html).toMatch(/http-equiv="refresh"/)
     expect(html).toMatch(/HUB Predictions/)
+    expect(html).toMatch(/http:\/\/127\.0\.0\.1:8080/)
     const { server, publicPort } = createDeskHost({ publicPort: 0, vitePort: 1 })
     await new Promise<void>((resolve, reject) => {
       server.listen(0, '127.0.0.1', () => resolve())
@@ -41,9 +53,20 @@ describe('desk-host Soft FAIL refresh refused', () => {
     vite.close()
   })
 
+  it('pins one desk address at 8080 and keeps Vite off 1808x', () => {
+    expect(PUBLIC_PORT).toBe(8080)
+    expect(DESK_URL).toBe('http://127.0.0.1:8080')
+    expect(String(VITE_PORT)).not.toMatch(/^1808/)
+    expect(ALIAS_PORTS).toEqual(
+      expect.arrayContaining([18080, 18081, 18082, 18083, 18084, 18085, 18086, 18087, 18088, 18089]),
+    )
+  })
+
   it('rewrites Vite Location hops off 18080 back to 8080', () => {
     expect(rewritePublicLocation('http://127.0.0.1:18080/desk')).toBe('http://127.0.0.1:8080/desk')
     expect(rewritePublicLocation('http://localhost:18081/')).toBe('http://127.0.0.1:8080/')
+    expect(rewritePublicLocation('http://127.0.0.1:18082/')).toBe('http://127.0.0.1:8080/')
+    expect(rewritePublicLocation(`http://127.0.0.1:${VITE_PORT}/desk`)).toBe('http://127.0.0.1:8080/desk')
   })
 
   it('keeps a Tailscale / phone host instead of bouncing to 127.0.0.1', () => {
@@ -135,6 +158,29 @@ describe('desk-host Soft FAIL refresh refused', () => {
     const loc = await new Promise<string>((resolve, reject) => {
       const req = httpRequest(
         { hostname: '127.0.0.1', port, path: '/', headers: { host: '127.0.0.1:18081' } },
+        (res) => {
+          resolve(String(res.headers.location || ''))
+          res.resume()
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(loc).toBe('http://127.0.0.1:8080/')
+    server.close()
+  })
+
+  it('redirects a 18082 refresh to 8080 — Soft FAIL CONNECTION_REFUSED', async () => {
+    const { server } = createAliasHost({ publicPort: 8080, aliasPort: 0 })
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, '127.0.0.1', () => resolve())
+      server.once('error', reject)
+    })
+    const addr = server.address()
+    const port = typeof addr === 'object' && addr ? addr.port : 0
+    const loc = await new Promise<string>((resolve, reject) => {
+      const req = httpRequest(
+        { hostname: '127.0.0.1', port, path: '/', headers: { host: '127.0.0.1:18082' } },
         (res) => {
           resolve(String(res.headers.location || ''))
           res.resume()
