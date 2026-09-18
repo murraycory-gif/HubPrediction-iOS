@@ -68,6 +68,13 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   expect(plates.rainBottom).toBeLessThan(plates.beatTop)
   expect(plates.beatPlate).toBe(true)
   expect(plates.livePlate).toBe(true)
+  await expect(page.getByTestId('bets-filter-all')).toHaveText('All')
+  await expect(page.getByTestId('bets-filter-all')).not.toHaveText(/ALLLO/)
+  await expect(page.getByTestId('bets-filter-btc')).toHaveText('BTC')
+  await expect(page.getByTestId('bets-filter-btc')).not.toHaveText(/BTCC/)
+  await expect(page.getByTestId('save-btc')).toHaveText('Save')
+  await expect(page.getByTestId('contracts-label-btc')).toHaveText('Contracts')
+  await expect(page.getByTestId('contracts-label-btc')).not.toHaveText(/CONTRACTY/)
   const head = page.getByTestId('desk-head')
   const box = await head.boundingBox()
   expect(box?.y).toBeLessThanOrEqual(2)
@@ -407,6 +414,13 @@ test('desktop desk: rain stays behind wordmark and BEAT/LIVE plates — Live OFF
   await expect(page.getByTestId('desk-title')).not.toHaveText(/HUBEB|PREDICTTIONS|HUBPREDICTIONS/)
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
   await expect(page.locator('.rain-col')).toHaveCount(0)
+  await expect(page.getByTestId('bets-filter-all')).toHaveText('All')
+  await expect(page.getByTestId('bets-filter-all')).not.toHaveText(/ALLLO/)
+  await expect(page.getByTestId('bets-filter-btc')).toHaveText('BTC')
+  await expect(page.getByTestId('bets-filter-btc')).not.toHaveText(/BTCC/)
+  await expect(page.getByTestId('save-btc')).toHaveText('Save')
+  await expect(page.getByTestId('contracts-label-btc')).toHaveText('Contracts')
+  await expect(page.getByTestId('contracts-label-btc')).not.toHaveText(/CONTRACTY/)
   for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
     await expect(page.getByTestId(`beat-label-${id}`)).toHaveText('BEAT')
     await expect(page.getByTestId(`beat-label-${id}`)).not.toHaveText(/BEATET/)
@@ -425,6 +439,7 @@ test('desktop desk: rain stays behind wordmark and BEAT/LIVE plates — Live OFF
       return !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)|transparent/i.test(bg)
     }
     return {
+      rainHitsTitle: hit('[data-testid="desk-title"]'),
       rainHitsBeat: hit('[data-testid="beat-label-btc"]'),
       rainHitsLive: hit('[data-testid="live-plate-btc"]'),
       titlePlate: opaque('[data-testid="desk-title"]'),
@@ -435,6 +450,7 @@ test('desktop desk: rain stays behind wordmark and BEAT/LIVE plates — Live OFF
       beatTop: (document.querySelector('[data-testid="beat-label-btc"]') as HTMLElement).getBoundingClientRect().top,
     }
   })
+  expect(iso.rainHitsTitle).toBe(false)
   expect(iso.rainHitsBeat).toBe(false)
   expect(iso.rainHitsLive).toBe(false)
   expect(iso.titlePlate).toBe(true)

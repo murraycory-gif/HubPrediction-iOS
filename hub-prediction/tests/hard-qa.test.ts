@@ -45,8 +45,11 @@ describe('HARD QA 1–10', () => {
     expect(css).toMatch(/\.brand-bar \{[\s\S]*overflow:\s*hidden/)
     expect(css).toMatch(/\.glyph-plate/)
     expect(css).toMatch(/\.beat-k/)
+    expect(css).toMatch(/\.contracts-label/)
+    expect(css).toMatch(/background:\s*#0a100e/)
     expect(dash).toMatch(/glyph-plate/)
     expect(dash).toMatch(/beat-k/)
+    expect(dash).toMatch(/contracts-label/)
   })
 
   it('2 recipes stay gold — Soft FAIL rewrite', () => {

@@ -51,7 +51,11 @@ body {
 
 /* Soft FAIL 692676d: ::before full-bleed rain painted over HUB / PREDICTIONS. */
 .desk-head::before,
-.desk-head::after {
+.desk-head::after,
+.desk::before,
+.tape::before,
+.filter-chip::before,
+.chip-btn::before {
   content: none;
 }
 
@@ -70,11 +74,14 @@ body {
 }
 
 .rain {
-  position: absolute;
-  inset: 0;
+  position: relative;
   z-index: 0;
+  flex: 1 1 48px;
+  align-self: stretch;
+  min-width: 32px;
+  min-height: 12px;
   pointer-events: none;
-  opacity: 0.14;
+  opacity: 0.16;
   overflow: hidden;
   background-image:
     repeating-linear-gradient(
@@ -100,11 +107,11 @@ body {
   position: relative;
   z-index: 3;
   isolation: isolate;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   background: #020403;
   mix-blend-mode: normal;
-  padding: 4px 10px 4px 0;
+  padding: 4px 12px 4px 0;
 }
 
 .desk-head h1 {
@@ -131,14 +138,30 @@ body {
   background: #0c1110;
   mix-blend-mode: normal;
   background-clip: padding-box;
-  padding: 2px 6px 2px 0;
 }
 
-.beat-k {
+.beat-k,
+.contracts-label {
   display: inline-block;
   background: #0c1110;
   mix-blend-mode: normal;
   padding: 0 4px 0 0;
+}
+
+.hud-label,
+.tape-banner,
+.tape-name,
+.tape-status,
+.hit-k {
+  isolation: isolate;
+  mix-blend-mode: normal;
+  background: #0a100e;
+  background-clip: padding-box;
+}
+
+.desk-head .hud-label,
+.scoreboard-row .hud-label {
+  background: #020403;
 }
 
 .brand-actions {
@@ -214,7 +237,7 @@ body {
   position: relative;
   z-index: 1;
   padding: 12px 14px 14px;
-  background: linear-gradient(180deg, rgba(16, 24, 20, 0.96), rgba(8, 10, 11, 0.96));
+  background: #0a100e;
   border: 1px solid rgba(0, 229, 122, 0.16);
   border-radius: 16px;
 }
@@ -241,7 +264,7 @@ body {
   border: 1px solid rgba(0, 229, 122, 0.16);
   font-family: var(--mono);
   font-size: 12px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   display: inline-flex;
   align-items: center;
@@ -291,7 +314,7 @@ body {
 .finance,
 .settings,
 .tape-settings {
-  background: linear-gradient(180deg, rgba(16, 24, 20, 0.96), rgba(8, 10, 11, 0.96));
+  background: #0a100e;
   border: 1px solid rgba(0, 229, 122, 0.16);
   border-radius: 16px;
   box-shadow: 0 0 20px rgba(0, 229, 122, 0.05);
@@ -703,6 +726,12 @@ button {
   }
   .wordmark {
     flex: 1 1 100%;
+  }
+  .rain {
+    flex: 1 1 100%;
+    min-width: 0;
+    min-height: 8px;
+    height: 8px;
   }
   .desk-head h1 {
     letter-spacing: 0.08em;

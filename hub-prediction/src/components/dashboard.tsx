@@ -317,10 +317,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     <div className="desk">
       <header className="desk-head" data-testid="desk-head">
         <div className="brand-bar">
-          <div className="rain" data-testid="rain" aria-hidden="true" />
           <div className="wordmark" data-testid="wordmark">
             <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
           </div>
+          <div className="rain" data-testid="rain" aria-hidden="true" />
           <div className="brand-actions">
             <label className={`toggle ${settings.liveBets ? 'toggle-hot' : ''}`}>
               <input
@@ -633,7 +633,7 @@ function TapeRow({
       <RaceChart id={id} beat={beat} live={live} points={quote?.points} />
 
       {paper || ticket ? (
-        <p className="tape-banner" data-testid={`banner-${id}`}>
+        <p className="tape-banner glyph-plate" data-testid={`banner-${id}`}>
           {ticket ? `LIVE ${status}` : 'PAPER'}
         </p>
       ) : null}
@@ -658,7 +658,9 @@ function TapeRow({
           Live cash {recipe.liveOn ? 'ON' : 'OFF'}
         </label>
         <label className="contracts-field">
-          Contracts
+          <span className="contracts-label glyph-plate" data-testid={`contracts-label-${id}`}>
+            Contracts
+          </span>
           <input
             className="field field-contracts"
             type="number"
@@ -687,7 +689,7 @@ function TapeRow({
         </label>
         <button
           type="button"
-          className="chip-btn tap"
+          className="chip-btn tap glyph-plate"
           data-testid={`save-${id}`}
           disabled={recipeLocked}
           onClick={() => saveContracts()}
@@ -721,7 +723,7 @@ function Bets24Strip({
       <div className="bets-filter" data-testid="bets-filter">
         <button
           type="button"
-          className={`filter-chip${allOn ? ' toggle-on' : ''}`}
+          className={`filter-chip glyph-plate${allOn ? ' toggle-on' : ''}`}
           data-testid="bets-filter-all"
           aria-pressed={allOn}
           onClick={() => onFilter('all')}
@@ -734,7 +736,7 @@ function Bets24Strip({
             <button
               key={id}
               type="button"
-              className={`filter-chip${on ? ' toggle-on' : ''}`}
+              className={`filter-chip glyph-plate${on ? ' toggle-on' : ''}`}
               data-testid={`bets-filter-${id}`}
               aria-pressed={on}
               onClick={() => onFilter(id)}
