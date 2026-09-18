@@ -49,10 +49,12 @@ import {
 import { ticketCost } from '../lib/size-cash'
 import type { DeskBoard, TapeQuote } from '../lib/types'
 import {
+  BETS_FILTER_KEY,
   bookFill,
   clearKill,
   engageKill,
   chasingLosses,
+  hydrateBetsFilter,
   isAllBetsFilter,
   last24hBets,
   liveArmGate,
@@ -111,7 +113,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask: 50,
       })),
     )
-    setBetsFilter(loadBetsFilter())
+    const raw = readLocal(BETS_FILTER_KEY)
+    if (raw) {
+      try {
+        setBetsFilter(hydrateBetsFilter(JSON.parse(raw)))
+      } catch {
+        setBetsFilter(loadBetsFilter())
+      }
+    } else {
+      setBetsFilter(loadBetsFilter())
+    }
   }, [])
 
   const boardQuery = useQuery({
@@ -398,7 +409,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           l={bets24.l}
           pnl={bets24.pnl}
           filter={betsFilter}
-          onFilter={(chip) => setBetsFilter(toggleBetsFilter(betsFilter, chip))}
+          onFilter={(chip) => {
+            setBetsFilter((cur) => {
+              const next = toggleBetsFilter(cur, chip)
+              writeLocal(BETS_FILTER_KEY, JSON.stringify(next))
+              return next
+            })
+          }}
         />
 
         <div className="under-desk" data-testid="under-desk">
