@@ -91,11 +91,22 @@ export function isPaperOrderId(id: unknown) {
   return typeof id === 'string' && /^deskfill-/i.test(id.trim())
 }
 
+export function isImportedKalshiRow(b: { betId?: unknown; orderId?: unknown }) {
+  const id = typeof b.betId === 'string' ? b.betId : ''
+  const ord = typeof b.orderId === 'string' ? b.orderId : ''
+  if (id.startsWith('kalshi:')) return true
+  if (/^(settled|pos|fill)-/i.test(ord)) return true
+  return false
+}
+
+/** LIVE only if this desk POSTed the order. Kalshi history stays paper until live cash sends. */
 export function betKind(b: { kind?: unknown; orderId?: unknown; betId?: unknown }): BetKind {
-  if (b.kind === 'paper' || b.kind === 'live') return b.kind
-  if (isPaperOrderId(b.orderId)) return 'paper'
-  if (typeof b.betId === 'string' && /^paper:/i.test(b.betId)) return 'paper'
-  return 'live'
+  if (isPaperOrderId(b.orderId) || (typeof b.betId === 'string' && /^paper:/i.test(b.betId))) return 'paper'
+  if (isImportedKalshiRow(b)) return 'paper'
+  if (b.kind === 'paper') return 'paper'
+  if (b.kind === 'live') return 'live'
+  if (typeof b.betId === 'string' && b.betId.startsWith('bet_') && isRealOrderId(b.orderId)) return 'live'
+  return 'paper'
 }
 
 export function isPaperBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
@@ -171,14 +182,10 @@ export function betWindowMs(b: { clock?: string; ticker?: string }) {
 }
 
 export function betClockLabel(b: { clock?: string; ticker?: string }) {
+  const fromTicker = clockFromTicker(b.ticker || '')
+  if (fromTicker) return fromTicker
   if (isTapeClock(b.clock)) return b.clock
-  const fromClock = clockFromTicker(b.clock || '')
-  if (fromClock) return fromClock
-  const s = `${b.clock || ''} ${b.ticker || ''}`.toUpperCase()
-  if (s.includes('15M') || s.includes('15 MIN')) return '15m'
-  if (s.includes('5M') || s.includes('5 MIN')) return '5m'
-  if (s.includes('1H') || s.includes('BTCD') || s.includes('GOLDH')) return '1h'
-  return clockFromTicker(b.ticker || '') || '—'
+  return clockFromTicker(b.clock || '') || '—'
 }
 
 export type FinanceState = {
@@ -341,7 +348,8 @@ export function liveArmGate(
 ): Gate {
   if (state.killed) return { ok: false, reason: 'KILL on — Place blocked until cleared' }
   if (!opts.hasKeys) return { ok: false, reason: 'LIVE needs keys' }
-  if (!paper48hPassed(state, now)) {
+  const settled = state.bets.filter((b) => b.status === 'settled').length
+  if (!paper48hPassed(state, now) && settled < 12) {
     return { ok: false, reason: `Paper ${paperHoursLeft(state, now).toFixed(1)}h left — Soft FAIL Live ON` }
   }
   const cash = opts.cash
@@ -360,6 +368,31 @@ export function hitFloorGate(w: number, l: number): Gate {
   const pct = Math.round((Math.max(0, w) / n) * 100)
   if (pct < HIT_FLOOR) return { ok: false, reason: `${pct}% < ${HIT_FLOOR}% goal — sit` }
   return { ok: true }
+}
+
+/** Last N desk-live settled W–L on one tape. Soft FAIL lifetime hit lock. */
+export function recentLiveTapeWL(
+  bets: Array<{
+    tape: TapeId
+    status: 'open' | 'settled'
+    pnl: number | null
+    settledAt?: number | null
+    closeAt?: number
+    filledAt?: number
+    kind?: unknown
+    orderId?: unknown
+    betId?: unknown
+  }>,
+  id: TapeId,
+  n = 12,
+) {
+  const mine = bets
+    .filter((b) => b.tape === id && b.status === 'settled' && b.pnl != null && isLiveBet(b))
+    .sort((a, b) => betStamp(b) - betStamp(a))
+    .slice(0, Math.max(1, n))
+  const w = mine.filter((b) => (b.pnl ?? 0) > 0).length
+  const l = mine.filter((b) => (b.pnl ?? 0) < 0).length
+  return { w, l, n: w + l }
 }
 
 export function liveSendGate(
@@ -476,7 +509,7 @@ export function mergeSettlementEventsToBook(
       pnl: e.pnl ?? (e.win ? 0 : 0),
       filledAt: e.at,
       settledAt: e.at,
-      kind: 'live',
+      kind: 'paper',
     })
   }
   if (!extra.length) return state
@@ -597,7 +630,7 @@ export function betsFromKalshiFills(raw: unknown, fromMs = 0): BookedBet[] {
       pnl: null,
       filledAt: g.filledAt,
       settledAt: null,
-      kind: 'live',
+      kind: 'paper',
     })
   }
   return out
@@ -619,7 +652,7 @@ export function betsFromKalshiSettlements(raw: unknown, fromMs = 0, now = Date.n
     pnl: e.pnl ?? (e.win ? 0 : 0),
     filledAt: e.at,
     settledAt: e.at,
-    kind: 'live' as const,
+    kind: 'paper' as const,
   }))
 }
 
@@ -651,7 +684,7 @@ export function betsFromKalshiPositions(raw: unknown, fromMs = 0): BookedBet[] {
       pnl: null,
       filledAt: at,
       settledAt: null,
-      kind: 'live',
+      kind: 'paper',
     })
   }
   return out
@@ -679,17 +712,31 @@ export function mergeKalshiHistoryToBook(
       spent: cur.spent || b.spent,
       orderId: isRealOrderId(b.orderId) ? b.orderId : cur.orderId,
       filledAt: Math.min(cur.filledAt || b.filledAt, b.filledAt || cur.filledAt),
-      kind: 'live',
+      kind: 'paper',
     })
   }
   for (const b of betsFromKalshiPositions(input.positions, fromMs)) {
     if (!byTicker.has(b.ticker)) byTicker.set(b.ticker, b)
   }
-  const kalshi = [...byTicker.values()]
+  const kalshi = [...byTicker.values()].map((b) => ({ ...b, kind: betKind(b) }))
   if (!kalshi.length) return state
-  const taken = new Set(kalshi.map((b) => b.ticker))
-  const local = state.bets.filter((b) => isPaperBet(b) || (!taken.has(b.ticker) && !String(b.betId).startsWith('kalshi:')))
-  return saveFinance({ ...state, bets: [...local, ...kalshi] })
+  const desk = state.bets.filter((b) => !isImportedKalshiRow(b))
+  const deskTickers = new Set(desk.map((b) => b.ticker))
+  const deskNext = desk.map((b) => {
+    const k = kalshi.find((row) => row.ticker === b.ticker)
+    if (!k) return { ...b, kind: betKind(b) }
+    if (b.status === 'settled') return { ...b, kind: betKind(b) }
+    return {
+      ...b,
+      status: k.status,
+      pnl: b.pnl ?? k.pnl,
+      settledAt: b.settledAt ?? k.settledAt,
+      spent: b.spent || k.spent,
+      kind: betKind(b),
+    }
+  })
+  const extra = kalshi.filter((b) => !deskTickers.has(b.ticker))
+  return saveFinance({ ...state, bets: [...deskNext, ...extra] })
 }
 
 export function settleBook(

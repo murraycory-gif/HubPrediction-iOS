@@ -84,6 +84,7 @@ import {
   loadFinance,
   recipeRetuneGate,
   hitFloorGate,
+  recentLiveTapeWL,
   settleBook,
   syncTicketsIntoBook,
   type FinanceState,
@@ -410,8 +411,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       if (quote.tradingActive === false) continue
       if (ticketFor(tickets, id, quote.ticker)) continue
       if (!inArmWindow(recipe, quote.closeAt)) continue
-      const floor = hitFloorGate(hits.tapes[id].w, hits.tapes[id].l)
-      if (!floor.ok) continue
       const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe })
       if (lean === 'sit') continue
       const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
@@ -420,9 +419,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       const gates = cashGates(settings, id)
       const paperRehab = isRehabPaper(rehab, id)
       if (claimSend(sentRef.current, key) !== 'send') continue
-      if (paperRehab) sendPaper(id, lean, quote)
-      else if (gates.ok) void sendLive(id, lean, quote)
-      else if (!settings.liveBets && !recipe.liveOn) sendPaper(id, lean, quote)
+      if (paperRehab || !gates.ok) {
+        sendPaper(id, lean, quote)
+        continue
+      }
+      const recent = recentLiveTapeWL(book.bets, id, 12)
+      if (!hitFloorGate(recent.w, recent.l).ok) continue
+      void sendLive(id, lean, quote)
     }
   }, [board?.fetchedAt, settings, tickets, book.killed, hits, rehab])
 
@@ -499,7 +502,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         </div>
         {liveConfirm ? (
           <div className="live-banner" data-testid="live-banner">
-            <p>Confirm LIVE — keys + paper 48h + cash floor. Soft FAIL silent Paper→Live.</p>
+            <p>
+              Confirm LIVE — host keys + cash floor + Bot ON + Live cash ON on each tape you want. A fill
+              here posts to Kalshi and shows in the Kalshi app. Soft FAIL silent Paper→Live.
+            </p>
             <button
               type="button"
               className="chip-btn toggle-hot"
@@ -1016,8 +1022,8 @@ function Bets24Strip({
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
       <p className="hud-label">
-        Bets since first deposit · P&L is live only · paper in hit · WINDOW date/time · MODE · CASH ·{' '}
-        {HIT_FLOOR}% win-ratio goal
+        Bets since first deposit · P&L is desk live only · paper in hit · paper does not move CASH · WINDOW
+        date/time · MODE · {HIT_FLOOR}% win-ratio goal
       </p>
       <div className="bets-filter" data-testid="bets-filter">
         <button

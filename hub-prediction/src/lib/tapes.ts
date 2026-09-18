@@ -313,8 +313,8 @@ export function mergeLiveOntoBoard(
 
 export function clockFromTicker(ticker: string): TapeClock | '' {
   const s = ticker.toUpperCase()
-  if (s.includes('5M')) return '5m'
   if (s.includes('15M')) return '15m'
+  if (s.includes('5M')) return '5m'
   if (s.includes('1H') || s.endsWith('H') || s.includes('BTCD') || s.includes('GOLDH')) return '1h'
   return ''
 }

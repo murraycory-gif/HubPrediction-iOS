@@ -20,6 +20,7 @@ import {
   hydrateFinance,
   cashAfterEachBet,
   cashUpdateForBet,
+  betKind,
   bookRealizedPnl,
   mergeKalshiHistoryToBook,
   loadBetsFilter,
@@ -97,6 +98,27 @@ describe('finance Soft KEEP', () => {
     expect(liveArmGate(aged, { cash: 293.36, deposits: 760, hasKeys: true }).ok).toBe(true)
     expect(liveArmGate(aged, { cash: 100, deposits: 760, hasKeys: true }).ok).toBe(false)
     expect(liveArmGate(aged, { cash: 200, deposits: 760, hasKeys: false }).ok).toBe(false)
+    const bookReady = {
+      ...fresh,
+      bets: Array.from({ length: 12 }, (_, i) => ({
+        betId: `kalshi:ready-${i}`,
+        tape: 'btc' as const,
+        ticker: `KXBTC15M-R${i}`,
+        clock: '15m',
+        closeAt: Date.now(),
+        side: 'up' as const,
+        count: 1,
+        ask: 70,
+        spent: 0.7,
+        orderId: `settled-ready-${i}`,
+        status: 'settled' as const,
+        pnl: 0.3,
+        filledAt: Date.now(),
+        settledAt: Date.now(),
+        kind: 'paper' as const,
+      })),
+    }
+    expect(liveArmGate(bookReady, { cash: 293.36, deposits: 760, hasKeys: true }).ok).toBe(true)
   })
 
   it('does not send Kalshi orders', () => {
@@ -354,8 +376,9 @@ describe('finance Soft KEEP', () => {
     expect(cu?.status).toBe('open')
     expect(cu?.side).toBe('up')
     expect(hydrateSettings(null).liveBets).toBe(false)
-    expect(btc?.kind).toBe('live')
-    expect(ng?.kind).toBe('live')
+    expect(btc?.kind).toBe('paper')
+    expect(ng?.kind).toBe('paper')
+    expect(cu?.kind).toBe('paper')
   })
 
   it('counts paper in hit W–L only — live-only P&L and placed', () => {
@@ -453,5 +476,16 @@ describe('finance Soft KEEP', () => {
     expect(run['paper-win']).toBeCloseTo(500.48)
     expect(run['live-loss']).toBeCloseTo(499.48)
     expect(run['live-open']).toBeCloseTo(499.48)
+    expect(betKind({ betId: 'kalshi:KXBTC15M-A', orderId: 'ord-kalshi-btc-hist-01', kind: 'live' })).toBe('paper')
+    expect(betKind({ betId: 'bet_ord-real-12345', orderId: 'ord-real-12345', kind: 'live' })).toBe('live')
+    const importedCash = cashAfterEachBet(
+      [
+        { betId: 'kalshi:KXBTC15M-A', kind: 'live', status: 'settled', pnl: -19, filledAt: 1, settledAt: 1 },
+        { betId: 'bet_ord-live-1', kind: 'live', orderId: 'ord-live-aaaaaa', status: 'settled', pnl: 0.48, filledAt: 2, settledAt: 2 },
+      ],
+      293.37,
+    )
+    expect(importedCash['kalshi:KXBTC15M-A']).toBeCloseTo(292.89)
+    expect(importedCash['bet_ord-live-1']).toBeCloseTo(293.37)
   })
 })
