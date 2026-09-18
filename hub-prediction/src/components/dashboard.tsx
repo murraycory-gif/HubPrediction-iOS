@@ -1,0 +1,566 @@
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { getDeskBoard, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
+import {
+  bookBet,
+  cashFloor,
+  confirmLiveMode,
+  cumulativeDeposits,
+  defaultDeskMode,
+  engageKill,
+  clearKill,
+  loadFinanceBook,
+  placeGate,
+  pnlVsDeposits,
+  setPaperMode,
+  settleBet,
+  suggestedSize,
+  workingCash,
+  type FinanceBook,
+} from '../lib/finance-book'
+import { ticketCost } from '../lib/size-cash'
+import {
+  KEY_ID,
+  KEY_PEM,
+  TAPE_IDS,
+  TAPE_META,
+  askInBand,
+  depositsFromPayload,
+  disarmAllBots,
+  eventsFromKalshiSettlements,
+  eventsFromTickets,
+  extractOrderId,
+  formatCash,
+  formatLive,
+  formatPnl,
+  hitPct,
+  hydrateSettings,
+  inArmWindow,
+  loadCash,
+  loadHits,
+  loadSettings,
+  loadTickets,
+  makeTicket,
+  mergeHitEvents,
+  patchTape,
+  pulseTone,
+  saveCash,
+  saveHits,
+  setLiveBets,
+  tabIsOpen,
+  tapeLean,
+  ticketStatus,
+  ttlFromHits,
+  upsertTicket,
+  weThink,
+  type DeskSettings,
+  type DeskTicket,
+  type TapeId,
+} from '../lib/tapes'
+import type { DeskBoard, TapeQuote } from '../lib/types'
+import { CashStrip } from './cash-strip'
+import { CloseClock } from './close-clock'
+import { FinancePanel } from './finance-panel'
+import { SettingsPanel } from './settings-panel'
+
+function readLocal(key: string) {
+  if (typeof localStorage === 'undefined') return ''
+  return localStorage.getItem(key) ?? ''
+}
+
+function writeLocal(key: string, value: string) {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem(key, value)
+}
+
+export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
+  const [settings, setSettings] = useState<DeskSettings>(() => loadSettings())
+  const [tickets, setTickets] = useState<DeskTicket[]>(() => loadTickets())
+  const [hits, setHits] = useState(() => loadHits())
+  const [cash, setCash] = useState(() => loadCash())
+  const [book, setBook] = useState<FinanceBook>(() => loadFinanceBook())
+  const [keyId, setKeyId] = useState('')
+  const [pem, setPem] = useState('')
+  const [msg, setMsg] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(true)
+  const [liveConfirm, setLiveConfirm] = useState(false)
+  const sentRef = useRef<Record<string, string>>({})
+
+  useEffect(() => {
+    setSettings(loadSettings())
+    setTickets(loadTickets())
+    setHits(loadHits())
+    setCash(loadCash())
+    setBook(loadFinanceBook())
+    setKeyId(readLocal(KEY_ID))
+    setPem(readLocal(KEY_PEM))
+  }, [])
+
+  const boardQuery = useQuery({
+    queryKey: ['desk-board'],
+    queryFn: () => getDeskBoard(),
+    refetchInterval: 2000,
+    placeholderData: keepPreviousData,
+    initialData: seedBoard ?? undefined,
+    staleTime: 800,
+  })
+
+  const board = boardQuery.data ?? seedBoard
+
+  async function refreshCash(nextKey = keyId, nextPem = pem) {
+    if (!nextKey || !nextPem) return
+    try {
+      const r = await getKalshiCash({ data: { keyId: nextKey, pem: nextPem } })
+      const deposits = depositsFromPayload(r.deposits) ?? cash.deposits
+      const next = saveCash({
+        cash: r.cash,
+        deposits,
+        pnl: r.cash != null && deposits != null ? r.cash - deposits : cash.pnl,
+        asOf: Date.now(),
+      })
+      setCash(next)
+      if (r.settlements) {
+        const ev = eventsFromKalshiSettlements(r.settlements)
+        setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
+      }
+      setMsg('')
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'balance failed')
+    }
+  }
+
+  const settledQuery = useQuery({
+    queryKey: ['settled-desk'],
+    queryFn: () => getSettledDesk(),
+    refetchInterval: 20_000,
+    staleTime: 15_000,
+  })
+
+  useEffect(() => {
+    const settled = settledQuery.data
+    if (!settled?.length) return
+    const ev = eventsFromTickets(tickets, settled)
+    if (ev.length) setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
+    setBook((prev) => {
+      let next = prev
+      let changed = false
+      for (const bet of prev.bets) {
+        if (bet.status !== 'open') continue
+        const row = settled.find((s) => s.ticker === bet.ticker)
+        if (!row) continue
+        next = settleBet(next, bet.bet_id, row.result)
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [settledQuery.data, tickets])
+
+  function onKill() {
+    const next = engageKill(book)
+    setBook(next)
+    setSettings(disarmAllBots(settings))
+    setLiveConfirm(false)
+    setMsg('KILL on — bots disarmed, Place blocked')
+  }
+
+  function onClearKill() {
+    setBook(clearKill(book))
+    setMsg('KILL cleared')
+  }
+
+  function armLive() {
+    const hasKeys = Boolean(keyId && pem)
+    const result = confirmLiveMode(book, hasKeys)
+    setLiveConfirm(false)
+    if (!result.ok) {
+      setBook(result.book)
+      setSettings(setLiveBets(settings, false))
+      setMsg(result.reason)
+      return
+    }
+    setBook(result.book)
+    setSettings(setLiveBets(settings, true))
+    setMsg('LIVE armed — keys + confirm')
+  }
+
+  function backToPaper() {
+    setLiveConfirm(false)
+    setBook(setPaperMode(book))
+    setSettings(setLiveBets(settings, false))
+    setMsg('Paper mode')
+  }
+
+  async function sendLive(tape: TapeId, side: 'up' | 'down', quote: TapeQuote, count: number, ask: number) {
+    if (!tabIsOpen()) {
+      setMsg('Send needs this tab open')
+      return
+    }
+    if (book.killed) {
+      setMsg('KILL on — Place blocked until cleared')
+      return
+    }
+    if (book.mode !== 'live' || !settings.liveBets || !settings.tapes[tape].liveOn) {
+      setMsg('Live bets OFF — paper only. No ticket.')
+      return
+    }
+    if (!keyId || !pem) {
+      setMsg('Paste API Key ID + PEM to send live')
+      return
+    }
+    if (!quote.ticker || count < 1) return
+    const liveCash = cash.cash
+    const gate = placeGate(book, ticketCost(count, ask), liveCash)
+    if (!gate.ok) {
+      setMsg(gate.reason)
+      return
+    }
+    try {
+      const raw = await placeKalshi({
+        data: {
+          keyId,
+          pem,
+          ticker: quote.ticker,
+          side,
+          count,
+          yesAsk: quote.yesAsk,
+          noAsk: quote.noAsk,
+        },
+      })
+      const orderId = extractOrderId(raw)
+      const ticket = makeTicket({
+        tape,
+        ticker: quote.ticker,
+        side,
+        orderId,
+        contracts: count,
+        beat: quote.beat,
+      })
+      const booked = bookBet(book, {
+        ticker: quote.ticker,
+        side,
+        count,
+        ask,
+        mode: 'live',
+        source: 'bot',
+        liveCash,
+      })
+      if (booked.ok) setBook(booked.book)
+      if (!ticket) {
+        setMsg('Kalshi returned no order id — no pulse ticket')
+        return
+      }
+      setTickets((prev) => upsertTicket(prev, ticket))
+      setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
+      await refreshCash()
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'order failed')
+    }
+  }
+
+  useEffect(() => {
+    if (!board || !tabIsOpen() || book.killed) return
+    for (const id of TAPE_IDS) {
+      const quote = board.tapes[id]
+      const recipe = settings.tapes[id]
+      if (!quote?.ticker || !recipe.botOn) continue
+      if (ticketFor(tickets, id, quote.ticker)) continue
+      if (book.bets.some((b) => b.ticker === quote.ticker && b.status === 'open')) continue
+      if (!inArmWindow(recipe, quote.closeAt)) continue
+      if (quote.tradingActive === false) continue
+      const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe })
+      if (lean === 'sit') continue
+      const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
+      if (!askInBand(ask, recipe)) continue
+      const key = `${id}:${quote.ticker}`
+      if (sentRef.current[key]) continue
+      const p = botPWin(quote, lean)
+      const count = suggestedSize(book, ask, p, cash.cash)
+      if (count < 1) continue
+      sentRef.current[key] = 'armed'
+      if (book.mode === 'live' && settings.liveBets && recipe.liveOn) {
+        void sendLive(id, lean, quote, count, ask)
+      } else if (book.mode === 'paper') {
+        const result = bookBet(book, {
+          ticker: quote.ticker,
+          side: lean,
+          count,
+          ask,
+          mode: 'paper',
+          source: 'bot',
+        })
+        if (result.ok) {
+          setBook(result.book)
+          setMsg(`${TAPE_META[id].label} paper ${lean.toUpperCase()} ×${count}`)
+        } else {
+          setMsg(result.reason)
+        }
+      }
+    }
+  }, [board?.fetchedAt, settings, tickets, book.killed, book.mode])
+
+  const ttl = ttlFromHits(hits)
+  const liveTicket = tickets.find((t) => {
+    const q = board?.tapes[t.tape]
+    return q?.ticker === t.ticker
+  })
+  const pulseQuote = liveTicket ? board?.tapes[liveTicket.tape] : board?.tapes.btc
+  const pulse = pulseTone(liveTicket, pulseQuote?.live ?? null)
+
+  return (
+    <div className="desk">
+      <header className="desk-head" data-testid="desk-head">
+        <div className="brand-row">
+          <h1 data-testid="desk-title">HUB PREDICTIONS</h1>
+          <button
+            type="button"
+            className="chip-btn"
+            data-testid="settings-toggle"
+            onClick={() => setSettingsOpen((v) => !v)}
+          >
+            {settingsOpen ? 'Hide settings' : 'Settings'}
+          </button>
+        </div>
+        <CashStrip book={book} liveCash={cash.cash} onKill={onKill} onClearKill={onClearKill} />
+        <div className="stat-row">
+          <Stat
+            label="P&L / DEPOSITS"
+            value={`${formatPnl(pnlVsDeposits(book, cash.cash))} from ${formatCash(cumulativeDeposits(book))}`}
+            testId="pnl"
+          />
+          <Stat label="TTL 24H" value={`${ttl.pct}% ${ttl.w}W–${ttl.l}L`} testId="ttl" />
+          <Stat label="KALSHI CASH" value={formatCash(cash.cash)} testId="kalshi-cash" />
+        </div>
+        <p className="mode-line" data-testid="mode-line">
+          {book.mode === 'live' && settings.liveBets ? 'LIVE BETS ON' : 'Live bets OFF'} ·{' '}
+          {defaultDeskMode() === 'paper' ? 'PAPER' : book.mode.toUpperCase()} default ·{' '}
+          {book.mode === 'paper' ? 'paper only unless you confirm Live' : 'LIVE armed'} · bots{' '}
+          {book.killed || TAPE_IDS.every((id) => !settings.tapes[id].botOn) ? 'OFF' : 'armed'}
+          {book.killed ? ' · KILL ON' : ''}
+        </p>
+        {liveConfirm ? (
+          <div className="live-banner" data-testid="live-banner">
+            <p>Confirm LIVE arm — keys required. Soft FAIL silent Paper→Live. Default stays Paper.</p>
+            <button type="button" className="chip-btn toggle-hot" data-testid="confirm-live" onClick={armLive}>
+              Confirm LIVE
+            </button>
+            <button type="button" className="chip-btn" data-testid="cancel-live" onClick={() => setLiveConfirm(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : null}
+      </header>
+
+      <main className="desk-main">
+        {TAPE_IDS.map((id) => (
+          <TapeRow
+            key={id}
+            id={id}
+            quote={board?.tapes[id] ?? null}
+            ticket={ticketFor(tickets, id, board?.tapes[id]?.ticker)}
+            hits={hits.tapes[id]}
+          />
+        ))}
+
+        <PulseCard
+          ticket={liveTicket}
+          quote={pulseQuote ?? null}
+          tone={pulse}
+        />
+
+        {msg ? <p className="desk-msg">{msg}</p> : null}
+
+        <FinancePanel
+          book={book}
+          liveCash={cash.cash}
+          board={board ?? null}
+          onBook={setBook}
+          onMsg={setMsg}
+        />
+
+        {settingsOpen ? (
+          <SettingsPanel
+            settings={settings}
+            keyId={keyId}
+            pem={pem}
+            cashLabel={`Cash ${formatCash(workingCash(book, cash.cash))} · floor ${formatCash(cashFloor(book))}`}
+            killed={book.killed}
+            onKeyId={(v) => {
+              setKeyId(v)
+              writeLocal(KEY_ID, v)
+            }}
+            onPem={(v) => {
+              setPem(v)
+              writeLocal(KEY_PEM, v)
+            }}
+            onLiveBets={(on) => {
+              if (on) setLiveConfirm(true)
+              else backToPaper()
+            }}
+            onRequestLive={() => setLiveConfirm(true)}
+            onTape={(id, patch) => {
+              setSettings((prev) => {
+                if (book.killed && patch.botOn) return prev
+                return patchTape(prev, id, patch)
+              })
+            }}
+            onRefreshCash={() => void refreshCash()}
+          />
+        ) : null}
+      </main>
+    </div>
+  )
+}
+
+function ticketFor(tickets: DeskTicket[], id: TapeId, ticker?: string) {
+  if (!ticker) return tickets.find((t) => t.tape === id)
+  return tickets.find((t) => t.tape === id && t.ticker === ticker)
+}
+
+function botPWin(quote: TapeQuote, side: 'up' | 'down') {
+  const live = quote.live ?? quote.beat
+  const gap = live - quote.beat
+  const ask = (side === 'down' ? quote.noAsk : quote.yesAsk) / 100
+  const fromGap = side === 'up' ? 0.5 + gap / 80 : 0.5 - gap / 80
+  const fromAsk = Number.isFinite(ask) ? 1 - ask : 0.5
+  const p = Math.max(0.05, Math.min(0.95, fromGap * 0.6 + fromAsk * 0.4))
+  return Number.isFinite(p) ? p : 0.62
+}
+
+function Stat({ label, value, testId }: { label: string; value: string; testId: string }) {
+  return (
+    <div className="stat" data-testid={testId}>
+      <p className="hud-label">{label}</p>
+      <p className="stat-value">{value}</p>
+    </div>
+  )
+}
+
+function TapeRow({
+  id,
+  quote,
+  ticket,
+  hits,
+}: {
+  id: TapeId
+  quote: TapeQuote | null
+  ticket: DeskTicket | undefined
+  hits: { w: number; l: number }
+}) {
+  const status = ticketStatus(ticket)
+  const pct = hitPct(hits)
+  const live = quote?.live ?? null
+  const beat = quote?.beat ?? 0
+  const delta = live != null && beat ? live - beat : null
+  return (
+    <article className="tape" data-testid={`tape-${id}`}>
+      <div className="tape-row">
+        <p className="tape-name">
+          {TAPE_META[id].label} · {quote?.clock || '—'}
+        </p>
+        <p className="tape-hit" data-testid={`hit-${id}`}>
+          {pct}%
+        </p>
+        <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
+          {status}
+        </p>
+        <p className="tape-wl" data-testid={`wl-${id}`}>
+          {hits.w}W–{hits.l}L
+        </p>
+        <CloseClock closeAt={quote?.closeAt} />
+        <p className="tape-num" data-testid={`beat-${id}`}>
+          BEAT {formatLive(id, beat || null)}
+        </p>
+        <p className="tape-num" data-testid={`live-${id}`}>
+          {formatLive(id, live)}
+        </p>
+      </div>
+      <p className="tape-line">
+        {status} live {formatLive(id, live)} vs BEAT {formatLive(id, beat || null)}
+        {delta != null ? ` (${delta >= 0 ? '+' : ''}${formatLive(id, Math.abs(delta)).replace('$', '')})` : ''}
+        {' · '}UP {Number.isFinite(quote?.yesAsk) ? `${quote!.yesAsk}¢` : '—'} / DOWN{' '}
+        {Number.isFinite(quote?.noAsk) ? `${quote!.noAsk}¢` : '—'}
+        {' · '}
+        {ticket ? `${ticket.contracts} ${ticket.side.toUpperCase()}` : 'ticket none'}
+      </p>
+    </article>
+  )
+}
+
+function PulseCard({
+  ticket,
+  quote,
+  tone,
+}: {
+  ticket: DeskTicket | undefined
+  quote: TapeQuote | null
+  tone: 'quiet' | 'green' | 'red'
+}) {
+  const think = useMemo(
+    () => weThink(quote?.live ?? null, quote?.beat ?? 0, quote?.points ?? []),
+    [quote?.live, quote?.beat, quote?.fetchedAt],
+  )
+  const vs = quote?.live != null && quote.beat ? quote.live - quote.beat : null
+  if (tone === 'quiet' || !ticket) {
+    return (
+      <section className="pulse pulse-quiet" data-testid="pulse">
+        <p className="hud-label">Pulse</p>
+        <p className="pulse-title">{quote ? TAPE_META[quote.id].pulseName : 'PULSE'}</p>
+        <div className="pulse-grid">
+          <div>
+            <p className="hud-label">LINE TO BEAT</p>
+            <p>{quote ? formatLive(quote.id, quote.beat) : '—'}</p>
+          </div>
+          <div>
+            <p className="hud-label">WE THINK</p>
+            <p>{quote ? formatLive(quote.id, think) : '—'}</p>
+          </div>
+          <div>
+            <p className="hud-label">VS LINE</p>
+            <p>
+              {quote && vs != null
+                ? `${vs >= 0 ? '+' : ''}${formatLive(quote.id, Math.abs(vs)).replace('$', '')}`
+                : '—'}
+            </p>
+          </div>
+        </div>
+        <p className="pulse-note">
+          {quote && vs != null
+            ? `${vs >= 0 ? 'above' : 'below'} the gold line by ${formatLive(quote.id, Math.abs(vs))}`
+            : 'all quiet'}
+          . Hit % and TTL stay on each tape. No live ticket.
+        </p>
+      </section>
+    )
+  }
+  const side = ticket.side === 'up' ? 'UP' : 'DOWN'
+  return (
+    <section className={`pulse pulse-${tone}`} data-testid="pulse">
+      <p className="hud-label">Pulse · live ticket {ticket.orderId}</p>
+      <p className="pulse-title">
+        {TAPE_META[ticket.tape].pulseName} · {side}
+      </p>
+      <div className="pulse-grid">
+        <div>
+          <p className="hud-label">LINE TO BEAT</p>
+          <p>{formatLive(ticket.tape, ticket.beat)}</p>
+        </div>
+        <div>
+          <p className="hud-label">LIVE</p>
+          <p>{formatLive(ticket.tape, quote?.live ?? null)}</p>
+        </div>
+        <div>
+          <p className="hud-label">VS LINE</p>
+          <p>
+            {quote?.live != null
+              ? `${quote.live - ticket.beat >= 0 ? '+' : ''}${formatLive(ticket.tape, Math.abs(quote.live - ticket.beat)).replace('$', '')}`
+              : '—'}
+          </p>
+        </div>
+      </div>
+      <p className="pulse-note">
+        {tone === 'green' ? 'live is on our side of BEAT' : 'live is against BEAT'}
+      </p>
+    </section>
+  )
+}
+
