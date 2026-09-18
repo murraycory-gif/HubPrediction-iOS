@@ -20,16 +20,13 @@ if not exist "node_modules\vite" (
 )
 
 echo.
-echo Starting HUB Predictions on http://localhost:8080
-echo Leave THIS window open. Refreshing Chrome cannot start the desk.
-echo When you see Local: http://localhost:8080 open that URL and press Ctrl+Shift+R.
+echo HUB Predictions host stays on http://127.0.0.1:8080
+echo Leave THIS window open. Refresh is safe.
+echo If Chrome still says refused, use 127.0.0.1:8080 not another port.
 echo.
 
+:loop
 call npm.cmd run dev
-if errorlevel 1 (
-  echo.
-  echo Desk stopped. If Chrome says localhost refused to connect, run this file again.
-  echo If port 8080 is already in use, Ctrl+C the other npm window first.
-  pause
-)
-endlocal
+echo Desk host exited — restarting in 2 seconds...
+timeout /t 2 /nobreak >nul
+goto loop

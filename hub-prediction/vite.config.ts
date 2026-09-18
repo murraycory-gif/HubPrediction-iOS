@@ -27,11 +27,21 @@ export default { AsyncLocalStorage };
   }
 }
 
+const publicPort = Number(process.env.DESK_PUBLIC_PORT || 8080)
+const vitePort = Number(process.env.DESK_VITE_PORT || publicPort)
+
 export default defineConfig({
   server: {
-    port: 8080,
+    port: vitePort,
     strictPort: true,
-    host: true,
+    host: process.env.DESK_VITE_HOST || true,
+    allowedHosts: true,
+    origin: `http://localhost:${publicPort}`,
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+      clientPort: publicPort,
+    },
   },
   resolve: {
     tsconfigPaths: true,

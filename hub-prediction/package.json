@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev --port 8080 --strictPort --host",
+    "dev": "node desk-host.mjs",
+    "dev:vite": "vite dev --port 8080 --strictPort --host",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
     "test": "vitest run",

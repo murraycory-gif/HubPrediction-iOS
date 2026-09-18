@@ -71,10 +71,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo Desk starting. Leave THIS window open.
-echo When you see Local: http://localhost:8080 open that URL and press Ctrl+Shift+R.
-echo If Chrome says localhost refused to connect, the desk window is closed — run start-desk.bat.
-echo If port 8080 is already in use, Ctrl+C the other npm window first.
+echo Desk host starting. Leave THIS window open.
+echo Open http://127.0.0.1:8080  (refresh is safe — the host stays on 8080).
+echo If Chrome says refused, this window is closed. Double-click start-desk.bat.
 echo.
 
 call npm.cmd run dev

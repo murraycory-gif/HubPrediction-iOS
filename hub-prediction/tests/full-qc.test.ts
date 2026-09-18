@@ -330,11 +330,14 @@ describe('QC3 live-cash READY dry-run — Soft FAIL real POST', () => {
 describe('QC Windows host start Soft FAIL hop off 8080', () => {
   it('pins Vite to 8080 and starts with npm.cmd', async () => {
     const pkg = await readFile(new URL('../package.json', import.meta.url), 'utf8')
-    expect(pkg).toMatch(/vite dev --port 8080 --strictPort --host/)
+    expect(pkg).toMatch(/node desk-host\.mjs/)
+    const host = await readFile(new URL('../desk-host.mjs', import.meta.url), 'utf8')
+    expect(host).toMatch(/PUBLIC_PORT/)
+    expect(host).toMatch(/splashHtml/)
     const vite = await readFile(new URL('../vite.config.ts', import.meta.url), 'utf8')
     expect(vite).toMatch(/strictPort:\s*true/)
     const start = await readFile(new URL('../../start-desk.bat', import.meta.url), 'utf8')
     expect(start).toMatch(/npm\.cmd run dev/)
-    expect(start).toMatch(/localhost:8080/)
+    expect(start).toMatch(/127\.0\.0\.1:8080/)
   })
 })
