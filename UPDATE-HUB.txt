@@ -26,6 +26,7 @@ FIRST TIME (do this once)
 EVERY TIME AFTER I SHIP A CHANGE
 --------------------------------
 In PowerShell, one line. The updater frees 8080 if an old desk window is still holding it.
+If it says Press any key, press a key, then run the same line again.
 Use a semicolon - PowerShell does not allow & as a command joiner:
 
 cd C:\Users\Cory\Developer\HubPrediction-iOS; .\update-desk.bat

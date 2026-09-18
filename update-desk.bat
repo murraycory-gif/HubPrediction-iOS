@@ -1,7 +1,8 @@
 @echo off
-setlocal
 cd /d "%~dp0"
+if "%HUB_DESK_START%"=="1" goto :run
 
+setlocal
 echo.
 echo === HUB Predictions - pull latest and start the desk ===
 echo The only address is http://127.0.0.1:8080
@@ -30,7 +31,10 @@ if "%BRANCH%"=="" (
 if "%BRANCH%"=="" set BRANCH=cursor/host-kalshi-creds-be4f
 
 echo Fetching origin %BRANCH%...
-git fetch origin %BRANCH%
+git fetch origin +%BRANCH%:refs/remotes/origin/%BRANCH%
+if errorlevel 1 (
+  git fetch origin %BRANCH%
+)
 if errorlevel 1 (
   echo git fetch failed.
   pause
@@ -45,12 +49,25 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+git reset --hard FETCH_HEAD
+if errorlevel 1 (
+  echo git reset failed.
+  pause
+  exit /b 1
+)
 
 echo.
 echo Now on:
 git log -1 --oneline
 echo.
+echo Restarting with the files just pulled...
+endlocal
+set HUB_DESK_START=1
+call "%~f0" %*
+exit /b %ERRORLEVEL%
 
+:run
+setlocal
 cd /d "%~dp0hub-prediction"
 call npm.cmd install --no-fund --no-audit
 if errorlevel 1 (
