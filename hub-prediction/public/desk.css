@@ -347,18 +347,29 @@ body {
 .analyst-grid {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   margin-top: 10px;
 }
 
 .analyst-row {
-  border-top: 1px solid rgba(0, 229, 122, 0.1);
-  padding-top: 8px;
+  border: 1px solid rgba(0, 229, 122, 0.14);
+  border-radius: 14px;
+  padding: 12px;
+  background: #0a100e;
 }
 
-.analyst-row:first-child {
-  border-top: 0;
-  padding-top: 0;
+.analyst-block {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 229, 122, 0.08);
+}
+
+.analyst-plain {
+  margin: 4px 0 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink);
 }
 
 .analyst-actions {
@@ -392,6 +403,10 @@ body {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--mute);
+}
+
+.analyst-block > .analyst-report-label:first-child {
+  margin-top: 0;
 }
 
 .analyst-upcoming {

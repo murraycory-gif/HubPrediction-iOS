@@ -4,10 +4,13 @@ import {
   applyAnalystAccept,
   applyDraftsToLiveSettings,
   denyAnalystRec,
+  expectedTakeDollars,
+  explainRules,
   isDeniedRec,
   loadPaperDrafts,
   makePaperDrafts,
   pathWindowFromPoints,
+  profitImpact,
   savePaperDrafts,
   scoreBetsVsRecipe,
   summarizeTapePath,
@@ -213,5 +216,40 @@ describe('analyst 24h / 48h path and bets vs recipe', () => {
     const sit = cold.tapes.find((t) => t.id === 'btc')
     expect(sit?.changed).toBe(false)
     expect(sit?.proposed).toMatch(/83%/)
+  })
+})
+
+describe('analyst current rules + profit dollars', () => {
+  it('explains gold BTC rules in plain English and never flips Live', () => {
+    const rules = explainRules('btc', GOLD_RECIPES.btc)
+    expect(rules.arm).toMatch(/8 min down to 3 min/)
+    expect(rules.through).toMatch(/\$40/)
+    expect(rules.cents).toMatch(/69–89/)
+    expect(rules.size).toMatch(/Live cash OFF/)
+    expect(expectedTakeDollars(72, 1, 83)).toBeCloseTo(0.11)
+    expect(expectedTakeDollars(72, 1, 50)).toBeCloseTo(-0.22)
+  })
+
+  it('names the dollar add on a keep vs a through trim', () => {
+    const quiet = analyzeDesk(board(), emptyHits())
+    const btc = quiet.tapes.find((t) => t.id === 'btc')!
+    const keep = profitImpact(btc, 72)
+    expect(keep.headline).toMatch(/\$0\.11/)
+    expect(keep.detail).toMatch(/grows dollars/)
+    expect(keep.detail).toMatch(/Live/)
+
+    const now = Date.now()
+    const hot = analyzeDesk(
+      board({ btc: quote('btc', 76600, 76500) }),
+      emptyHits(),
+      [
+        { tape: 'btc', side: 'up', ask: 72, pnl: 0.28, status: 'settled', filledAt: now - 1000, settledAt: now - 500, closeAt: now + 4 * 60_000 },
+        { tape: 'btc', side: 'up', ask: 74, pnl: 0.26, status: 'settled', filledAt: now - 2000, settledAt: now - 400, closeAt: now + 4 * 60_000 },
+        { tape: 'btc', side: 'up', ask: 71, pnl: 0.29, status: 'settled', filledAt: now - 3000, settledAt: now - 300, closeAt: now + 4 * 60_000 },
+      ],
+    )
+    const trim = hot.tapes.find((t) => t.id === 'btc')!
+    expect(trim.changed).toBe(true)
+    expect(profitImpact(trim, 72).headline).toMatch(/extra clean take|\$0\.11/)
   })
 })

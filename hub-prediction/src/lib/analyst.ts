@@ -4,6 +4,7 @@ import {
   TAPE_META,
   askInBand,
   clampTapeRecipe,
+  formatCash,
   formatLive,
   formatPnl,
   hitPct,
@@ -491,4 +492,112 @@ export function formatPathWindow(id: TapeId, w: PathWindow, label: string) {
 
 export function formatDeskPnl(score: StrategyScore) {
   return `desk 24h ${formatPnl(score.pnl24)} · 48h ${formatPnl(score.pnl48)} · ${score.inWindow} in-arm / ${score.outWindow} out · ${score.inBand} in-¢ / ${score.outBand} out`
+}
+
+export function typicalAskCents(recipe: TapeRecipe) {
+  return Math.round((recipe.centLo + recipe.centHi) / 2)
+}
+
+/** Expected $ per take at a win-ratio. 72¢ / 83% ≈ +$0.11. */
+export function expectedTakeDollars(askCents: number, contracts: number, winPct = HIT_FLOOR) {
+  const ask = Math.max(1, Math.min(99, askCents)) / 100
+  const n = Math.max(1, contracts)
+  const win = (1 - ask) * n
+  const loss = ask * n
+  const p = Math.max(0, Math.min(100, winPct)) / 100
+  return Math.round((p * win - (1 - p) * loss) * 100) / 100
+}
+
+export function explainRules(id: TapeId, recipe: TapeRecipe) {
+  return {
+    arm: `Only send from ${recipe.armFromMin} min down to ${recipe.armToMin} min before close.`,
+    through: `Need ${formatLive(id, recipe.through)} through the strike. Hugs sit.`,
+    cents: `Ask must be ${recipe.centLo}–${recipe.centHi}¢.`,
+    size: `${recipe.contracts} contract${recipe.contracts === 1 ? '' : 's'}. Bot ${recipe.botOn ? 'ON' : 'OFF'}. Live cash ${recipe.liveOn ? 'ON' : 'OFF'}.`,
+  }
+}
+
+export function clockCall(id: TapeId, t: TapeNote) {
+  if (t.hug === 'no-print') return 'This clock: no live print yet — sitting.'
+  const gap = t.gap == null ? '—' : formatLive(id, Math.abs(t.gap))
+  const thru = formatLive(id, t.through)
+  const min = t.clockMin != null ? `${t.clockMin.toFixed(1)} min left` : 'clock unknown'
+  const asks = t.yesAsk != null ? `UP ${t.yesAsk}¢ / DOWN ${t.noAsk}¢` : 'asks —'
+  if (t.hug === 'hug') return `This clock: hug ${gap} inside ${thru} · ${min} · ${asks}. Sit — do not pay a hug.`
+  if (!t.inWindow) return `This clock: through ${gap} vs ${thru} · ${min} · ${asks}. Outside the arm — sit.`
+  if (t.askOk === false) return `This clock: through ${gap} · ${min} · ${asks}. Ask out of band — sit.`
+  return `This clock: through ${gap} vs ${thru} · ${min} · ${asks}. Clean take if the bot is on.`
+}
+
+export function proposalCopy(t: TapeNote) {
+  if (!t.changed) {
+    return {
+      title: 'Keep the current rules',
+      lines: [
+        `Arm stays ${t.currentRecipe.armFromMin}–${t.currentRecipe.armToMin} min.`,
+        `Through stays ${formatLive(t.id, t.currentRecipe.through)}.`,
+        `Ask band stays ${t.currentRecipe.centLo}–${t.currentRecipe.centHi}¢.`,
+      ],
+    }
+  }
+  const lines: string[] = []
+  if (t.nextRecipe.armFromMin !== t.currentRecipe.armFromMin || t.nextRecipe.armToMin !== t.currentRecipe.armToMin) {
+    lines.push(
+      `Arm ${t.currentRecipe.armFromMin}–${t.currentRecipe.armToMin} → ${t.nextRecipe.armFromMin}–${t.nextRecipe.armToMin} min`,
+    )
+  }
+  if (t.nextRecipe.through !== t.currentRecipe.through) {
+    lines.push(`Through ${formatLive(t.id, t.currentRecipe.through)} → ${formatLive(t.id, t.nextRecipe.through)}`)
+  }
+  if (t.nextRecipe.centLo !== t.currentRecipe.centLo || t.nextRecipe.centHi !== t.currentRecipe.centHi) {
+    lines.push(`Ask ${t.currentRecipe.centLo}–${t.currentRecipe.centHi}¢ → ${t.nextRecipe.centLo}–${t.nextRecipe.centHi}¢`)
+  }
+  return { title: 'Change these rules on this run', lines }
+}
+
+export function profitImpact(t: TapeNote, askCents?: number | null) {
+  const inBand = askCents != null && askCents >= t.currentRecipe.centLo && askCents <= t.currentRecipe.centHi
+  const ask = inBand ? Number(askCents) : typicalAskCents(t.currentRecipe)
+  const ev = expectedTakeDollars(ask, t.currentRecipe.contracts, HIT_FLOOR)
+  const miss = Math.round((ask / 100) * t.currentRecipe.contracts * 100) / 100
+  const evLabel = formatPnl(ev)
+  const missLabel = formatCash(miss)
+  if (t.w + t.l >= 4 && t.pct < HIT_FLOOR) {
+    return {
+      headline: `Sitting saves about ${missLabel} this clock`,
+      detail: `Hit rate is ${t.pct}%, under the ${HIT_FLOOR}% goal. Another ${ask}¢ take that loses costs about ${missLabel}. Dollars go up by not sending until the book is back at ${HIT_FLOOR}%. Accept does not flip Live.`,
+      tone: 'up' as const,
+      ev,
+    }
+  }
+  if (!t.changed) {
+    return {
+      headline: `${evLabel} expected per ${ask}¢ take at ${HIT_FLOOR}%`,
+      detail: `Keep these rules. At ${HIT_FLOOR}% a ${ask}¢ contract is about ${evLabel}. Sitting a hug keeps ${missLabel} in cash instead of a miss. That is how the desk grows dollars.`,
+      tone: ev >= 0 ? ('up' as const) : ('down' as const),
+      ev,
+    }
+  }
+  if (t.nextRecipe.through > t.currentRecipe.through) {
+    return {
+      headline: `Skipping hugs saves about ${missLabel} per miss`,
+      detail: `Higher through means fewer hug sends. Each avoided miss keeps about ${missLabel}. At ${HIT_FLOOR}% a clean ${ask}¢ take is still about ${evLabel}. Accept only retunes this tape — Live stays OFF.`,
+      tone: 'up' as const,
+      ev,
+    }
+  }
+  if (t.nextRecipe.through < t.currentRecipe.through) {
+    return {
+      headline: `One extra clean take is about ${evLabel}`,
+      detail: `Lower through takes clocks that now sit. Only if it is a real through. At ${HIT_FLOOR}% that extra ${ask}¢ contract is about ${evLabel}. A hug still costs about ${missLabel}. Accept does not flip Live.`,
+      tone: ev >= 0 ? ('up' as const) : ('down' as const),
+      ev,
+    }
+  }
+  return {
+    headline: `${evLabel} expected per ${ask}¢ take at ${HIT_FLOOR}%`,
+    detail: `The retune aims more sends at the ${HIT_FLOOR}% path. At ${ask}¢ that is about ${evLabel} per clean take. Accept writes the recipe on this tape only.`,
+    tone: ev >= 0 ? ('up' as const) : ('down' as const),
+    ev,
+  }
 }

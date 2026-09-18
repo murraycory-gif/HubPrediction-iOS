@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react'
 import {
   analyzeDesk,
+  clockCall,
   denyAnalystRec,
-  formatDeskPnl,
-  formatPathWindow,
+  explainRules,
   isDeniedRec,
   listDeniedRecs,
   loadPaperDrafts,
   makePaperDrafts,
+  profitImpact,
+  proposalCopy,
   savePaperDrafts,
   type AnalystBet,
   type DeskPaths,
@@ -17,7 +19,6 @@ import { buildDeskBrief, formatNewsAge, type DeskBriefsPayload } from '../lib/de
 import { HIT_FLOOR } from '../lib/finance'
 import {
   TAPE_META,
-  formatLive,
   type DeskSettings,
   type HitLatch,
   type TapeId,
@@ -58,9 +59,8 @@ export function AnalystPanel({
     <section className="analyst" data-testid="analyst">
       <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal</p>
       <p className="settings-note" data-testid="analyst-lock">
-        Each tape has its own desk chief. They review upcoming clocks, 24h / 48h trend, news on that desk, and a
-        good / bad swing forecast. Recs aim at a {HIT_FLOOR}% win ratio. Accept writes the retune onto that tape for
-        this run. Deny keeps the current recipe. Does not flip Live or live cash.
+        Each tape has its own desk chief. Current rules, the proposed change, why, and the dollar math are on the card.
+        Accept writes that tape’s recipe for this run. Deny keeps it. Does not flip Live or live cash.
       </p>
       <div className="analyst-grid">
         {report.tapes.map((t) => {
@@ -73,6 +73,11 @@ export function AnalystPanel({
             upcoming: briefs?.upcoming?.[t.id],
             news: briefs?.news?.[t.id],
           })
+          const rules = explainRules(t.id, t.currentRecipe)
+          const proposal = hidden
+            ? { title: `Denied — keep ${TAPE_META[t.id].label} current rules`, lines: proposalCopy(t).lines }
+            : proposalCopy(t)
+          const money = profitImpact(t, t.lean === 'down' ? t.noAsk : t.yesAsk)
           return (
             <article key={t.id} className="analyst-row" data-testid={`analyst-${t.id}`}>
               <p className="tape-name">
@@ -81,27 +86,45 @@ export function AnalystPanel({
               <p className="analyst-expert" data-testid={`analyst-expert-${t.id}`}>
                 {brief.expert}
               </p>
-              <p className="tape-line" data-testid={`analyst-hug-${t.id}`}>
-                {hugLine(t.id, t.hug, t.gap, t.through)}
-                {t.clockMin != null ? ` · ${t.clockMin.toFixed(1)} min` : ''}
-                {t.yesAsk != null ? ` · UP ${t.yesAsk}¢ / DOWN ${t.noAsk}¢` : ''}
-              </p>
-              <p className="tape-line" data-testid={`analyst-path-${t.id}`}>
-                {formatPathWindow(t.id, t.path.hours24, '24h')}
-                {' · '}
-                {formatPathWindow(t.id, t.path.hours48, '48h')}
-              </p>
-              <p className="tape-line" data-testid={`analyst-score-${t.id}`}>
-                {formatDeskPnl(t.score)}
-              </p>
-              <p className="tape-recipe" data-testid={`analyst-next-${t.id}`}>
-                {hidden ? `DENIED · KEEP ${TAPE_META[t.id].label} current recipe` : t.proposed}
-              </p>
-              {t.why.slice(1).map((line) => (
-                <p key={line} className="pulse-note">
-                  {line}
+
+              <div className="analyst-block" data-testid={`analyst-rules-${t.id}`}>
+                <p className="analyst-report-label">Current rules</p>
+                <p className="analyst-plain">{rules.arm}</p>
+                <p className="analyst-plain">{rules.through}</p>
+                <p className="analyst-plain">{rules.cents}</p>
+                <p className="analyst-plain">{rules.size}</p>
+                <p className="analyst-plain" data-testid={`analyst-hug-${t.id}`}>
+                  {clockCall(t.id, t)}
                 </p>
-              ))}
+              </div>
+
+              <div className="analyst-block" data-testid={`analyst-proposed-${t.id}`}>
+                <p className="analyst-report-label">Proposed</p>
+                <p className="tape-recipe" data-testid={`analyst-next-${t.id}`}>
+                  {proposal.title}
+                </p>
+                {proposal.lines.map((line) => (
+                  <p key={line} className="analyst-plain">
+                    {line}
+                  </p>
+                ))}
+              </div>
+
+              <div className="analyst-block" data-testid={`analyst-why-${t.id}`}>
+                <p className="analyst-report-label">Why</p>
+                {(hidden ? ['You denied this retune. Current rules stay.'] : t.why).map((line) => (
+                  <p key={line} className="analyst-plain">
+                    {line}
+                  </p>
+                ))}
+              </div>
+
+              <div className="analyst-block analyst-money" data-testid={`analyst-profit-${t.id}`}>
+                <p className="analyst-report-label">Profit dollars</p>
+                <p className={money.tone === 'up' ? 'swing-good' : 'swing-bad'}>{money.headline}</p>
+                <p className="analyst-plain">{money.detail}</p>
+              </div>
+
               <div className="analyst-report" data-testid={`analyst-report-${t.id}`}>
                 <p className="analyst-report-label">Upcoming runs</p>
                 <div className="analyst-upcoming" data-testid={`analyst-upcoming-${t.id}`}>
@@ -116,15 +139,15 @@ export function AnalystPanel({
                   )}
                 </div>
                 <p className="analyst-report-label">Trend</p>
-                <p className="tape-line" data-testid={`analyst-trend-${t.id}`}>
+                <p className="analyst-plain" data-testid={`analyst-trend-${t.id}`}>
                   {brief.trend}
                 </p>
                 <p className="analyst-report-label">News focus</p>
-                <p className="tape-line" data-testid={`analyst-news-focus-${t.id}`}>
+                <p className="analyst-plain" data-testid={`analyst-news-focus-${t.id}`}>
                   {brief.newsFocus}
                 </p>
                 {brief.news.map((item) => (
-                  <p key={`${item.href}-${item.at}`} className="analyst-news pulse-note">
+                  <p key={`${item.href}-${item.at}`} className="analyst-news analyst-plain">
                     {item.href ? (
                       <a href={item.href} target="_blank" rel="noreferrer">
                         {item.title}
@@ -138,17 +161,20 @@ export function AnalystPanel({
                 ))}
                 <p className="analyst-report-label">Swings</p>
                 <p
-                  className="swing-good tape-line"
+                  className="swing-good analyst-plain"
                   data-testid={`analyst-swing-good-${t.id}`}
                   data-side={brief.swing.side}
                   data-risk={brief.swing.risk}
                 >
-                  {brief.swing.good}
+                  Good: {brief.swing.good}
                 </p>
-                <p className="swing-bad tape-line" data-testid={`analyst-swing-bad-${t.id}`}>
-                  {brief.swing.bad}
+                <p className="swing-bad analyst-plain" data-testid={`analyst-swing-bad-${t.id}`}>
+                  Bad: {brief.swing.bad}
                 </p>
               </div>
+              <p className="analyst-plain" data-testid={`analyst-score-${t.id}`}>
+                Book 24h {t.score.pnl24 === 0 && t.score.pnl48 === 0 ? 'no live $ yet' : `${t.score.wins}W–${t.score.losses}L`}
+              </p>
               <div className="analyst-actions">
                 <button
                   type="button"
@@ -211,11 +237,4 @@ export function AnalystPanel({
       ) : null}
     </section>
   )
-}
-
-function hugLine(id: TapeId, hug: 'hug' | 'through' | 'no-print', gap: number | null, through: number) {
-  if (hug === 'no-print') return 'no live $'
-  const g = gap == null ? '—' : formatLive(id, Math.abs(gap)).replace('$', '')
-  const thru = formatLive(id, through).replace('$', '')
-  return hug === 'hug' ? `hug ${g} < through ${thru}` : `through ${g} ≥ ${thru}`
 }
