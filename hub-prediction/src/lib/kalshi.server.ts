@@ -17,6 +17,7 @@ import {
   type TapeClock,
   type TapeId,
 } from './tapes'
+import { summarizeTapePath, type DeskPaths } from './analyst'
 import { mergeRaceTrail } from './race-path'
 import type { DeskBoard, LivePrints, Point, Settled, TapeQuote } from './types'
 
@@ -400,6 +401,73 @@ export function applySettlementsToHits(
 
 export function classifySettlementTicker(ticker: string): TapeId | null {
   return seriesToTape(ticker)
+}
+
+function pointsFromCandles(payload: unknown): Point[] {
+  const root = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
+  const list = Array.isArray(root?.candlesticks)
+    ? (root!.candlesticks as Record<string, unknown>[])
+    : Array.isArray(root?.candles)
+      ? (root!.candles as Record<string, unknown>[])
+      : []
+  const out: Point[] = []
+  for (const row of list) {
+    if (!row || typeof row !== 'object') continue
+    const price = row.price && typeof row.price === 'object' ? (row.price as Record<string, unknown>) : row
+    const px = num(price.close) ?? num(price.close_dollars) ?? num(price.v) ?? num(row.close)
+    const rawT = num(row.end_period_ts) ?? num(row.end_ts) ?? num(row.t) ?? num(row.ts)
+    if (px == null || rawT == null || px <= 1) continue
+    const t = rawT < 1e12 ? rawT * 1000 : rawT
+    out.push({ t, px })
+  }
+  return out.sort((a, b) => a.t - b.t)
+}
+
+/** 24h / 48h index path for the analyst. Soft FAIL Live POST. */
+export async function loadTapePaths(events: Partial<Record<TapeId, string>> = {}): Promise<DeskPaths> {
+  const now = Date.now()
+  const start = Math.floor((now - 48 * 3_600_000) / 1000)
+  const end = Math.floor(now / 1000)
+  const rows = await Promise.all(
+    TAPE_IDS.map(async (id) => {
+      const eventTicker = events[id]
+      const series = seriesForTape(id, '1h')
+      const [live1d, live1w, candles] = await Promise.all([
+        eventTicker
+          ? fetchJson<unknown>(
+              `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=1d`,
+              LIVE_ABORT,
+            ).catch(() => null)
+          : Promise.resolve(null),
+        eventTicker
+          ? fetchJson<unknown>(
+              `${KALSHI}/live_data/events/${encodeURIComponent(eventTicker)}?range=1w`,
+              LIVE_ABORT,
+            ).catch(() => null)
+          : Promise.resolve(null),
+        fetchJson<unknown>(
+          `${KALSHI}/series/${encodeURIComponent(series)}/candlesticks?start_ts=${start}&end_ts=${end}&period_interval=60`,
+          LIVE_ABORT,
+        ).catch(() => null),
+      ])
+      const bag = new Map<number, number>()
+      for (const p of [
+        ...pointsFromLiveData(live1w),
+        ...pointsFromLiveData(live1d),
+        ...pointsFromCandles(candles),
+      ]) {
+        if (p.px > 1) bag.set(p.t, p.px)
+      }
+      const points = [...bag.entries()].map(([t, px]) => ({ t, px })).sort((a, b) => a.t - b.t)
+      const current = lastPrintFromLiveData(live1d)?.px ?? lastPrintFromLiveData(live1w)?.px ?? points[points.length - 1]?.px ?? null
+      return summarizeTapePath(id, points, current, now)
+    }),
+  )
+  const tapes = {} as DeskPaths['tapes']
+  TAPE_IDS.forEach((id, i) => {
+    tapes[id] = rows[i]
+  })
+  return { tapes, fetchedAt: now }
 }
 
 export function startWarm() {

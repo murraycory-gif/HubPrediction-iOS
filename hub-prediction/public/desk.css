@@ -361,6 +361,22 @@ body {
   padding-top: 0;
 }
 
+.analyst-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rec-accept:not(:disabled) {
+  color: #04140c;
+  background: #00e57a;
+}
+
+.rec-deny:not(:disabled) {
+  color: #ffb4a2;
+}
+
 .tape-row,
 .tape-head,
 .tape-head-tools,

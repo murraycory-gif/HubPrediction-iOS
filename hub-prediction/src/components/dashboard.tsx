@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { getDeskBoard, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, placeKalshi } from '../lib/btc-data'
+import { getDeskBoard, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi } from '../lib/btc-data'
 import {
   TAPE_IDS,
   TAPE_META,
@@ -10,7 +10,6 @@ import {
   DEFAULT_CHART,
   LIVE_PRINT_MS,
   defaultChartRanges,
-  GOLD_RECIPES,
   applyBetsFilter,
   boardEventTickers,
   boardPollMs,
@@ -84,6 +83,7 @@ import {
   syncTicketsIntoBook,
   type FinanceState,
 } from '../lib/finance'
+import { applyAnalystAccept } from '../lib/analyst'
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
@@ -368,15 +368,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     for (const id of TAPE_IDS) {
       const quote = board.tapes[id]
       const recipe = settings.tapes[id]
-      const gold = GOLD_RECIPES[id]
       if (!quote?.ticker || !recipe.botOn) continue
       if (quote.tradingActive === false) continue
       if (ticketFor(tickets, id, quote.ticker)) continue
-      if (!inArmWindow(gold, quote.closeAt)) continue
-      const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe: gold })
+      if (!inArmWindow(recipe, quote.closeAt)) continue
+      const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe })
       if (lean === 'sit') continue
       const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
-      if (!askInBand(ask, gold)) continue
+      if (!askInBand(ask, recipe)) continue
       const key = `${id}:${quote.ticker}`
       const gates = cashGates(settings, id)
       if (claimSend(sentRef.current, key) !== 'send') continue
@@ -534,7 +533,24 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             {financeOpen ? 'Hide Finance' : 'Finance'}
           </button>
         </div>
-        {analystOpen ? <AnalystPanel board={board ?? null} hits={hits} /> : null}
+        {analystOpen ? (
+          <AnalystDesk
+            board={board ?? null}
+            hits={hits}
+            settings={settings}
+            bets={book.bets}
+            events={liveEvents}
+            killed={book.killed}
+            onAccept={(id, recipe) => {
+              if (book.killed) {
+                setMsg('KILL on — recipe lock')
+                return
+              }
+              setSettings(applyAnalystAccept(settings, id, recipe))
+              setMsg(`${id.toUpperCase()} recipe applied to this run`)
+            }}
+          />
+        ) : null}
         {financeOpen ? (
           <FinancePanel
             book={book}
@@ -584,6 +600,44 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ) : null}
       </main>
     </div>
+  )
+}
+
+function AnalystDesk({
+  board,
+  hits,
+  settings,
+  bets,
+  events,
+  killed,
+  onAccept,
+}: {
+  board: DeskBoard | null
+  hits: ReturnType<typeof loadHits>
+  settings: DeskSettings
+  bets: FinanceState['bets']
+  events: Partial<Record<TapeId, string>>
+  killed: boolean
+  onAccept: (id: TapeId, recipe: TapeRecipe) => void
+}) {
+  const pathQuery = useQuery({
+    queryKey: ['tape-paths', events],
+    queryFn: () => getTapePaths({ data: { events } }),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
+  })
+  return (
+    <AnalystPanel
+      board={board}
+      hits={hits}
+      settings={settings}
+      bets={bets}
+      paths={pathQuery.data ?? null}
+      killed={killed}
+      onAccept={onAccept}
+      onDeny={() => {}}
+    />
   )
 }
 

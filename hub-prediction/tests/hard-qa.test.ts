@@ -52,23 +52,26 @@ describe('HARD QA 1–10', () => {
     expect(dash).toMatch(/contracts-label/)
   })
 
-  it('2 recipes stay gold — Soft FAIL rewrite', () => {
+  it('2 gold factory stays — Accept may persist a clamped retune', () => {
     expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })
     expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 })
     expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 })
     expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 })
+    expect(hydrateSettings(null).tapes.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69 })
     const forced = hydrateSettings({
       tapes: {
-        btc: { armFromMin: 1, through: 99, centLo: 10 },
-        ng: { armFromMin: 10, through: 3 },
-        cu: { armToMin: 8, through: 9 },
-        gld: { armFromMin: 6, through: 40, centLo: 69 },
+        btc: { armFromMin: 7, through: 46, centLo: 69 },
+        ng: { armFromMin: 10, through: 0.003 },
+        cu: { armToMin: 0.45, through: 0.002 },
+        gld: { armFromMin: 9, through: 2.4, centLo: 34 },
       },
     })
-    expect(forced.tapes.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69 })
-    expect(forced.tapes.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002 })
-    expect(forced.tapes.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002 })
-    expect(forced.tapes.gld).toMatchObject({ armFromMin: 10, through: 2, centLo: 34 })
+    expect(forced.tapes.btc).toMatchObject({ armFromMin: 7, through: 46, centLo: 69 })
+    expect(forced.tapes.ng.armFromMin).toBe(10)
+    expect(forced.tapes.ng.through).toBeCloseTo(0.003)
+    expect(forced.tapes.gld.armFromMin).toBe(9)
+    expect(forced.liveBets).toBe(false)
+    expect(forced.tapes.btc.liveOn).toBe(false)
   })
 
   it('3 Live + bots + per-tape cash Soft FAIL cold ON', () => {

@@ -13,10 +13,11 @@ export function SettingsPanel(props: {
     <section className="settings" data-testid="settings">
       <p className="hud-label">Settings · same desk on phone</p>
       <p className="settings-note">
-        Bot, live cash, and contracts sit on each tape card. Gold recipes stay locked. For paper test: Bot ON,
-        Live cash OFF, master Live OFF. Kalshi keys live on the Windows host. Soft FAIL paste PEM. Soft FAIL
-        Live POST. Hit floor 85% is a scoreboard mark — recipes are not rewritten.
-        {props.recipeLocked ? ' Recipe lock on — Soft FAIL chase retune after a loss / KILL.' : ''}
+        Bot, live cash, and contracts sit on each tape card. Factory gold is the default. Accept an Analyst
+        retune to apply a new recipe to that tape for this run. For paper test: Bot ON, Live cash OFF, master
+        Live OFF. Kalshi keys live on the Windows host. Soft FAIL paste PEM. Soft FAIL Live POST. Soft FAIL
+        flipping Live from Analyst.
+        {props.recipeLocked ? ' KILL / chase lock still blocks silent Settings retunes.' : ''}
       </p>
 
       <div className="settings-master">
@@ -39,7 +40,7 @@ function TapeRecipeLock({ id, recipe }: { id: TapeId; recipe: TapeRecipe }) {
   const meta = TAPE_META[id]
   return (
     <div className="tape-settings" data-testid={`settings-${id}`}>
-      <p className="tape-settings-title">{meta.label} gold recipe · locked</p>
+      <p className="tape-settings-title">{meta.label} active recipe</p>
       <div className="settings-grid">
         <label>
           Arm from (min)

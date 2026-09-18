@@ -73,14 +73,22 @@ describe('defaults Soft FAIL Live / bots ON', () => {
     }
   })
 
-  it('locks stored arm/through/¢ back to gold recipes', () => {
+  it('persists an accepted recipe and clamps wild values — gold factory stays', () => {
     const s = hydrateSettings({
-      tapes: { ng: { contracts: 4, armFromMin: 10, armToMin: 8, through: 9 } },
+      tapes: { ng: { contracts: 4, armFromMin: 10, armToMin: 0.45, through: 0.003 } },
     })
     expect(s.tapes.ng.contracts).toBe(4)
-    expect(s.tapes.ng.armFromMin).toBe(8)
+    expect(s.tapes.ng.armFromMin).toBe(10)
     expect(s.tapes.ng.armToMin).toBe(0.45)
-    expect(s.tapes.ng.through).toBe(0.002)
+    expect(s.tapes.ng.through).toBeCloseTo(0.003)
+    expect(s.liveBets).toBe(false)
+    const wild = hydrateSettings({
+      tapes: { btc: { armFromMin: 1, through: 99, centLo: 10 } },
+    })
+    expect(wild.tapes.btc.armFromMin).toBe(1)
+    expect(wild.tapes.btc.through).toBe(99)
+    expect(wild.tapes.btc.centLo).toBe(69)
+    expect(GOLD_RECIPES.btc.armFromMin).toBe(8)
   })
 
   it('does not turn live on just because a stored blob omitted the flag', () => {

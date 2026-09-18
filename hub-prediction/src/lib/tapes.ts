@@ -325,17 +325,38 @@ export function clampContracts(n: number) {
   return Math.max(1, Math.min(99, Math.round(n)))
 }
 
-function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe): TapeRecipe {
+function clampNum(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n))
+}
+
+/** Accepted analyst recs persist. Wild values clamp. Gold stays the factory default. */
+export function clampTapeRecipe(id: TapeId, partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe = GOLD_RECIPES[id]): TapeRecipe {
+  const armFrom = clampNum(Number(partial?.armFromMin ?? gold.armFromMin), 1, 14)
+  let armTo = clampNum(Number(partial?.armToMin ?? gold.armToMin), 0.2, 12)
+  if (armTo >= armFrom) armTo = Math.max(0.2, Math.round((armFrom - 0.2) * 100) / 100)
+  const thru = Number(partial?.through ?? gold.through)
+  const through = clampNum(Number.isFinite(thru) ? thru : gold.through, gold.through * 0.25, gold.through * 4)
+  const minLo = id === 'btc' ? 69 : 20
+  let centLo = Math.round(clampNum(Number(partial?.centLo ?? gold.centLo), minLo, 90))
+  let centHi = Math.round(clampNum(Number(partial?.centHi ?? gold.centHi), centLo + 1, 95))
+  if (centHi <= centLo) centHi = Math.min(95, centLo + 1)
   return {
     contracts: clampContracts(Number(partial?.contracts ?? gold.contracts)),
-    botOn: false,
-    liveOn: false,
-    armFromMin: gold.armFromMin,
-    armToMin: gold.armToMin,
-    through: gold.through,
-    centLo: gold.centLo,
-    centHi: gold.centHi,
+    botOn: partial?.botOn === true,
+    liveOn: partial?.liveOn === true,
+    armFromMin: Math.round(armFrom * 100) / 100,
+    armToMin: Math.round(armTo * 100) / 100,
+    through: through,
+    centLo,
+    centHi,
   }
+}
+
+function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe, id: TapeId): TapeRecipe {
+  const next = clampTapeRecipe(id, partial, gold)
+  next.botOn = false
+  next.liveOn = false
+  return next
 }
 
 /** Live boots OFF unless stored true. Bots may persist ON if stored (night paper). Soft FAIL live-cash ON by default. */
@@ -345,7 +366,7 @@ export function hydrateSettings(raw: unknown): DeskSettings {
   for (const id of TAPE_IDS) {
     const gold = GOLD_RECIPES[id]
     const stored = o.tapes?.[id]
-    const next = recipeFrom(stored, gold)
+    const next = recipeFrom(stored, gold, id)
     if (stored) {
       next.botOn = stored.botOn === true
       next.liveOn = stored.liveOn === true
