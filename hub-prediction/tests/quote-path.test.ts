@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadDeskBoard, loadLivePrints, pickOpen, resetDeskBoardForTests } from '../src/lib/kalshi.server'
-import { BOARD_CLOSED_MS, BOARD_STRUCTURE_MS, LIVE_TRAIL_DOTS, boardPollMs, liveRangeFromCharts, mergeLiveOntoBoard, nextBoardRolloverWait, slimLivePoints } from '../src/lib/tapes'
+import { BOARD_CLOSED_MS, BOARD_STRUCTURE_MS, LIVE_TRAIL_DOTS, boardPollMs, holdLiveEvents, latchDeskBoard, liveRangeFromCharts, mergeLiveOntoBoard, nextBoardRolloverWait, slimLivePoints } from '../src/lib/tapes'
 import type { DeskBoard } from '../src/lib/types'
 
 afterEach(() => {
@@ -530,5 +530,121 @@ describe('one fast quote path Soft KEEP same ticker/second', () => {
       tapes: { btc: { ...prints.tapes.btc!, live: 80910, points: [] }, ng: null, cu: null, gld: null },
     })
     expect(same).toBe(merged)
+  })
+})
+
+describe('desk never blanks on a Kalshi miss', () => {
+  function q(partial: Partial<DeskBoard['tapes']['btc']> = {}): NonNullable<DeskBoard['tapes']['btc']> {
+    return {
+      id: 'btc',
+      series: 'KXBTC15M',
+      ticker: 'KXBTC15M-LIVE',
+      eventTicker: 'KXBTC15M-E',
+      yesAsk: 72,
+      noAsk: 29,
+      beat: 81100,
+      live: 81080,
+      liveSource: 'kalshi-timeseries',
+      points: [{ t: 1, px: 81080 }],
+      openAt: 1,
+      closeAt: Date.now() + 9 * 60_000,
+      fetchedAt: Date.now(),
+      clock: '9:15 PM',
+      tradingActive: true,
+      ...partial,
+    }
+  }
+
+  it('latchDeskBoard keeps the last good clock when the next poll is holes', () => {
+    const prev: DeskBoard = {
+      fetchedAt: 1,
+      tapes: { btc: q(), ng: null, cu: null, gld: null },
+    }
+    const hole: DeskBoard = {
+      fetchedAt: 2,
+      tapes: { btc: null, ng: null, cu: null, gld: null },
+    }
+    const held = latchDeskBoard(hole, prev)
+    expect(held?.tapes.btc?.ticker).toBe('KXBTC15M-LIVE')
+    expect(held?.tapes.btc?.live).toBe(81080)
+    expect(held?.tapes.btc?.beat).toBe(81100)
+  })
+
+  it('latchDeskBoard keeps live + trail when the same ticker comes back without a print', () => {
+    const prev: DeskBoard = {
+      fetchedAt: 1,
+      tapes: { btc: q(), ng: null, cu: null, gld: null },
+    }
+    const incoming: DeskBoard = {
+      fetchedAt: 2,
+      tapes: { btc: q({ live: null, points: [], yesAsk: 73 }), ng: null, cu: null, gld: null },
+    }
+    const held = latchDeskBoard(incoming, prev)
+    expect(held?.tapes.btc?.yesAsk).toBe(73)
+    expect(held?.tapes.btc?.live).toBe(81080)
+    expect(held?.tapes.btc?.points).toHaveLength(1)
+  })
+
+  it('holdLiveEvents does not drop the print key when the board hiccups', () => {
+    const held = holdLiveEvents({}, { btc: 'KXBTC15M-E', ng: 'KXNG-E' })
+    expect(held.btc).toBe('KXBTC15M-E')
+    expect(held.ng).toBe('KXNG-E')
+  })
+
+  it('loadDeskBoard after a total fetch miss keeps the last good BTC clock', async () => {
+    const now = Date.now()
+    const open = new Date(now - 4 * 60_000).toISOString()
+    const close = new Date(now + 11 * 60_000).toISOString()
+    let dead = false
+    vi.stubGlobal(
+      'fetch',
+      async (url: string) => {
+        if (dead) throw new Error('kalshi down')
+        const u = String(url)
+        if (u.includes('/markets?series_ticker=KXBTC15M') || u.includes('/markets?')) {
+          if (u.includes('KXBTC15M')) {
+            return json({
+              markets: [
+                {
+                  ticker: 'KXBTC15M-LIVE',
+                  event_ticker: 'KXBTC15M-E',
+                  status: 'active',
+                  yes_ask: 70,
+                  no_ask: 31,
+                  floor_strike: 81100,
+                  open_time: open,
+                  close_time: close,
+                },
+              ],
+            })
+          }
+          return json({ markets: [] })
+        }
+        if (u.includes('/markets/KXBTC15M-LIVE')) {
+          return json({
+            market: {
+              ticker: 'KXBTC15M-LIVE',
+              event_ticker: 'KXBTC15M-E',
+              status: 'active',
+              yes_ask: 70,
+              no_ask: 31,
+              floor_strike: 81100,
+              open_time: open,
+              close_time: close,
+            },
+          })
+        }
+        if (u.includes('/live_data/')) return json({ live_data: { details: { last: 81080 } } })
+        throw new Error(u)
+      },
+    )
+    const first = await loadDeskBoard()
+    expect(first.tapes.btc?.live).toBeCloseTo(81080)
+    dead = true
+    await new Promise((r) => setTimeout(r, 400))
+    const second = await loadDeskBoard()
+    expect(second.tapes.btc?.ticker).toBe('KXBTC15M-LIVE')
+    expect(second.tapes.btc?.live).toBeCloseTo(81080)
+    expect(second.tapes.btc?.beat).toBe(81100)
   })
 })

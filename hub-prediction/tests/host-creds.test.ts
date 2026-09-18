@@ -166,7 +166,7 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
     expect(dash).not.toMatch(/KEY_PEM/)
     expect(dash).toMatch(/getKalshiBalance\(\)/)
     expect(dash).toMatch(/getKalshiCash\(\)/)
-    expect(dash).toMatch(/charts: defaultChartRanges\(\)/)
+    expect(dash).toMatch(/setSettings\(loadSettings\(\)\)/)
     expect(dash).toMatch(/mergeKalshiHistoryToBook/)
     expect(dash).toMatch(/label="P&L"/)
     expect(dash).toMatch(/cash\.pnl != null \? formatPnl\(cash\.pnl\) : '—'/)

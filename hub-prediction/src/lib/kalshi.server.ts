@@ -6,6 +6,7 @@ import {
   askCentsFromMarket,
   defaultClocks,
   hydrateClock,
+  latchDeskBoard,
   LIVE_TRAIL_MS,
   lastPrintFromLiveData,
   marketTradingActive,
@@ -42,6 +43,7 @@ let lastPrints: LivePrints | null = null
 let lastPrintsAt = 0
 let lastPrintsKey = ''
 let printsInflight: Promise<LivePrints> | null = null
+let boardInflight: Promise<DeskBoard> | null = null
 const settledCache: Record<string, { at: number; past: Settled[] }> = {}
 let warming = false
 
@@ -257,6 +259,7 @@ export function resetDeskBoardForTests() {
   lastPrintsAt = 0
   lastPrintsKey = ''
   printsInflight = null
+  boardInflight = null
 }
 
 export async function loadLivePrints(
@@ -333,20 +336,31 @@ export async function loadDeskBoard(clocks: Record<TapeId, TapeClock> = defaultC
   const rolling = boardNeedsRollover(lastBoard, now)
   const freshMs = rolling ? ROLLOVER_FRESH_MS : QUOTE_FRESH_MS
   if (lastBoard && lastClocksKey === key && now - lastBoardAt < freshMs) return lastBoard
+  if (boardInflight && lastClocksKey === key) return boardInflight
 
-  const rows = await Promise.all(
-    TAPE_IDS.map((id) => loadTape(id, now, hydrateClock(clocks[id])).catch(() => lastBoard?.tapes[id] ?? null)),
-  )
-  const tapes = {} as DeskBoard['tapes']
-  TAPE_IDS.forEach((id, i) => {
-    const want = seriesForTape(id, clocks[id])
-    const row = rows[i]
-    tapes[id] = row?.series === want ? row : lastBoard?.tapes[id]?.series === want ? lastBoard.tapes[id] : null
-  })
-  lastBoard = { tapes, fetchedAt: now }
-  lastBoardAt = now
-  lastClocksKey = key
-  return lastBoard
+  const job = (async () => {
+    const rows = await Promise.all(
+      TAPE_IDS.map((id) => loadTape(id, now, hydrateClock(clocks[id])).catch(() => lastBoard?.tapes[id] ?? null)),
+    )
+    const tapes = {} as DeskBoard['tapes']
+    TAPE_IDS.forEach((id, i) => {
+      const want = seriesForTape(id, clocks[id])
+      const row = rows[i]
+      tapes[id] = row?.series === want ? row : lastBoard?.tapes[id]?.series === want ? lastBoard.tapes[id] : null
+    })
+    const raw: DeskBoard = { tapes, fetchedAt: Date.now() }
+    const latched = latchDeskBoard(raw, lastBoard) ?? raw
+    lastBoard = latched
+    lastBoardAt = Date.now()
+    lastClocksKey = key
+    return lastBoard
+  })()
+  boardInflight = job
+  try {
+    return await job
+  } finally {
+    if (boardInflight === job) boardInflight = null
+  }
 }
 
 function settledFromMarkets(markets: Market[]): Settled[] {

@@ -1,6 +1,6 @@
 import { deskStorage } from './desk-storage'
 import { mergeRaceTrail, pointTime } from './race-path'
-import type { DeskBoard, LivePrints } from './types'
+import type { DeskBoard, LivePrints, TapeQuote } from './types'
 
 export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
 export type TapeId = (typeof TAPE_IDS)[number]
@@ -198,6 +198,55 @@ export function boardEventTickers(
     if (ev) out[id] = ev
   }
   return out
+}
+
+export function quoteHasClock(q: TapeQuote | null | undefined) {
+  return Boolean(q && q.ticker && (Number(q.beat) > 0 || (q.live != null && q.live > 0) || Number(q.closeAt) > 0))
+}
+
+/** Never publish a hole. A miss keeps the last good clock so the desk does not blank. */
+export function latchDeskBoard(incoming: DeskBoard | null | undefined, prev: DeskBoard | null | undefined): DeskBoard | null {
+  if (!incoming) return prev ?? null
+  if (!prev) return incoming
+  const tapes = { ...incoming.tapes }
+  let changed = false
+  for (const id of TAPE_IDS) {
+    const next = tapes[id]
+    const hold = prev.tapes[id]
+    if (quoteHasClock(next)) {
+      if (hold && hold.ticker === next!.ticker && (next!.live == null || !next!.points.length)) {
+        tapes[id] = {
+          ...next!,
+          live: next!.live ?? hold.live,
+          liveSource: next!.liveSource ?? hold.liveSource,
+          points: next!.points.length ? next!.points : hold.points,
+        }
+        changed = true
+      }
+      continue
+    }
+    if (quoteHasClock(hold)) {
+      tapes[id] = hold
+      changed = true
+    }
+  }
+  if (!changed) return incoming
+  return { ...incoming, tapes, fetchedAt: Math.max(incoming.fetchedAt || 0, prev.fetchedAt || 0) }
+}
+
+export function holdLiveEvents(
+  incoming: Partial<Record<TapeId, string>>,
+  prev: Partial<Record<TapeId, string>>,
+): Partial<Record<TapeId, string>> {
+  const next = { ...prev }
+  let any = false
+  for (const id of TAPE_IDS) {
+    if (incoming[id]) {
+      next[id] = incoming[id]
+      any = true
+    }
+  }
+  return any || Object.values(next).some(Boolean) ? next : incoming
 }
 
 /** Overlay Kalshi last prints onto the slower structure board. Soft FAIL swap tickers. */

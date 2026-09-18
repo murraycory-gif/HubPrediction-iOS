@@ -9,11 +9,12 @@ import {
   CLOCK_LABELS,
   DEFAULT_CHART,
   LIVE_PRINT_MS,
-  defaultChartRanges,
   applyBetsFilter,
   boardEventTickers,
   boardPollMs,
   nextBoardRolloverWait,
+  holdLiveEvents,
+  latchDeskBoard,
   mergeLiveOntoBoard,
   askInBand,
   cashGates,
@@ -35,7 +36,6 @@ import {
   loadHits,
   hydrateSettings,
   loadSettings,
-  saveSettings,
   loadTickets,
   makePaperTicket,
   makeTicket,
@@ -132,7 +132,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }
 
   useLayoutEffect(() => {
-    setSettings(saveSettings({ ...loadSettings(), charts: defaultChartRanges() }))
+    setSettings(loadSettings())
     const nextTickets = loadTickets()
     setTickets(nextTickets)
     setHits(loadHits())
@@ -156,17 +156,35 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })
   }, [])
 
+  const heldBoard = useRef<DeskBoard | null>(seedBoard)
+  const heldEvents = useRef<Partial<Record<TapeId, string>>>({})
+
   const boardQuery = useQuery({
     queryKey: ['desk-board', settings.clocks],
-    queryFn: () => getDeskBoard({ data: { clocks: settings.clocks } }),
+    queryFn: async () => {
+      try {
+        const next = await getDeskBoard({ data: { clocks: settings.clocks } })
+        return latchDeskBoard(next, heldBoard.current) ?? next
+      } catch {
+        if (heldBoard.current) return heldBoard.current
+        throw new Error('desk board miss')
+      }
+    },
     refetchInterval: (q) => boardPollMs(q.state.data),
     refetchIntervalInBackground: true,
     placeholderData: keepPreviousData,
     initialData: seedBoard ?? undefined,
-    staleTime: 200,
+    staleTime: 350,
+    retry: 1,
+    retryDelay: 250,
+    refetchOnWindowFocus: false,
   })
 
-  const structure = boardQuery.data ?? seedBoard
+  const structure = useMemo(() => {
+    const next = latchDeskBoard(boardQuery.data ?? seedBoard, heldBoard.current)
+    if (next) heldBoard.current = next
+    return next ?? heldBoard.current
+  }, [boardQuery.data, seedBoard])
   const rolloverKey = TAPE_IDS.map((id) => {
     const q = structure?.tapes[id]
     return `${q?.ticker ?? ''}:${q?.closeAt ?? 0}:${q?.tradingActive === false ? 0 : 1}`
@@ -182,7 +200,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }, [rolloverKey, boardQuery.refetch])
 
   const liveEventKey = TAPE_IDS.map((id) => structure?.tapes[id]?.eventTicker ?? '').join('|')
-  const liveEvents = useMemo(() => boardEventTickers(structure), [liveEventKey])
+  const liveEvents = useMemo(() => {
+    const next = holdLiveEvents(boardEventTickers(structure), heldEvents.current)
+    heldEvents.current = next
+    return next
+  }, [liveEventKey])
 
   const printsQuery = useQuery({
     queryKey: ['live-prints', liveEvents, settings.charts],
@@ -192,6 +214,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     refetchIntervalInBackground: true,
     placeholderData: keepPreviousData,
     staleTime: 80,
+    retry: 1,
+    refetchOnWindowFocus: false,
   })
 
   const board = mergeLiveOntoBoard(structure, printsQuery.data) ?? structure

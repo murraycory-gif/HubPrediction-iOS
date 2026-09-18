@@ -71,7 +71,7 @@ export function useSmoothedLive(live: number | null, ms = 700) {
       const dt = Math.max(0, t - lastT)
       lastT = t
       let next = cur
-      if (target == null || !Number.isFinite(target) || target <= 0) next = target
+      if (target == null || !Number.isFinite(target) || target <= 0) next = cur
       else if (cur == null || !Number.isFinite(cur) || (cur as number) <= 0) next = target
       else {
         const k = 1 - Math.exp(-dt / ms)
@@ -138,6 +138,7 @@ export const RaceChart = memo(function RaceChart({
   const [trail, setTrail] = useState<Point[]>([])
 
   useEffect(() => {
+    if (!openAt && !closeAt) return
     trailRef.current = []
     setTrail([])
   }, [id, openAt, closeAt])
