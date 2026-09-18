@@ -11,10 +11,11 @@ export function applyHostDeskState(host: HostDeskState | null | undefined) {
   let any = false
   const local = loadSettings()
   const localAt = Number(local.savedAt) || 0
-  const hostAt = Number(host.asOf) || 0
-  if (host.settings && hostAt >= localAt) {
+  const hostSettings = host.settings && typeof host.settings === 'object' ? (host.settings as { savedAt?: number }) : null
+  const hostSettingsAt = Number(hostSettings?.savedAt) || 0
+  if (host.settings && hostSettingsAt >= localAt) {
     try {
-      ls.setItem(SETTINGS_KEY, JSON.stringify(hydrateSettings({ ...(host.settings as object), savedAt: hostAt })))
+      ls.setItem(SETTINGS_KEY, JSON.stringify(hydrateSettings({ ...(host.settings as object), savedAt: hostSettingsAt })))
       any = true
     } catch {
       /* quota */

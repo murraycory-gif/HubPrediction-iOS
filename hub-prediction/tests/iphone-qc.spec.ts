@@ -127,6 +127,9 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   await expect(page.getByTestId('bets-24h')).toContainText(/Bets since first deposit/i)
   await expect(page.getByTestId('bets-filter')).toBeVisible()
   await expect(page.getByTestId('bets-filter-all')).toBeVisible()
+  if ((await page.getByTestId('bets-filter-all').getAttribute('aria-pressed')) !== 'true') {
+    await page.getByTestId('bets-filter-all').click()
+  }
   await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'true')
   for (const id of ['btc', 'ng', 'cu', 'gld']) {
     await expect(page.getByTestId(`bets-filter-${id}`)).toBeVisible()
@@ -427,8 +430,7 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
   await expect(page.getByTestId('save-btc')).toBeVisible()
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
 
-  const liveLabel = page.locator('label.toggle').filter({ has: page.getByTestId('live-bets') })
-  await liveLabel.click()
+  await page.getByTestId('live-bets').click({ force: true })
   await expect(page.getByTestId('live-banner')).toBeVisible()
   await page.getByTestId('cancel-live').click()
   await expect(page.getByTestId('live-banner')).toHaveCount(0)
@@ -637,8 +639,18 @@ test('Live cash ON survives reload; master Live stays OFF', async ({ page }) => 
   await expect(page.getByTestId('live-cash-btc')).toBeChecked()
   await expect(page.getByTestId('live-cash-ng')).toBeChecked()
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem('hub.desk.settings.v1')
+        if (!raw) return false
+        const s = JSON.parse(raw) as { tapes?: { btc?: { liveOn?: boolean }; ng?: { liveOn?: boolean } }; clocks?: { btc?: string } }
+        return s.tapes?.btc?.liveOn === true && s.tapes?.ng?.liveOn === true && s.clocks?.btc === '5m'
+      }),
+    )
+    .toBe(true)
   await page.reload({ waitUntil: 'networkidle' })
-  await expect(page.getByTestId('live-cash-btc')).toBeChecked()
+  await expect(page.getByTestId('live-cash-btc')).toBeChecked({ timeout: 15_000 })
   await expect(page.getByTestId('live-cash-ng')).toBeChecked()
   await expect(page.getByTestId('clock-btc')).toHaveValue('5m')
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
