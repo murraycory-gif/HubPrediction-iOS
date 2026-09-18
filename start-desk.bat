@@ -11,7 +11,7 @@ if errorlevel 1 (
 
 if not exist "node_modules\vite" (
   echo Installing desk packages...
-  call npm.cmd install
+  call npm.cmd install --no-fund --no-audit
   if errorlevel 1 (
     echo npm install failed.
     pause
@@ -28,9 +28,11 @@ echo After WireGuard is Active on the phone open http://10.77.0.1:8080
 echo Soft FAIL Tailscale / paid relay / router-forward of 8080.
 netsh advfirewall firewall add rule name="HUB Predictions 8080" dir=in action=allow protocol=tcp localport=8080 >nul 2>&1
 echo.
+echo Taking 8080 back if an old desk window is still holding it...
+call "%~dp0free-desk-ports.bat"
 
 :loop
 call npm.cmd run dev
-echo Desk host exited — restarting in 2 seconds...
+echo Desk host exited - restarting in 2 seconds...
 timeout /t 2 /nobreak >nul
 goto loop

@@ -216,8 +216,47 @@ async function bindPublic(create, port) {
   }
 }
 
+/** Soft FAIL leaving 8080 held by an old desk window. */
+export function reclaimDeskPortCommand(port = PUBLIC_PORT, platform = process.platform) {
+  const n = Number(port)
+  if (platform === 'win32') {
+    return {
+      bin: 'powershell',
+      args: [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        `Get-NetTCPConnection -LocalPort ${n} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }`,
+      ],
+    }
+  }
+  return { bin: 'sh', args: ['-c', `fuser -k ${n}/tcp >/dev/null 2>&1 || true`] }
+}
+
+export function reclaimDeskPort(port = PUBLIC_PORT, run = execFileSync, platform = process.platform) {
+  const { bin, args } = reclaimDeskPortCommand(port, platform)
+  try {
+    run(bin, args, { stdio: 'ignore' })
+  } catch {
+    /* nothing listening, or no fuser */
+  }
+}
+
+async function bindPublicRetry(create, port) {
+  try {
+    return await bindPublic(create, port)
+  } catch (e) {
+    if (e?.code !== 'EADDRINUSE') throw e
+    console.log(`[desk-host] ${port} busy - taking it back so ${DESK_URL} stays the only address`)
+    reclaimDeskPort(port)
+    await new Promise((r) => setTimeout(r, 400))
+    return await bindPublic(create, port)
+  }
+}
+
 export async function startDeskHost() {
-  const server = await bindPublic(() => createDeskHost(), PUBLIC_PORT)
+  const server = await bindPublicRetry(() => createDeskHost(), PUBLIC_PORT)
   for (const alias of ALIAS_PORTS) {
     try {
       await bindPublic(() => createAliasHost({ aliasPort: alias }), alias)
@@ -251,7 +290,8 @@ export async function startDeskHost() {
 const startedDirectly = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href
 if (startedDirectly) {
   startDeskHost().catch((e) => {
-    console.error('[desk-host] failed to bind 8080', e)
+    console.error(`[desk-host] could not take ${DESK_URL}. Close the other desk window, then run update-desk.bat again.`)
+    if (e?.code !== 'EADDRINUSE') console.error(e)
     process.exit(1)
   })
 }

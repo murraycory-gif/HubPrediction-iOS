@@ -9,6 +9,8 @@ import {
   createDeskHost,
   listTailscaleDeskUrls,
   publicDeskUrl,
+  reclaimDeskPort,
+  reclaimDeskPortCommand,
   rewritePublicLocation,
   splashHtml,
 } from '../desk-host.mjs'
@@ -51,6 +53,19 @@ describe('desk-host Soft FAIL refresh refused', () => {
     expect(await res.text()).toBe('ok /desk')
     server.close()
     vite.close()
+  })
+
+  it('reclaims 8080 on Windows so an old desk window cannot block the only address', () => {
+    const cmd = reclaimDeskPortCommand(8080, 'win32')
+    expect(cmd.bin).toBe('powershell')
+    expect(cmd.args.join(' ')).toMatch(/LocalPort 8080/)
+    expect(cmd.args.join(' ')).toMatch(/Stop-Process/)
+    const ran: string[] = []
+    reclaimDeskPort(8080, (bin, args) => {
+      ran.push([bin, ...args].join(' '))
+      return ''
+    }, 'win32')
+    expect(ran.join(' ')).toMatch(/LocalPort 8080/)
   })
 
   it('pins one desk address at 8080 and keeps Vite off 1808x', () => {
