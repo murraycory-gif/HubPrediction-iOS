@@ -34,7 +34,9 @@ http://192.168.1.42:8080
 
 If the phone cannot connect, allow Node.js on port **8080** in Windows Defender Firewall.
 
-Kalshi API Key ID + PEM are pasted in Settings at runtime. They stay in that browser’s localStorage. Never commit `.env`, `.pem`, or keys.
+Kalshi keys live on this Windows host (`.secrets` or `hub-prediction/.env.local`). Soft FAIL paste PEM on the phone. Never commit `.env`, `.pem`, or keys.
+
+To pull my latest and start the desk, see `UPDATE-HUB.txt`. Everyday: double-click `update-desk.bat`.
 
 Default: **Live bets OFF**, **all bots OFF**, paper only.
 

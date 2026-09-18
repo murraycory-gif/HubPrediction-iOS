@@ -19,3 +19,5 @@ npm test
 ```
 
 Live bets and bots default OFF. Kalshi keys stay on the Windows host. Stable stylesheet is `/desk.css` — no hashed `/assets/index-*.css` refresh loop.
+
+On the Windows PC, first-time and later updates are in `UPDATE-HUB.txt`. Everyday pull: double-click `update-desk.bat` in the repo root.
