@@ -30,6 +30,18 @@ afterEach(() => {
 })
 
 describe('defaults Soft FAIL Live / bots ON', () => {
+  it('keeps gold recipes locked after analyst paper drafts exist', async () => {
+    const { analyzeDesk, makePaperDrafts, savePaperDrafts } = await import('../src/lib/analyst')
+    const hits = {
+      asOf: 1,
+      events: [],
+      tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } },
+    }
+    savePaperDrafts(makePaperDrafts(analyzeDesk(null, hits)))
+    expect(loadSettings().tapes.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69 })
+    expect(loadSettings().liveBets).toBe(false)
+  })
+
   it('boots live bets off and every bot / live-cash off', () => {
     const s = hydrateSettings(null)
     expect(s.liveBets).toBe(false)

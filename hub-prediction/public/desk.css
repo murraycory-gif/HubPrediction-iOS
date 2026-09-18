@@ -98,6 +98,7 @@ body {
 
 .tape,
 .pulse,
+.analyst,
 .settings,
 .tape-settings {
   background: linear-gradient(180deg, rgba(16, 24, 20, 0.96), rgba(8, 10, 11, 0.96));
@@ -108,8 +109,26 @@ body {
 
 .tape,
 .pulse,
+.analyst,
 .settings {
   padding: 14px;
+}
+
+.analyst-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.analyst-row {
+  border-top: 1px solid rgba(0, 229, 122, 0.1);
+  padding-top: 8px;
+}
+
+.analyst-row:first-child {
+  border-top: 0;
+  padding-top: 0;
 }
 
 .tape-row {

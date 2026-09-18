@@ -39,6 +39,7 @@ import {
   type TapeId,
 } from '../lib/tapes'
 import type { DeskBoard, TapeQuote } from '../lib/types'
+import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { SettingsPanel } from './settings-panel'
 
@@ -244,6 +245,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           quote={pulseQuote ?? null}
           tone={pulse}
         />
+
+        <AnalystPanel board={board ?? null} hits={hits} />
 
         {msg ? <p className="desk-msg">{msg}</p> : null}
 
