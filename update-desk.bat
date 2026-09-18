@@ -29,8 +29,8 @@ if "%BRANCH%"=="" (
 )
 if "%BRANCH%"=="" set BRANCH=cursor/host-kalshi-creds-be4f
 
-echo Fetching origin...
-git fetch origin
+echo Fetching origin %BRANCH%...
+git fetch origin %BRANCH%
 if errorlevel 1 (
   echo git fetch failed.
   pause
@@ -38,7 +38,7 @@ if errorlevel 1 (
 )
 
 echo Checking out %BRANCH%...
-git checkout %BRANCH%
+git checkout -B %BRANCH% origin/%BRANCH%
 if errorlevel 1 (
   echo Could not checkout %BRANCH%. If I gave you a new branch name, run:
   echo   update-desk.bat cursor/new-name-be4f
