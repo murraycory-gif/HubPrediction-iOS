@@ -69,6 +69,11 @@ export async function fetchDeposits(keyId: string, pem: string) {
   return signed(keyId, pem, 'GET', `${ROOT}/portfolio/deposits?limit=200`)
 }
 
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+/** Legacy order API first, IOC, sticky client_order_id, 3–4 retries then release. */
 export async function placeContract(args: {
   keyId: string
   pem: string
@@ -77,31 +82,43 @@ export async function placeContract(args: {
   count: number
   yesAsk: number
   noAsk: number
+  clientOrderId?: string
 }) {
   const count = Math.max(1, Math.floor(args.count))
   const priceCents = args.side === 'up' ? args.yesAsk : args.noAsk
   const price = (Math.max(1, Math.min(99, priceCents)) / 100).toFixed(4)
-  const path = `${ROOT}/portfolio/orders`
-  const body = {
+  const clientOrderId = args.clientOrderId || crypto.randomUUID()
+  const legacy = {
     ticker: args.ticker,
     side: args.side === 'up' ? 'yes' : 'no',
     action: 'buy',
     count,
     type: 'limit',
+    time_in_force: 'immediate_or_cancel',
     yes_price: args.side === 'up' ? priceCents : undefined,
     no_price: args.side === 'down' ? priceCents : undefined,
-    client_order_id: crypto.randomUUID(),
+    client_order_id: clientOrderId,
+  }
+  const v2 = {
+    ticker: args.ticker,
+    side: 'bid',
+    count: String(count),
+    price,
+    time_in_force: 'immediate_or_cancel',
+    client_order_id: clientOrderId,
+  }
+  let last: unknown = null
+  for (let i = 0; i < 4; i++) {
+    try {
+      return await signed(args.keyId, args.pem, 'POST', `${ROOT}/portfolio/orders`, legacy)
+    } catch (e) {
+      last = e
+      await sleep(200)
+    }
   }
   try {
-    return await signed(args.keyId, args.pem, 'POST', path, body)
+    return await signed(args.keyId, args.pem, 'POST', `${ROOT}/portfolio/events/orders`, v2)
   } catch {
-    return await signed(args.keyId, args.pem, 'POST', `${ROOT}/portfolio/events/orders`, {
-      ticker: args.ticker,
-      side: 'bid',
-      count: String(count),
-      price,
-      time_in_force: 'immediate_or_cancel',
-      client_order_id: crypto.randomUUID(),
-    })
+    throw last instanceof Error ? last : new Error('IOC miss — clock released')
   }
 }

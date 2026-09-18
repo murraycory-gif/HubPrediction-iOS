@@ -73,7 +73,7 @@ describe('analyst Soft KEEP gold lock', () => {
     expect(report.tapes.find((t) => t.id === 'btc')?.hug).toBe('hug')
     expect(report.tapes.find((t) => t.id === 'gld')?.hug).toBe('hug')
     expect(report.tapes.find((t) => t.id === 'btc')?.proposed).toMatch(/KEEP gold BTC 8–3 \/ \$40/)
-    expect(report.tapes.find((t) => t.id === 'gld')?.proposed).toMatch(/KEEP gold GLD 8–4 \/ \$3/)
+    expect(report.tapes.find((t) => t.id === 'gld')?.proposed).toMatch(/KEEP gold GLD 10–3 \/ \$2/)
     expect(report.tapes.find((t) => t.id === 'btc')?.w).toBe(20)
     expect(report.tapes.find((t) => t.id === 'btc')?.l).toBe(9)
   })

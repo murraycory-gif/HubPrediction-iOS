@@ -3,6 +3,8 @@ import {
   DEFAULT_SETTINGS,
   GOLD_RECIPES,
   SETTINGS_KEY,
+  askInBand,
+  cashGates,
   askCentsFromMarket,
   eventsFromKalshiSettlements,
   extractOrderId,
@@ -52,6 +54,16 @@ describe('defaults Soft FAIL Live / bots ON', () => {
     }
   })
 
+  it('locks stored arm/through/¢ back to gold recipes', () => {
+    const s = hydrateSettings({
+      tapes: { ng: { contracts: 4, armFromMin: 10, armToMin: 8, through: 9 } },
+    })
+    expect(s.tapes.ng.contracts).toBe(4)
+    expect(s.tapes.ng.armFromMin).toBe(8)
+    expect(s.tapes.ng.armToMin).toBe(0.45)
+    expect(s.tapes.ng.through).toBe(0.002)
+  })
+
   it('does not turn live on just because a stored blob omitted the flag', () => {
     const s = hydrateSettings({ tapes: { btc: { contracts: 7 } } })
     expect(s.liveBets).toBe(false)
@@ -65,14 +77,21 @@ describe('Grok Build recipes', () => {
   it('keeps BTC 8–3 / $40 / 69–89¢', () => {
     expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })
   })
-  it('keeps NG arm 8–10 / $0.002 / 34–89¢ and copper similar', () => {
-    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 10, armToMin: 8, through: 0.002, centLo: 34, centHi: 89 })
-    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 10, armToMin: 8, through: 0.002, centLo: 34, centHi: 89 })
+  it('keeps NG 8:00–0:45 / $0.002 / 34–89¢ and CU 9:00–0:45', () => {
+    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 })
+    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 })
   })
-  it('keeps gold 8–4 / $3 / chop sit', () => {
-    expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 8, armToMin: 4, through: 3 })
+  it('keeps gold 10:00–3:00 / $2 / 34–89¢ including 56–68', () => {
+    expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 })
     expect(tapeLean({ id: 'gld', live: 4359, beat: 4358, recipe: GOLD_RECIPES.gld })).toBe('sit')
-    expect(tapeLean({ id: 'gld', live: 4362, beat: 4358, recipe: GOLD_RECIPES.gld })).toBe('up')
+    expect(tapeLean({ id: 'gld', live: 4361, beat: 4358, recipe: GOLD_RECIPES.gld })).toBe('up')
+  })
+  it('skips BTC 34–55 and 56–68; hug sits', () => {
+    expect(askInBand(50, GOLD_RECIPES.btc)).toBe(false)
+    expect(askInBand(62, GOLD_RECIPES.btc)).toBe(false)
+    expect(askInBand(73, GOLD_RECIPES.btc)).toBe(true)
+    expect(askInBand(62, GOLD_RECIPES.gld)).toBe(true)
+    expect(tapeLean({ id: 'btc', live: 76520, beat: 76500, recipe: GOLD_RECIPES.btc })).toBe('sit')
   })
 })
 
@@ -167,7 +186,18 @@ describe('arm / pulse / send tab', () => {
     const close = now + 5 * 60_000
     expect(inArmWindow(GOLD_RECIPES.btc, close, now)).toBe(true)
     expect(inArmWindow(GOLD_RECIPES.btc, now + 2 * 60_000, now)).toBe(false)
-    expect(inArmWindow(GOLD_RECIPES.ng, now + 9 * 60_000, now)).toBe(true)
+    expect(inArmWindow(GOLD_RECIPES.ng, now + 9 * 60_000, now)).toBe(false)
+    expect(inArmWindow(GOLD_RECIPES.ng, now + 7 * 60_000, now)).toBe(true)
+    expect(inArmWindow(GOLD_RECIPES.cu, now + 8 * 60_000, now)).toBe(true)
+    expect(inArmWindow(GOLD_RECIPES.gld, now + 6 * 60_000, now)).toBe(true)
+    expect(inArmWindow(GOLD_RECIPES.gld, now + 2 * 60_000, now)).toBe(false)
+  })
+
+  it('three cash gates default OFF; bot+no live cash is PAPER', () => {
+    const s = hydrateSettings(null)
+    expect(cashGates(s, 'btc').ok).toBe(false)
+    expect(cashGates({ ...s, liveBets: true, tapes: { ...s.tapes, gld: { ...s.tapes.gld, botOn: true, liveOn: false } } }, 'gld').ok).toBe(false)
+    expect(cashGates({ ...s, liveBets: true, tapes: { ...s.tapes, btc: { ...s.tapes.btc, botOn: true, liveOn: true } } }, 'btc').ok).toBe(true)
   })
 
   it('pulse is quiet without a live ticket', () => {

@@ -59,4 +59,4 @@ The existing HubPrediction iOS target is not required to run the first desk. If 
 - Ticket on the dashboard only after a real Kalshi order id
 - UP ¢ = Kalshi YES ask, DOWN ¢ = Kalshi NO ask (same snapshot)
 - live $ from Kalshi `live_data` / timeseries last print
-- Recipes: BTC 8–3 min / $40 / 69–89¢ · NG arm 8–10 min / $0.002 / 34–89¢ · Copper similar · Gold 8–4 min / $3 / chop sit
+- Recipes: BTC 8:00–3:00 / $40 / 69–89¢ · NG 8:00–0:45 / $0.002 / 34–89¢ · CU 9:00–0:45 / $0.002 / 34–89¢ · GLD 10:00–3:00 / $2 / 34–89¢

@@ -27,12 +27,12 @@ export const TAPE_META: Record<
   gld: { id: 'gld', label: 'GLD', short: 'GLD', series: 'KXGOLD15M', decimals: 2, pulseName: 'GOLD 15 MINUTE' },
 }
 
-/** Grok Build Soft KEEP recipes — do not retune unless missing. */
+/** Final locked Grok Build recipes — Soft FAIL inventing new ones. */
 export const GOLD_RECIPES: Record<TapeId, TapeRecipe> = {
   btc: { contracts: 1, botOn: false, liveOn: false, armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 },
-  ng: { contracts: 1, botOn: false, liveOn: false, armFromMin: 10, armToMin: 8, through: 0.002, centLo: 34, centHi: 89 },
-  cu: { contracts: 1, botOn: false, liveOn: false, armFromMin: 10, armToMin: 8, through: 0.002, centLo: 34, centHi: 89 },
-  gld: { contracts: 1, botOn: false, liveOn: false, armFromMin: 8, armToMin: 4, through: 3, centLo: 34, centHi: 89 },
+  ng: { contracts: 1, botOn: false, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
+  cu: { contracts: 1, botOn: false, liveOn: false, armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
+  gld: { contracts: 1, botOn: false, liveOn: false, armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 },
 }
 
 export const DEFAULT_SETTINGS: DeskSettings = {
@@ -66,11 +66,11 @@ function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe):
     contracts: clampContracts(Number(partial?.contracts ?? gold.contracts)),
     botOn: false,
     liveOn: false,
-    armFromMin: Number.isFinite(partial?.armFromMin) ? Number(partial?.armFromMin) : gold.armFromMin,
-    armToMin: Number.isFinite(partial?.armToMin) ? Number(partial?.armToMin) : gold.armToMin,
-    through: Number.isFinite(partial?.through) ? Number(partial?.through) : gold.through,
-    centLo: Number.isFinite(partial?.centLo) ? Number(partial?.centLo) : gold.centLo,
-    centHi: Number.isFinite(partial?.centHi) ? Number(partial?.centHi) : gold.centHi,
+    armFromMin: gold.armFromMin,
+    armToMin: gold.armToMin,
+    through: gold.through,
+    centLo: gold.centLo,
+    centHi: gold.centHi,
   }
 }
 
@@ -176,7 +176,42 @@ export function tapeLean(opts: {
 
 export function tabIsOpen() {
   if (typeof document === 'undefined') return true
-  return document.visibilityState === 'visible'
+  return document.hidden === false && document.visibilityState === 'visible'
+}
+
+/** Master Live + tape bot + tape live cash. Soft FAIL cold ON. Bot ON + live cash OFF = PAPER. */
+export function cashGates(settings: DeskSettings, tape: TapeId) {
+  const bot = settings.tapes[tape].botOn === true
+  const liveCash = settings.tapes[tape].liveOn === true
+  const master = settings.liveBets === true
+  return { master, bot, liveCash, ok: master && bot && liveCash }
+}
+
+export type SendClaim = { at: number; tries: number; filled?: string }
+
+/** IOC miss retries 3–4x then release. Stale claim >8s cannot block. */
+export function claimSend(map: Record<string, SendClaim>, key: string, now = Date.now()): 'send' | 'skip' {
+  const c = map[key]
+  if (c?.filled) return 'skip'
+  if (c && now - c.at < 180) return 'skip'
+  if (c && c.tries >= 4 && now - c.at < 8500) return 'skip'
+  if (c && now - c.at >= 8000) delete map[key]
+  const prev = map[key]
+  const tries = (prev?.tries ?? 0) + 1
+  if (tries > 4) {
+    delete map[key]
+    return 'skip'
+  }
+  map[key] = { at: now, tries }
+  return 'send'
+}
+
+export function markFilled(map: Record<string, SendClaim>, key: string, orderId: string) {
+  map[key] = { at: Date.now(), tries: 4, filled: orderId }
+}
+
+export function releaseClaim(map: Record<string, SendClaim>, key: string) {
+  delete map[key]
 }
 
 export type DeskTicket = {
@@ -575,12 +610,15 @@ export function formatWeThink(id: TapeId, live: number | null, ahead: number | n
 export function extractOrderId(raw: unknown): string | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
-  const direct = o.order_id ?? o.orderId ?? o.id
+  const direct = o.order_id ?? o.orderId ?? o.position_id ?? o.positionId ?? o.id
   if (isRealOrderId(direct)) return direct
-  const order = o.order
-  if (order && typeof order === 'object') {
-    const inner = (order as Record<string, unknown>).order_id ?? (order as Record<string, unknown>).id
-    if (isRealOrderId(inner)) return inner
+  for (const nest of [o.order, o.position, o.fill]) {
+    if (nest && typeof nest === 'object') {
+      const inner = (nest as Record<string, unknown>).order_id
+        ?? (nest as Record<string, unknown>).position_id
+        ?? (nest as Record<string, unknown>).id
+      if (isRealOrderId(inner)) return inner
+    }
   }
   return null
 }

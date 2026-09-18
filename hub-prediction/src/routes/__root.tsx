@@ -15,6 +15,7 @@ export const Route = createRootRoute({
       { title: 'HUB PREDICTIONS' },
     ],
     links: [
+      { rel: 'stylesheet', href: '/hub-app.css' },
       { rel: 'stylesheet', href: '/desk.css' },
       { rel: 'manifest', href: '/manifest.webmanifest' },
       { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },

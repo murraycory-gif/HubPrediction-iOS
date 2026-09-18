@@ -6,7 +6,10 @@ import {
   KEY_PEM,
   TAPE_IDS,
   TAPE_META,
+  GOLD_RECIPES,
   askInBand,
+  cashGates,
+  claimSend,
   depositsFromPayload,
   disarmAllBots,
   eventsFromKalshiSettlements,
@@ -23,8 +26,10 @@ import {
   loadSettings,
   loadTickets,
   makeTicket,
+  markFilled,
   mergeHitEvents,
   patchTape,
+  releaseClaim,
   pulseTone,
   saveCash,
   saveHits,
@@ -37,6 +42,7 @@ import {
   weThinkPair,
   type DeskSettings,
   type DeskTicket,
+  type SendClaim,
   type TapeId,
 } from '../lib/tapes'
 import { ticketCost } from '../lib/size-cash'
@@ -82,7 +88,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [settingsOpen, setSettingsOpen] = useState(true)
   const [book, setBook] = useState<FinanceState>(() => loadFinance())
   const [liveConfirm, setLiveConfirm] = useState(false)
-  const sentRef = useRef<Record<string, string>>({})
+  const sentRef = useRef<Record<string, SendClaim>>({})
 
   useEffect(() => {
     setSettings(loadSettings())
@@ -154,8 +160,15 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       setMsg('Send needs this tab open')
       return
     }
-    if (!settings.liveBets || !settings.tapes[tape].liveOn) {
-      setMsg('Live bets OFF — paper only. No ticket.')
+    const gates = cashGates(settings, tape)
+    if (!gates.ok) {
+      setMsg(
+        !gates.bot
+          ? `${TAPE_META[tape].label} PAPER — bot off / not sent`
+          : !gates.liveCash
+            ? `${TAPE_META[tape].label} PAPER LOCK · not sent to Kalshi`
+            : 'Live bets OFF — paper only. No ticket.',
+      )
       return
     }
     if (!keyId || !pem) {
@@ -200,8 +213,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })
       if (!ticket) {
         setMsg('Kalshi returned no order id — no ticket')
+        releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
         return
       }
+      markFilled(sentRef.current, `${tape}:${quote.ticker}`, ticket.orderId)
       setTickets((prev) => upsertTicket(prev, ticket))
       const booked = bookFill(book, {
         tape,
@@ -217,7 +232,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
       await refreshCash()
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'order failed')
+      releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
+      setMsg(e instanceof Error ? e.message : 'IOC miss — clock released')
     }
   }
 
@@ -226,19 +242,19 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     for (const id of TAPE_IDS) {
       const quote = board.tapes[id]
       const recipe = settings.tapes[id]
+      const gold = GOLD_RECIPES[id]
       if (!quote?.ticker || !recipe.botOn) continue
       if (ticketFor(tickets, id, quote.ticker)) continue
-      if (!inArmWindow(recipe, quote.closeAt)) continue
-      const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe })
+      if (!inArmWindow(gold, quote.closeAt)) continue
+      const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe: gold })
       if (lean === 'sit') continue
       const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
-      if (!askInBand(ask, recipe)) continue
+      if (!askInBand(ask, gold)) continue
       const key = `${id}:${quote.ticker}`
-      if (sentRef.current[key]) continue
-      sentRef.current[key] = 'armed'
-      if (settings.liveBets && recipe.liveOn) {
-        void sendLive(id, lean, quote)
-      }
+      const gates = cashGates(settings, id)
+      if (!gates.ok) continue
+      if (claimSend(sentRef.current, key) !== 'send') continue
+      void sendLive(id, lean, quote)
     }
   }, [board?.fetchedAt, settings, tickets, book.killed])
 
@@ -254,7 +270,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     <div className="desk">
       <header className="desk-head" data-testid="desk-head">
         <div className="brand-row">
-          <h1 data-testid="desk-title">HUB PREDICTIONS</h1>
+          <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
           <button
             type="button"
             className="chip-btn"

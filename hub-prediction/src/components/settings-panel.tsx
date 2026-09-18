@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import type { DeskSettings, TapeId, TapeRecipe } from '../lib/tapes'
 import { TAPE_IDS, TAPE_META, clampContracts } from '../lib/tapes'
 
@@ -81,6 +82,17 @@ function TapeSettings({
   onChange: (patch: Partial<TapeRecipe>) => void
 }) {
   const meta = TAPE_META[id]
+  const [draft, setDraft] = useState(recipe.contracts)
+  useEffect(() => {
+    setDraft(recipe.contracts)
+  }, [recipe.contracts])
+
+  function saveContracts(raw: number = draft) {
+    const n = clampContracts(Number(raw))
+    setDraft(n)
+    onChange({ contracts: n })
+  }
+
   return (
     <div className="tape-settings" data-testid={`settings-${id}`}>
       <p className="tape-settings-title">{meta.label} contracts & recipe</p>
@@ -94,9 +106,17 @@ function TapeSettings({
             min={1}
             max={99}
             data-testid={`contracts-${id}`}
-            value={recipe.contracts}
+            value={draft}
             disabled={recipeLocked}
-            onChange={(e) => onChange({ contracts: clampContracts(Number(e.target.value)) })}
+            onChange={(e) => {
+              const n = clampContracts(Number(e.target.value))
+              setDraft(n)
+              onChange({ contracts: n })
+            }}
+            onBlur={() => saveContracts()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveContracts()
+            }}
           />
         </label>
         <label>
@@ -107,8 +127,8 @@ function TapeSettings({
             inputMode="decimal"
             data-testid={`arm-from-${id}`}
             value={recipe.armFromMin}
-            disabled={recipeLocked}
-            onChange={(e) => onChange({ armFromMin: Number(e.target.value) })}
+            disabled
+            readOnly
           />
         </label>
         <label>
@@ -119,8 +139,8 @@ function TapeSettings({
             inputMode="decimal"
             data-testid={`arm-to-${id}`}
             value={recipe.armToMin}
-            disabled={recipeLocked}
-            onChange={(e) => onChange({ armToMin: Number(e.target.value) })}
+            disabled
+            readOnly
           />
         </label>
         <label>
@@ -132,8 +152,8 @@ function TapeSettings({
             step="any"
             data-testid={`through-${id}`}
             value={recipe.through}
-            disabled={recipeLocked}
-            onChange={(e) => onChange({ through: Number(e.target.value) })}
+            disabled
+            readOnly
           />
         </label>
         <label>
@@ -144,8 +164,8 @@ function TapeSettings({
             inputMode="numeric"
             data-testid={`cent-lo-${id}`}
             value={recipe.centLo}
-            disabled={recipeLocked}
-            onChange={(e) => onChange({ centLo: Number(e.target.value) })}
+            disabled
+            readOnly
           />
         </label>
         <label>
@@ -156,8 +176,8 @@ function TapeSettings({
             inputMode="numeric"
             data-testid={`cent-hi-${id}`}
             value={recipe.centHi}
-            disabled={recipeLocked}
-            onChange={(e) => onChange({ centHi: Number(e.target.value) })}
+            disabled
+            readOnly
           />
         </label>
       </div>
@@ -180,6 +200,15 @@ function TapeSettings({
           />
           Live cash {recipe.liveOn ? 'ON' : 'OFF'}
         </label>
+        <button
+          type="button"
+          className="chip-btn"
+          data-testid={`save-${id}`}
+          disabled={recipeLocked}
+          onClick={() => saveContracts()}
+        >
+          Save
+        </button>
       </div>
     </div>
   )

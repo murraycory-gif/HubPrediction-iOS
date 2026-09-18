@@ -178,7 +178,6 @@ export function liveSendGate(
 ): Gate {
   if (state.killed) return { ok: false, reason: 'KILL on — Place blocked until cleared' }
   if (!opts.ticker) return { ok: false, reason: 'No ticker' }
-  if (openOnTicker(state, opts.ticker)) return { ok: false, reason: 'One ticket/clock — already booked' }
   if (!askAllowedByGold(opts.tape, opts.ask)) {
     return { ok: false, reason: `Ask ${opts.ask}¢ blocked (≥${ASK_CAP} unless gold lock)` }
   }
@@ -189,10 +188,6 @@ export function liveSendGate(
   const floor = liveCashFloor(opts.deposits)
   if (Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) - opts.spent < floor) {
     return { ok: false, reason: `Cash floor ${floor} blocks Place` }
-  }
-  const maxSpend = ticketCost(recommendSize(opts.tape), opts.ask)
-  if (opts.spent > maxSpend + 1e-9) {
-    return { ok: false, reason: `Per-clock max ${maxSpend} (gold size)` }
   }
   return { ok: true }
 }

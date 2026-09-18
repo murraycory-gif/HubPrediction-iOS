@@ -7,7 +7,7 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByTestId('desk-title')).toHaveText(/HUB PREDICTIONS/)
+  await expect(page.getByTestId('desk-title')).toHaveText(/HUB\s*\/?\s*PREDICTIONS/)
   const head = page.getByTestId('desk-head')
   const box = await head.boundingBox()
   expect(box?.y).toBeLessThanOrEqual(2)
@@ -27,7 +27,7 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
     const hrefs = [...document.querySelectorAll('link[rel="stylesheet"]')].map((el) => (el as HTMLLinkElement).href)
     return hrefs
   })
-  expect(css.some((h) => h.includes('/desk.css'))).toBe(true)
+  expect(css.some((h) => h.includes('/hub-app.css') || h.includes('/desk.css'))).toBe(true)
   expect(css.some((h) => /\/assets\/index-.*\.css/.test(h))).toBe(false)
 
   await page.getByTestId('contracts-btc').fill('17')
