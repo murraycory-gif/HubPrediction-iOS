@@ -1,0 +1,17 @@
+{
+  "name": "HUB Predictions",
+  "install": "cd hub-prediction && npm ci && npx playwright install --with-deps chromium",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "cd hub-prediction && npm run dev",
+      "description": "Vite + TanStack Start dev server for the HUB Predictions desk on http://localhost:8080 (binds all interfaces so a phone on the LAN can reach it). Keep this tab open."
+    }
+  ],
+  "ports": [
+    {
+      "name": "dev",
+      "port": 8080
+    }
+  ]
+}
