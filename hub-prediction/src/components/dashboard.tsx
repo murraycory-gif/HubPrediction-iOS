@@ -290,13 +290,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     <div className="desk">
       <header className="desk-head" data-testid="desk-head">
         <div className="brand-bar">
-          <div className="rain" aria-hidden="true">
-            {Array.from({ length: 22 }, (_, i) => (
-              <span key={i} className="rain-col" style={{ animationDelay: `${(i % 8) * 0.35}s` }}>
-                010011010111001001101001011100100110
-              </span>
-            ))}
-          </div>
+          <div className="rain" aria-hidden="true" />
           <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
           <div className="brand-actions">
             <label className={`toggle ${settings.liveBets ? 'toggle-hot' : ''}`}>
@@ -312,7 +306,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                   }
                 }}
               />
-              Live bets {settings.liveBets ? 'ON' : 'OFF'}
+              Live {settings.liveBets ? 'ON' : 'OFF'}
             </label>
             <button
               type="button"
@@ -320,14 +314,18 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               data-testid="settings-toggle"
               onClick={() => setSettingsOpen((v) => !v)}
             >
-              {settingsOpen ? 'Hide settings' : 'Settings'}
+              {settingsOpen ? 'Hide' : 'Settings'}
             </button>
           </div>
         </div>
         <div className="stat-row scoreboard-row" data-testid="scoreboard">
           <Stat
             label="P&L VS DEPOSITS"
-            value={`${formatPnl(cash.pnl)} from ${formatCash(cash.deposits)}`}
+            value={
+              cash.pnl == null && cash.deposits == null
+                ? '—'
+                : `${formatPnl(cash.pnl)} from ${formatCash(cash.deposits)}`
+            }
             testId="pnl"
             tone={cash.pnl != null && cash.pnl < 0 ? 'down' : cash.pnl != null && cash.pnl > 0 ? 'up' : undefined}
           />

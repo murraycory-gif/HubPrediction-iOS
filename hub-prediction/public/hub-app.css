@@ -43,38 +43,10 @@ body {
   position: sticky;
   top: 0;
   z-index: 20;
-  overflow: hidden;
+  overflow: visible;
   background: #020403;
   border-bottom: 1px solid rgba(0, 229, 122, 0.22);
-  padding: 0 14px 6px;
-}
-
-.desk-head::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    repeating-linear-gradient(
-      180deg,
-      rgba(0, 229, 122, 0) 0,
-      rgba(0, 229, 122, 0.16) 2px,
-      rgba(0, 229, 122, 0) 14px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      rgba(0, 229, 122, 0.045) 0 9px,
-      transparent 9px 20px
-    );
-  background-size: 100% 120px, 20px 100%;
-  animation: rain 7s linear infinite;
-  opacity: 0.55;
-}
-
-@keyframes rain {
-  to {
-    background-position: 0 120px, 0 0;
-  }
+  padding: 0 12px 10px;
 }
 
 .brand-bar {
@@ -83,48 +55,47 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  height: 36px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-height: 40px;
   padding-top: env(safe-area-inset-top, 0px);
 }
 
 .rain {
   position: absolute;
   inset: 0;
-  display: flex;
-  justify-content: space-between;
-  overflow: hidden;
+  z-index: 0;
   pointer-events: none;
-  opacity: 0.28;
-}
-
-.rain-col {
-  font-family: var(--mono);
-  font-size: 11px;
-  line-height: 1.15;
-  color: #00e57a;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  letter-spacing: 0.18em;
-  animation: fall 7.5s linear infinite;
-}
-
-@keyframes fall {
-  from { transform: translateY(-40%); }
-  to { transform: translateY(40%); }
+  opacity: 0.14;
+  background-image:
+    repeating-linear-gradient(
+      180deg,
+      rgba(0, 229, 122, 0) 0,
+      rgba(0, 229, 122, 0.1) 2px,
+      rgba(0, 229, 122, 0) 16px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 229, 122, 0.04) 0 8px,
+      transparent 8px 22px
+    );
+  background-size: 100% 80px, 22px 100%;
 }
 
 .desk-head h1 {
+  position: relative;
+  z-index: 2;
   margin: 0;
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--mono);
-  font-size: clamp(15px, 2.8vw, 22px);
-  letter-spacing: 0.16em;
-  line-height: 1;
+  font-size: clamp(17px, 4.4vw, 22px);
+  letter-spacing: 0.1em;
+  line-height: 1.15;
   color: var(--up);
-  text-shadow: 0 0 18px rgba(0, 229, 122, 0.45);
+  background: #020403;
+  padding: 4px 8px 4px 0;
   white-space: nowrap;
-  z-index: 1;
 }
 
 .brand-actions {
@@ -133,7 +104,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  background: #020403;
 }
 
 .stat-row,
@@ -156,26 +128,28 @@ body {
 
 .desk-head .scoreboard-row,
 .scoreboard-row {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: baseline;
-  gap: 18px;
-  margin-top: 4px;
-  overflow-x: auto;
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+  background: #020403;
 }
 
 .scoreboard-row .stat {
   display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  gap: 8px;
-  flex: 1 1 0;
+  flex-direction: column;
+  align-items: flex-start;
   min-width: 0;
+  padding: 2px 4px 2px 0;
 }
 
 .scoreboard-row .hud-label {
-  flex: 0 0 auto;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  white-space: normal;
 }
 
 .stat-value {
@@ -186,9 +160,11 @@ body {
 }
 
 .scoreboard-row .stat-value {
-  margin: 0;
-  font-size: 13px;
-  white-space: nowrap;
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .tone-up { color: var(--up); }
@@ -605,19 +581,10 @@ button {
   font-size: 28px;
 }
 
-@media (min-width: 720px) {
-  .brand-bar {
-    height: 40px;
-  }
-}
-
 @media (min-width: 1100px) {
-  .brand-bar {
-    height: 44px;
-  }
   .desk-head h1 {
     font-size: 22px;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.12em;
   }
   .tape-grid {
     grid-template-columns: 1fr 1fr;
@@ -643,12 +610,12 @@ button {
   .tape-reads {
     grid-template-columns: 1fr;
   }
-  .desk-head .scoreboard-row,
-  .scoreboard-row {
-    flex-wrap: nowrap;
-  }
   .desk-head h1 {
-    letter-spacing: 0.1em;
-    font-size: 16px;
+    flex: 1 1 100%;
+    letter-spacing: 0.08em;
+    font-size: 18px;
+  }
+  .brand-actions {
+    flex: 1 1 100%;
   }
 }
