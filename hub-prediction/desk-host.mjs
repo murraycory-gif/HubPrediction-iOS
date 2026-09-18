@@ -41,7 +41,7 @@ export function publicDeskUrl(pathName = '/', publicPort = PUBLIC_PORT, reqHost)
   return `http://${hostNamePort(reqHost, publicPort)}${p}`
 }
 
-/** Soft FAIL leaking Vite's inner port. Keep the phone on the Tailscale / LAN host. */
+/** Soft FAIL leaking Vite's inner port. Keep the phone on our tunnel / LAN host. */
 export function rewritePublicLocation(loc, publicPort = PUBLIC_PORT, reqHost) {
   if (typeof loc !== 'string' || !loc) return loc
   const dest = `http://${hostNamePort(reqHost, publicPort)}`
@@ -200,9 +200,7 @@ export async function startDeskHost() {
     console.error(`[desk-host] could not bind ${ALIAS_PORT} (old Vite still there?) — 8080 still up`, e)
   }
   console.log(`[desk-host] This PC: http://127.0.0.1:${PUBLIC_PORT}`)
-  for (const url of listTailscaleDeskUrls()) {
-    console.log(`[desk-host] Phone / iPad / other PC (off home Wi-Fi): ${url}`)
-  }
+  console.log(`[desk-host] Our tunnel (phone / iPad / other PC): http://10.77.0.1:${PUBLIC_PORT}`)
   console.log('[desk-host] Leave this window open. Browser refresh cannot refuse 8080 or 18080.')
   process.on('uncaughtException', (e) => {
     console.error('[desk-host] kept 8080 alive after error', e)

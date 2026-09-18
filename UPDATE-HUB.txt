@@ -44,19 +44,26 @@ Already pulled and just want to start without git:
 
 PHONE / iPAD / OTHER COMPUTER — NOT ON HOME WI-FI
 -------------------------------------------------
-The desk stays on this Windows PC. Kalshi keys stay here. Do not port-forward
-8080 on the router (that puts the desk on the public internet).
+Our own tunnel. No Tailscale. No account. No monthly fee. Kalshi keys stay
+on this PC. Soft FAIL port-forward TCP 8080 on the router.
 
-One-time Tailscale (same account on every device):
+One-time:
 
-1. On this PC: install Tailscale from https://tailscale.com/download/windows
-   Sign in. Leave it running.
-2. On the iPhone / iPad: App Store → Tailscale. Sign in with the SAME account.
-   On another computer: install Tailscale and sign in with the SAME account.
-3. Start the desk on this PC (update-desk.bat or start-desk.bat). Leave that
-   window open. The window prints a Tailscale URL like http://100.x.x.x:8080
-4. On the phone / iPad / other PC, open that URL in Safari or Chrome.
-   MagicDNS name also works: http://YOUR-PC-NAME:8080
+1. Double-click start-tunnel.bat  (makes keys in .secrets\wireguard).
+2. Install WireGuard on this PC — free, open source, no sign-in:
+   https://www.wireguard.com/install/
+   Import hub-desk-server.conf and click Activate. Leave it on.
+3. On your router: forward UDP 51820 to this PC. Not 8080.
+4. On the PC browser, look up your home public IPv4. Put that one line in
+   HubPrediction-iOS\.secrets\wireguard\endpoint.txt
+   Then run start-tunnel.bat again.
+5. iPhone / iPad: App Store → WireGuard (free, no account). AirDrop
+   hub-desk-phone.conf or hub-desk-ipad.conf → Add → Create from file →
+   Activate.
+   Other computer: import hub-desk-other-pc.conf the same way.
+6. Start the desk (update-desk.bat). Leave that window open.
+7. On the device open http://10.77.0.1:8080
 
-The home PC must stay on and the desk window must stay open. Tailscale is the
-path when you are on the road, cellular, hotel Wi-Fi, or another house.
+The home PC must stay on, WireGuard Active, and the desk window open.
+If your home public IP changes, update endpoint.txt and run start-tunnel.bat
+again, then re-import the phone/iPad file.

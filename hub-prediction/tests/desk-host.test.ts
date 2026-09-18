@@ -55,6 +55,13 @@ describe('desk-host Soft FAIL refresh refused', () => {
     expect(listTailscaleDeskUrls(8080, () => { throw new Error('missing') })).toEqual([])
   })
 
+  it('keeps our tunnel host 10.77.0.1 instead of bouncing to 127.0.0.1', () => {
+    expect(rewritePublicLocation('http://127.0.0.1:18081/desk', 8080, '10.77.0.1:8080')).toBe(
+      'http://10.77.0.1:8080/desk',
+    )
+    expect(publicDeskUrl('/tape', 8080, '10.77.0.1:18080')).toBe('http://10.77.0.1:8080/tape')
+  })
+
   it('answers 18080 with a redirect so Chrome refresh cannot refuse that tab', async () => {
     const { server, publicPort } = createAliasHost({ publicPort: 8080, aliasPort: 0 })
     await new Promise<void>((resolve, reject) => {
@@ -91,6 +98,29 @@ describe('desk-host Soft FAIL refresh refused', () => {
       req.end()
     })
     expect(loc).toBe('http://100.64.1.20:8080/')
+    server.close()
+  })
+
+  it('redirects our-tunnel 18080 tab to 10.77.0.1:8080', async () => {
+    const { server } = createAliasHost({ publicPort: 8080, aliasPort: 0 })
+    await new Promise<void>((resolve, reject) => {
+      server.listen(0, '127.0.0.1', () => resolve())
+      server.once('error', reject)
+    })
+    const addr = server.address()
+    const port = typeof addr === 'object' && addr ? addr.port : 0
+    const loc = await new Promise<string>((resolve, reject) => {
+      const req = httpRequest(
+        { hostname: '127.0.0.1', port, path: '/', headers: { host: '10.77.0.1:18080' } },
+        (res) => {
+          resolve(String(res.headers.location || ''))
+          res.resume()
+        },
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(loc).toBe('http://10.77.0.1:8080/')
     server.close()
   })
 })
