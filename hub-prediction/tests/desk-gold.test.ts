@@ -1,0 +1,190 @@
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  DEFAULT_SETTINGS,
+  GOLD_RECIPES,
+  SETTINGS_KEY,
+  askCentsFromMarket,
+  extractOrderId,
+  hydrateSettings,
+  inArmWindow,
+  lastPrintFromLiveData,
+  loadSettings,
+  makeTicket,
+  patchTape,
+  pulseTone,
+  saveSettings,
+  tabIsOpen,
+  tapeLean,
+  ticketStatus,
+  ttlFromHits,
+} from '../src/lib/tapes'
+
+afterEach(() => {
+  if (typeof localStorage !== 'undefined') localStorage.clear()
+})
+
+describe('defaults Soft FAIL Live / bots ON', () => {
+  it('boots live bets off and every bot / live-cash off', () => {
+    const s = hydrateSettings(null)
+    expect(s.liveBets).toBe(false)
+    expect(DEFAULT_SETTINGS.liveBets).toBe(false)
+    for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+      expect(s.tapes[id].botOn).toBe(false)
+      expect(s.tapes[id].liveOn).toBe(false)
+    }
+  })
+
+  it('does not turn live on just because a stored blob omitted the flag', () => {
+    const s = hydrateSettings({ tapes: { btc: { contracts: 7 } } })
+    expect(s.liveBets).toBe(false)
+    expect(s.tapes.btc.liveOn).toBe(false)
+    expect(s.tapes.btc.botOn).toBe(false)
+    expect(s.tapes.btc.contracts).toBe(7)
+  })
+})
+
+describe('Grok Build recipes', () => {
+  it('keeps BTC 8–3 / $40 / 69–89¢', () => {
+    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })
+  })
+  it('keeps NG arm 8–10 / $0.002 / 34–89¢ and copper similar', () => {
+    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 10, armToMin: 8, through: 0.002, centLo: 34, centHi: 89 })
+    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 10, armToMin: 8, through: 0.002, centLo: 34, centHi: 89 })
+  })
+  it('keeps gold 8–4 / $3 / chop sit', () => {
+    expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 8, armToMin: 4, through: 3 })
+    expect(tapeLean({ id: 'gld', live: 4359, beat: 4358, recipe: GOLD_RECIPES.gld })).toBe('sit')
+    expect(tapeLean({ id: 'gld', live: 4362, beat: 4358, recipe: GOLD_RECIPES.gld })).toBe('up')
+  })
+})
+
+describe('settings persist', () => {
+  it('holds phone contract edits across reload', () => {
+    const first = loadSettings()
+    const saved = patchTape(first, 'btc', { contracts: 12 })
+    expect(saved.tapes.btc.contracts).toBe(12)
+    expect(JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}').tapes.btc.contracts).toBe(12)
+    const again = loadSettings()
+    expect(again.tapes.btc.contracts).toBe(12)
+    expect(again.tapes.ng.contracts).toBe(GOLD_RECIPES.ng.contracts)
+  })
+
+  it('saveSettings does not reset recipes on refresh', () => {
+    saveSettings({
+      liveBets: false,
+      tapes: {
+        ...DEFAULT_SETTINGS.tapes,
+        ng: { ...GOLD_RECIPES.ng, contracts: 4, botOn: true },
+      },
+    })
+    const again = loadSettings()
+    expect(again.tapes.ng.contracts).toBe(4)
+    expect(again.tapes.ng.botOn).toBe(true)
+    expect(again.liveBets).toBe(false)
+  })
+})
+
+describe('tickets', () => {
+  it('refuses ARMING / paper / missing ids as fills', () => {
+    expect(makeTicket({ tape: 'btc', ticker: 'KXBTC15M-1', side: 'up', orderId: 'ARMING', contracts: 1, beat: 1 })).toBeNull()
+    expect(makeTicket({ tape: 'btc', ticker: 'KXBTC15M-1', side: 'up', orderId: 'paper', contracts: 1, beat: 1 })).toBeNull()
+    expect(makeTicket({ tape: 'btc', ticker: 'KXBTC15M-1', side: 'up', orderId: '', contracts: 1, beat: 1 })).toBeNull()
+  })
+
+  it('shows a ticket only after a real Kalshi order id', () => {
+    const t = makeTicket({
+      tape: 'btc',
+      ticker: 'KXBTC15M-1',
+      side: 'up',
+      orderId: 'abc12345-real-order',
+      contracts: 2,
+      beat: 76000,
+    })
+    expect(t?.orderId).toBe('abc12345-real-order')
+    expect(ticketStatus(t)).toBe('UP')
+    expect(ticketStatus(undefined)).toBe('WAIT')
+  })
+
+  it('does not flip a confirmed ticket back to WAIT', () => {
+    const t = makeTicket({
+      tape: 'ng',
+      ticker: 'KXNATGAS15M-1',
+      side: 'down',
+      orderId: 'ord-99887766',
+      contracts: 1,
+      beat: 2.99,
+    })
+    expect(ticketStatus(t)).toBe('DOWN')
+    expect(ticketStatus({ ...t!, side: 'down' })).not.toBe('WAIT')
+  })
+})
+
+describe('live $ and asks', () => {
+  it('reads timeseries last print and never uses strike', () => {
+    const print = lastPrintFromLiveData({
+      live_data: { details: { timeseries: [{ t: 1, v: 2.99 }, { t: 2, v: 2.99663 }] } },
+    })
+    expect(print?.px).toBeCloseTo(2.99663)
+    expect(print?.source).toBe('kalshi-timeseries')
+    expect(lastPrintFromLiveData({ live_data: { details: { floor_strike: 2.99 } } })).toBeNull()
+  })
+
+  it('reads BTC candlestick close from live_data', () => {
+    const print = lastPrintFromLiveData({
+      live_data: { details: { candlesticks: { '1M': [{ open_ts_ms: 1, close: 76537.05 }] } } },
+    })
+    expect(print?.px).toBeCloseTo(76537.05)
+  })
+
+  it('takes YES/NO asks from the same market snapshot', () => {
+    const m = { yes_ask_dollars: '0.9400', no_ask_dollars: '0.0700', floor_strike: 2.99 }
+    expect(askCentsFromMarket(m, true)).toBe(94)
+    expect(askCentsFromMarket(m, false)).toBe(7)
+  })
+})
+
+describe('arm / pulse / send tab', () => {
+  it('BTC arm window is 8–3 minutes remaining', () => {
+    const now = 1_000_000
+    const close = now + 5 * 60_000
+    expect(inArmWindow(GOLD_RECIPES.btc, close, now)).toBe(true)
+    expect(inArmWindow(GOLD_RECIPES.btc, now + 2 * 60_000, now)).toBe(false)
+    expect(inArmWindow(GOLD_RECIPES.ng, now + 9 * 60_000, now)).toBe(true)
+  })
+
+  it('pulse is quiet without a live ticket', () => {
+    expect(pulseTone(undefined, 76500)).toBe('quiet')
+    const t = makeTicket({
+      tape: 'btc',
+      ticker: 'x',
+      side: 'up',
+      orderId: 'order-live-1',
+      contracts: 1,
+      beat: 76500,
+    })!
+    expect(pulseTone(t, 76540)).toBe('green')
+    expect(pulseTone(t, 76400)).toBe('red')
+  })
+
+  it('TTL sums the four tape latches', () => {
+    const ttl = ttlFromHits({
+      asOf: 1,
+      tapes: {
+        btc: { w: 20, l: 9 },
+        ng: { w: 4, l: 0 },
+        cu: { w: 5, l: 1 },
+        gld: { w: 12, l: 8 },
+      },
+    })
+    expect(ttl).toEqual({ w: 41, l: 18, pct: 69 })
+  })
+
+  it('tabIsOpen is true in this visible test runtime', () => {
+    expect(tabIsOpen()).toBe(true)
+  })
+
+  it('extracts Kalshi order_id from place payload', () => {
+    expect(extractOrderId({ order: { order_id: 'deadbeef-1111-2222' } })).toBe('deadbeef-1111-2222')
+    expect(extractOrderId({ order_id: 'short' })).toBeNull()
+  })
+})
