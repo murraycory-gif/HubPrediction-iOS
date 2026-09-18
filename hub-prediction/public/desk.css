@@ -99,6 +99,7 @@ body {
 .tape,
 .pulse,
 .analyst,
+.finance,
 .settings,
 .tape-settings {
   background: linear-gradient(180deg, rgba(16, 24, 20, 0.96), rgba(8, 10, 11, 0.96));
@@ -110,8 +111,23 @@ body {
 .tape,
 .pulse,
 .analyst,
+.finance,
 .settings {
   padding: 14px;
+}
+
+.live-banner {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.finance-book {
+  margin-top: 10px;
 }
 
 .analyst-grid {

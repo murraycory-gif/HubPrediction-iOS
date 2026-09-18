@@ -8,6 +8,7 @@ import {
   TAPE_META,
   askInBand,
   depositsFromPayload,
+  disarmAllBots,
   eventsFromKalshiSettlements,
   eventsFromTickets,
   extractOrderId,
@@ -38,9 +39,22 @@ import {
   type DeskTicket,
   type TapeId,
 } from '../lib/tapes'
+import { ticketCost } from '../lib/size-cash'
 import type { DeskBoard, TapeQuote } from '../lib/types'
+import {
+  bookFill,
+  clearKill,
+  engageKill,
+  liveArmGate,
+  liveSendGate,
+  loadFinance,
+  settleBook,
+  syncTicketsIntoBook,
+  type FinanceState,
+} from '../lib/finance'
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
+import { FinancePanel } from './finance-panel'
 import { SettingsPanel } from './settings-panel'
 
 function readLocal(key: string) {
@@ -62,15 +76,25 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [pem, setPem] = useState(() => readLocal(KEY_PEM))
   const [msg, setMsg] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(true)
+  const [book, setBook] = useState<FinanceState>(() => loadFinance())
+  const [liveConfirm, setLiveConfirm] = useState(false)
   const sentRef = useRef<Record<string, string>>({})
 
   useEffect(() => {
     setSettings(loadSettings())
-    setTickets(loadTickets())
+    const nextTickets = loadTickets()
+    setTickets(nextTickets)
     setHits(loadHits())
     setCash(loadCash())
     setKeyId(readLocal(KEY_ID))
     setPem(readLocal(KEY_PEM))
+    setBook(
+      syncTicketsIntoBook(loadFinance(), nextTickets, () => ({
+        clock: '',
+        closeAt: 0,
+        ask: 50,
+      })),
+    )
   }, [])
 
   const boardQuery = useQuery({
@@ -117,8 +141,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const settled = settledQuery.data
     if (!settled?.length) return
     const ev = eventsFromTickets(tickets, settled)
-    if (!ev.length) return
-    setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
+    if (ev.length) setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
+    setBook((prev) => settleBook(prev, settled))
   }, [settledQuery.data, tickets])
 
   async function sendLive(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
@@ -135,6 +159,20 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       return
     }
     if (!quote.ticker) return
+    const ask = side === 'down' ? quote.noAsk : quote.yesAsk
+    const spent = ticketCost(settings.tapes[tape].contracts, ask)
+    const gate = liveSendGate(book, {
+      tape,
+      ticker: quote.ticker,
+      ask,
+      cash: cash.cash,
+      deposits: cash.deposits,
+      spent,
+    })
+    if (!gate.ok) {
+      setMsg(gate.reason)
+      return
+    }
     try {
       const raw = await placeKalshi({
         data: {
@@ -161,6 +199,17 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         return
       }
       setTickets((prev) => upsertTicket(prev, ticket))
+      const booked = bookFill(book, {
+        tape,
+        ticker: quote.ticker,
+        clock: quote.clock,
+        closeAt: quote.closeAt,
+        side,
+        count: ticket.contracts,
+        ask,
+        orderId: ticket.orderId,
+      })
+      if (booked.ok) setBook(booked.state)
       setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
       await refreshCash()
     } catch (e) {
@@ -169,7 +218,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }
 
   useEffect(() => {
-    if (!board || !tabIsOpen()) return
+    if (!board || !tabIsOpen() || book.killed) return
     for (const id of TAPE_IDS) {
       const quote = board.tapes[id]
       const recipe = settings.tapes[id]
@@ -187,7 +236,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         void sendLive(id, lean, quote)
       }
     }
-  }, [board?.fetchedAt, settings, tickets])
+  }, [board?.fetchedAt, settings, tickets, book.killed])
 
   const ttl = ttlFromHits(hits)
   const liveTicket = tickets.find((t) => {
@@ -227,6 +276,36 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         <p className="mode-line" data-testid="host-line">
           HUB · Windows local · not grok.me
         </p>
+        {liveConfirm ? (
+          <div className="live-banner" data-testid="live-banner">
+            <p>Confirm LIVE — keys + paper 48h + cash floor. Soft FAIL silent Paper→Live.</p>
+            <button
+              type="button"
+              className="chip-btn toggle-hot"
+              data-testid="confirm-live"
+              onClick={() => {
+                const gate = liveArmGate(book, {
+                  cash: cash.cash,
+                  deposits: cash.deposits,
+                  hasKeys: Boolean(keyId && pem),
+                })
+                setLiveConfirm(false)
+                if (!gate.ok) {
+                  setSettings(setLiveBets(settings, false))
+                  setMsg(gate.reason)
+                  return
+                }
+                setSettings(setLiveBets(settings, true))
+                setMsg('LIVE armed — confirm + keys + floor')
+              }}
+            >
+              Confirm LIVE
+            </button>
+            <button type="button" className="chip-btn" data-testid="cancel-live" onClick={() => setLiveConfirm(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <main className="desk-main">
@@ -248,6 +327,22 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
         <AnalystPanel board={board ?? null} hits={hits} />
 
+        <FinancePanel
+          book={book}
+          cash={cash}
+          board={board ?? null}
+          onKill={() => {
+            setBook(engageKill(book))
+            setSettings(disarmAllBots(settings))
+            setLiveConfirm(false)
+            setMsg('KILL on — bots disarmed, Place blocked')
+          }}
+          onClearKill={() => {
+            setBook(clearKill(book))
+            setMsg('KILL cleared')
+          }}
+        />
+
         {msg ? <p className="desk-msg">{msg}</p> : null}
 
         {settingsOpen ? (
@@ -264,7 +359,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               setPem(v)
               writeLocal(KEY_PEM, v)
             }}
-            onLiveBets={(on) => setSettings(setLiveBets(settings, on))}
+            onLiveBets={(on) => {
+              if (on) setLiveConfirm(true)
+              else {
+                setLiveConfirm(false)
+                setSettings(setLiveBets(settings, false))
+              }
+            }}
             onTape={(id, patch) => setSettings(patchTape(settings, id, patch))}
             onRefreshCash={() => void refreshCash()}
           />

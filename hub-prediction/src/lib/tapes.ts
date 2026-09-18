@@ -126,6 +126,15 @@ export function setLiveBets(settings: DeskSettings, liveBets: boolean): DeskSett
   return saveSettings({ ...settings, liveBets })
 }
 
+/** KILL uses this. Soft FAIL leaving bots armed after KILL. */
+export function disarmAllBots(settings: DeskSettings): DeskSettings {
+  const tapes = { ...settings.tapes }
+  for (const id of TAPE_IDS) {
+    tapes[id] = { ...tapes[id], botOn: false }
+  }
+  return saveSettings({ ...settings, liveBets: false, tapes })
+}
+
 export function remainingMinutes(closeAt: number, now = Date.now()) {
   if (!Number.isFinite(closeAt) || closeAt <= 0) return null
   return (closeAt - now) / 60_000

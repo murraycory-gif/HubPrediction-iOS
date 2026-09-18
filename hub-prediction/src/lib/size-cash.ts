@@ -24,6 +24,11 @@ export function contractsFromCash(
   return Math.max(0, n)
 }
 
+export function ticketCost(count: number, askCents: number) {
+  if (!Number.isFinite(count) || !Number.isFinite(askCents) || count <= 0 || askCents <= 0) return 0
+  return Math.round(count * (askCents / 100) * 100) / 100
+}
+
 export function cashFromBalancePayload(raw: unknown): number {
   if (!raw || typeof raw !== 'object') return 0
   const o = raw as Record<string, unknown>
