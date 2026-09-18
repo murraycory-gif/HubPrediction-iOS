@@ -15,6 +15,7 @@ import {
   chasingLosses,
   last24hBets,
   hydrateFinance,
+  cashUpdateForBet,
   bookRealizedPnl,
   mergeKalshiHistoryToBook,
   loadBetsFilter,
@@ -421,5 +422,10 @@ describe('finance Soft KEEP', () => {
       },
     }, now)
     expect(kept.bets.some((b) => b.kind === 'paper' && b.ticker === 'KXCOPPER15M-PAPER')).toBe(true)
+    const paperRow = live.bets.find((b) => b.kind === 'paper')
+    const liveRow = live.bets.find((b) => b.kind === 'live')
+    expect(paperRow && cashUpdateForBet(paperRow)).toEqual({ kind: 'paper', amount: null })
+    expect(liveRow && cashUpdateForBet(liveRow)).toEqual({ kind: 'live', amount: 5 })
+    expect(cashUpdateForBet({ kind: 'live', status: 'open', pnl: null })).toEqual({ kind: 'open', amount: null })
   })
 })

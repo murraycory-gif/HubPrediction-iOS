@@ -62,6 +62,7 @@ import type { DeskBoard, TapeQuote } from '../lib/types'
 import {
   betKind,
   betWindowMs,
+  cashUpdateForBet,
   bookFill,
   clearKill,
   engageKill,
@@ -900,6 +901,7 @@ function Bets24Strip({
             <span>MODE</span>
             <span>SPENT</span>
             <span>P&L</span>
+            <span>CASH</span>
           </div>
           <ul className="bets-log" data-testid="bets-log">
             {rows.map((b) => {
@@ -907,6 +909,9 @@ function Bets24Strip({
               const result = b.status === 'open' ? 'OPEN' : (b.pnl ?? 0) > 0 ? 'WIN' : (b.pnl ?? 0) < 0 ? 'LOSS' : 'PUSH'
               const rowPnl = settled ? (b.pnl as number) : null
               const mode = betKind(b).toUpperCase()
+              const cashUp = cashUpdateForBet(b)
+              const cashText =
+                cashUp.kind === 'paper' ? 'N/A' : cashUp.kind === 'open' || cashUp.amount == null ? '—' : formatPnl(cashUp.amount)
               return (
                 <li key={b.betId} className="bets-log-row" data-kind={betKind(b)}>
                   <span>{b.tape.toUpperCase()}</span>
@@ -919,6 +924,20 @@ function Bets24Strip({
                     className={rowPnl == null ? undefined : rowPnl > 0 ? 'tone-up' : rowPnl < 0 ? 'tone-down' : undefined}
                   >
                     {rowPnl == null ? '—' : formatPnl(rowPnl)}
+                  </span>
+                  <span
+                    data-testid="bets-cash"
+                    className={
+                      cashUp.kind === 'paper' || cashUp.amount == null
+                        ? undefined
+                        : cashUp.amount > 0
+                          ? 'tone-up'
+                          : cashUp.amount < 0
+                            ? 'tone-down'
+                            : undefined
+                    }
+                  >
+                    {cashText}
                   </span>
                 </li>
               )

@@ -105,6 +105,19 @@ export function isLiveBet(b: { kind?: unknown; orderId?: unknown; betId?: unknow
   return !isPaperBet(b)
 }
 
+/** Live settled rows carry the Kalshi cash move. Paper never touches cash. */
+export function cashUpdateForBet(b: {
+  kind?: unknown
+  orderId?: unknown
+  betId?: unknown
+  status: 'open' | 'settled'
+  pnl: number | null
+}): { kind: 'paper' | 'open' | 'live'; amount: number | null } {
+  if (isPaperBet(b)) return { kind: 'paper', amount: null }
+  if (b.status !== 'settled' || b.pnl == null) return { kind: 'open', amount: null }
+  return { kind: 'live', amount: b.pnl }
+}
+
 export function betWindowMs(b: { clock?: string; ticker?: string }) {
   return windowMsForClock(b.clock || '') || windowMsForClock(b.ticker || '')
 }
