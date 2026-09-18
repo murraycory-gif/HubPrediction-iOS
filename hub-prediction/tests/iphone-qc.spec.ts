@@ -188,3 +188,105 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
   await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
 })
+
+test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async ({ page }) => {
+  const livePosts: string[] = []
+  page.on('request', (req) => {
+    if (req.method() === 'POST' && /external-api\.kalshi\.com.*\/events\/orders/i.test(req.url())) {
+      livePosts.push(req.url())
+    }
+  })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
+  await expect(page.getByTestId('pulse')).toHaveCount(0)
+  await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
+  await expect(page.getByTestId('bets-24h')).toBeVisible()
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+
+  await page.getByTestId('live-bets').click()
+  await expect(page.getByTestId('live-banner')).toBeVisible()
+  await page.getByTestId('cancel-live').click()
+  await expect(page.getByTestId('live-banner')).toHaveCount(0)
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+
+  await page.getByTestId('live-bets').click()
+  await expect(page.getByTestId('live-banner')).toBeVisible()
+  await page.getByTestId('confirm-live').click()
+  await expect(page.getByTestId('live-banner')).toHaveCount(0)
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+
+  await page.getByTestId('settings-toggle').click()
+  await expect(page.getByTestId('settings')).toBeVisible()
+  await expect(page.getByTestId('arm-from-btc')).toHaveValue('8')
+  await expect(page.getByTestId('through-btc')).toHaveValue('40')
+  await expect(page.getByTestId('cent-lo-btc')).toHaveValue('69')
+  await page.getByRole('button', { name: 'Refresh cash' }).click()
+  await page.getByTestId('settings-toggle').click()
+  await expect(page.getByTestId('settings')).toHaveCount(0)
+
+  for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+    await page.getByTestId(`bot-${id}`).scrollIntoViewIfNeeded()
+    await expect(page.getByTestId(`bot-${id}`)).not.toBeChecked()
+    await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()
+    await page.getByTestId(`bot-${id}`).check()
+    await expect(page.getByTestId(`bot-${id}`)).toBeChecked()
+    await page.getByTestId(`bot-${id}`).uncheck()
+    await expect(page.getByTestId(`bot-${id}`)).not.toBeChecked()
+    await page.getByTestId(`live-cash-${id}`).check()
+    await expect(page.getByTestId(`live-cash-${id}`)).toBeChecked()
+    await page.getByTestId(`live-cash-${id}`).uncheck()
+    await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()
+  }
+
+  await page.getByTestId('contracts-btc').fill('21')
+  await page.getByTestId('save-btc').click()
+  await expect(page.getByTestId('contracts-btc')).toHaveValue('21')
+
+  await page.getByTestId('contracts-ng').fill('8')
+  await page.getByTestId('contracts-ng').press('Enter')
+  await expect(page.getByTestId('contracts-ng')).toHaveValue('8')
+
+  await page.getByTestId('contracts-cu').fill('5')
+  await page.getByTestId('contracts-cu').blur()
+  await expect(page.getByTestId('contracts-cu')).toHaveValue('5')
+
+  await page.getByTestId('contracts-gld').fill('3')
+  await page.getByTestId('save-gld').click()
+  await expect(page.getByTestId('contracts-gld')).toHaveValue('3')
+
+  await page.getByTestId('analyst-toggle').click()
+  await expect(page.getByTestId('analyst')).toBeVisible()
+  await page.getByTestId('analyst-toggle').click()
+  await expect(page.getByTestId('analyst')).toHaveCount(0)
+  await page.getByTestId('finance-toggle').click()
+  await expect(page.getByTestId('finance')).toBeVisible()
+  await expect(page.getByTestId('finance-lock')).toContainText(/Does not send orders/i)
+  await page.getByTestId('finance-toggle').click()
+  await expect(page.getByTestId('finance')).toHaveCount(0)
+
+  await page.getByTestId('bets-filter-all').click()
+  await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('bets-filter-cu').click()
+  await page.getByTestId('bets-filter-gld').click()
+  await expect(page.getByTestId('bets-24h')).toHaveAttribute('data-filter', 'cu,gld')
+  await page.getByTestId('bets-filter-all').click()
+  await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'true')
+
+  await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-max-qc.png', fullPage: true })
+
+  await page.reload({ waitUntil: 'networkidle' })
+  await expect(page.getByTestId('contracts-btc')).toHaveValue('21')
+  await expect(page.getByTestId('contracts-ng')).toHaveValue('8')
+  await expect(page.getByTestId('contracts-cu')).toHaveValue('5')
+  await expect(page.getByTestId('contracts-gld')).toHaveValue('3')
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+    await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()
+    await expect(page.getByTestId(`bot-${id}`)).not.toBeChecked()
+  }
+  await expect(page.getByTestId('pulse')).toHaveCount(0)
+  expect(livePosts).toEqual([])
+})
