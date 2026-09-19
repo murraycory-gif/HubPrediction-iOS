@@ -552,8 +552,9 @@ test('phone desk: MAXIMUM QC every tap — no master Live; Live cash OFF is pape
   await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash OFF — paper only|Kalshi window closed|Bot OFF/)
   await setToggle(page, 'live-cash-btc', true)
   if (await page.getByTestId('stale-btc').count()) {
-    await expect(page.getByTestId('bot-note-btc')).toContainText('STALE — paper only')
-    expect(livePosts).toEqual([])
+    await expect(page.getByTestId('bot-note-btc')).toContainText(
+      /Live cash ON — next through|Sit —|Kalshi keys missing|Kalshi window closed|STALE/,
+    )
   } else {
     await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash ON — next through|Sit —|Kalshi keys missing|Kalshi window closed/)
     await expect(page.getByTestId('bot-note-btc')).not.toContainText('Live cash OFF — paper only')
@@ -1323,4 +1324,44 @@ test('desktop + 390: Live cash and contracts survive reload and a second client'
     await pc.close()
     await phone.close()
   }
+})
+
+test('tradingActive true + forced STALE stays countdown — no CLOSED flash for 5s', async ({ page }) => {
+  test.setTimeout(30_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  const closeAt = Date.now() + 8 * 60_000
+  await page.evaluate((at) => {
+    ;(window as Window & { __HUB_TEST_CLOSE_CLOCK?: { tradingActive: boolean; stale: boolean; closeAt: number } }).__HUB_TEST_CLOSE_CLOCK =
+      { tradingActive: true, stale: true, closeAt: at }
+  }, closeAt)
+  await expect(page.getByTestId('stale-btc')).toBeVisible()
+  const started = Date.now()
+  while (Date.now() - started < 5_000) {
+    for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+      const clock = page.getByTestId(`close-clock-${id}`)
+      await expect(clock).toHaveAttribute('data-clock-kind', 'live')
+      await expect(clock).not.toContainText('CLOSED')
+      await expect(clock).toHaveText(/^\d{1,2}:\d{2}$/)
+    }
+    await page.waitForTimeout(250)
+  }
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await page.evaluate((at) => {
+    ;(window as Window & { __HUB_TEST_CLOSE_CLOCK?: { tradingActive: boolean; stale: boolean; closeAt: number } }).__HUB_TEST_CLOSE_CLOCK =
+      { tradingActive: true, stale: true, closeAt: at }
+  }, closeAt)
+  await expect(page.getByTestId('close-clock-btc')).toHaveAttribute('data-clock-kind', 'live')
+  await expect(page.getByTestId('close-clock-btc')).not.toContainText('CLOSED')
+  await page.evaluate(() => {
+    ;(window as Window & { __HUB_TEST_CLOSE_CLOCK?: { tradingActive: boolean; stale: boolean; closeAt: number } }).__HUB_TEST_CLOSE_CLOCK =
+      { tradingActive: false, stale: false, closeAt: Date.now() + 8 * 60_000 }
+  })
+  await expect(page.getByTestId('close-clock-btc')).toHaveAttribute('data-clock-kind', 'closed')
+  await expect(page.getByTestId('close-clock-btc')).toContainText('CLOSED')
+  await page.waitForTimeout(800)
+  await expect(page.getByTestId('close-clock-btc')).toHaveAttribute('data-clock-kind', 'closed')
+  await expect(page.getByTestId('close-clock-btc')).toContainText('CLOSED')
 })

@@ -5,7 +5,7 @@ function pad(n: number) {
   return String(Math.max(0, n)).padStart(2, '0')
 }
 
-/** LIVE chip / tradingActive. Soft FAIL weekend session hours. Soft FAIL STALE countdown. */
+/** LIVE chip / tradingActive. Soft FAIL weekend session hours. Soft FAIL STALE driving CLOSED. */
 export function closeClockLive(opts: {
   live?: boolean
   stale?: boolean
@@ -13,11 +13,26 @@ export function closeClockLive(opts: {
   now?: number
   closeAt?: number | null
 }): boolean {
-  if (opts.stale === true) return false
+  const now = opts.now ?? Date.now()
+  const at = Number(opts.closeAt)
+  const ended = Number.isFinite(at) && at > 0 && at <= now
+  if (opts.tradingActive === true) return !ended
   if (opts.tradingActive === false) return false
-  if (opts.tradingActive === true) return true
+  if (ended) return false
   if (opts.live === true) return true
   return false
+}
+
+export function readTestCloseClock(): {
+  tradingActive?: boolean
+  stale?: boolean
+  closeAt?: number
+} | null {
+  if (typeof window === 'undefined') return null
+  const w = window as Window & {
+    __HUB_TEST_CLOSE_CLOCK?: { tradingActive?: boolean; stale?: boolean; closeAt?: number }
+  }
+  return w.__HUB_TEST_CLOSE_CLOCK ?? null
 }
 
 export function closeClockView(opts: {

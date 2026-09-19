@@ -104,6 +104,7 @@ import {
 import { analyzeDesk, isRehabPaper, loadAutoState, runAutoAnalyst, type AnalystAutoState } from '../lib/analyst'
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
+import { readTestCloseClock } from '../lib/close-clock'
 import { FinancePanel } from './finance-panel'
 import { formatBetWindow, formatWindowRange } from '../lib/chicago-time'
 import { applyKalshiBook, BOOK_LATCH_MS } from '../lib/kalshi-book'
@@ -519,7 +520,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const allow = paperFillAllowed({
       liveCash: liveDeskOn(tape),
       rehabPaper: halt,
-      stale: liveGate.stale,
+      stale: liveGate.stale && quote.tradingActive !== true,
     })
     if (!allow.ok) {
       void sendLive(tape, side, quote)
@@ -565,7 +566,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       quote,
       kalshiLive: printsQuery.data?.tapes[tape]?.live,
     })
-    if (!quoteIsLiveClock(quote) || quote.tradingActive === false || !liveGate.ok) {
+    if (quote.tradingActive === false || !quoteIsLiveClock(quote)) {
       bookPaper(tape, side, quote, `${TAPE_META[tape].label} ${liveGate.reason || 'STALE — paper only'}`)
       return
     }
@@ -1015,7 +1016,9 @@ function TapeRow({
   const paper = recipe.botOn && !recipe.liveOn
   const callout = CLOCK_CALLOUT[clock]
   const tone = nowTone(shownLive, beat)
-  const liveOn = shownQuote?.tradingActive === true
+  const testClock = readTestCloseClock()
+  const liveOn = (testClock?.tradingActive ?? shownQuote?.tradingActive) === true
+  const staleFlag = testClock?.stale ?? stale
   const [draft, setDraft] = useState(recipe.contracts)
   const contractsRef = useRef<HTMLInputElement>(null)
   const saveTimer = useRef(0)
@@ -1049,7 +1052,7 @@ function TapeRow({
 
   const fillLine = ticket ? ticketFillStrip(ticket, shownQuote, booked) : ''
   const session = tapeSessionHours(id)
-  const tradingLive = Boolean(liveOn && !stale)
+  const tradingLive = liveOn
   const hoursLine = tapeHoursLine(id, shownQuote, clock, Date.now(), tradingLive)
   const nextOpenLabel = session.open ? nextClockLabel(Date.now(), clock, shownQuote) : session.nextOpenLabel
   const modeLabel = ticket ? (ticket.orderId.startsWith('deskfill') || booked?.kind === 'paper' ? 'PAPER' : 'LIVE') : 'PAPER'
@@ -1070,7 +1073,7 @@ function TapeRow({
               <span className="tape-name">
                 {formatWindowRange(shownQuote?.openAt, shownQuote?.closeAt)}
               </span>
-              {stale ? (
+              {staleFlag ? (
                 <span className="stale-flag" data-testid={`stale-${id}`}>
                   STALE
                 </span>
@@ -1090,8 +1093,8 @@ function TapeRow({
             tape={id}
             closeAt={shownQuote?.closeAt}
             live={tradingLive}
-            stale={stale}
-            tradingActive={shownQuote?.tradingActive}
+            stale={staleFlag}
+            tradingActive={testClock?.tradingActive ?? shownQuote?.tradingActive}
             nextOpenLabel={nextOpenLabel}
           />
           <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>

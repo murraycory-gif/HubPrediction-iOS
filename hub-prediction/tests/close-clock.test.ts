@@ -75,4 +75,33 @@ describe('closeClockView — countdown only while LIVE', () => {
     const now = 1_700_000_000_000
     expect(closeClockView({ closeAt: now + 60_000, live: false, now })).toEqual({ kind: 'closed', text: 'CLOSED' })
   })
+
+  it('tradingActive LIVE keeps mm:ss even when STALE is forced', () => {
+    const now = Date.parse('2026-09-19T20:57:00-05:00')
+    const view = closeClockView({
+      closeAt: now + 95_000,
+      live: false,
+      stale: true,
+      tradingActive: true,
+      now,
+      nextOpenLabel: 'Sun Sep 20 5:00 PM',
+    })
+    expect(closeClockLive({ stale: true, tradingActive: true, closeAt: now + 95_000, now })).toBe(true)
+    expect(view.kind).toBe('live')
+    expect(view.text).toBe('01:35')
+    expect(view.text).not.toMatch(/CLOSED/)
+  })
+
+  it('tradingActive false stays CLOSED even if live=true', () => {
+    const now = Date.parse('2026-09-19T20:57:00-05:00')
+    const view = closeClockView({
+      closeAt: now + 95_000,
+      live: true,
+      stale: false,
+      tradingActive: false,
+      now,
+      nextOpenLabel: 'Sun Sep 20 5:00 PM',
+    })
+    expect(view).toEqual({ kind: 'closed', text: 'CLOSED · Sun Sep 20 5:00 PM' })
+  })
 })

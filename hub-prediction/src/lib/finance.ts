@@ -530,7 +530,7 @@ export function liveBotCall(opts: {
   }
   const stale = opts.stale === true || opts.fresh === false
   if (opts.rehabPaper) return 'paper'
-  if (stale) return 'paper'
+  if (stale && opts.tradingActive !== true) return 'paper'
   if (opts.liveCash === true) {
     if (!opts.hitOk) return 'sit'
     return 'live'
@@ -556,7 +556,7 @@ export function tapeBotNote(opts: {
   if (!opts.botOn) return 'Bot OFF'
   if (opts.rehabPaper) return 'Live cash HALT — paper rehab, not sent to Kalshi'
   if (opts.tradingActive === false) return 'Kalshi window closed — sit'
-  if (opts.stale) return 'STALE — paper only'
+  if (opts.stale && opts.tradingActive !== true) return 'STALE — paper only'
   if (!opts.liveCash) return 'Live cash OFF — paper only, not sent to Kalshi'
   if (!opts.inArm) return `Sit — arm ${opts.armFromMin}–${opts.armToMin} min`
   if (opts.lean === 'sit') return 'Sit — no through / hug'
