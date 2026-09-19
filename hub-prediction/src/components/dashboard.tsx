@@ -812,11 +812,17 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   useEffect(() => {
     if (!hostReady) return
-    tickChief()
-    const id = window.setInterval(() => {
+    let iv = 0
+    const start = window.setTimeout(() => {
       tickChief()
-    }, 4000)
-    return () => window.clearInterval(id)
+      iv = window.setInterval(() => {
+        tickChief()
+      }, 4000)
+    }, 800)
+    return () => {
+      window.clearTimeout(start)
+      if (iv) window.clearInterval(iv)
+    }
   }, [hostReady, book, cash.cash, cash.deposits, board, rehab])
 
   useEffect(() => {

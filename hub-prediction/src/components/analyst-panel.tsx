@@ -54,6 +54,24 @@ export function AnalystPanel({
   useLayoutEffect(() => {
     setHydrated(true)
   }, [])
+  const briefsByTape = useMemo(
+    () =>
+      Object.fromEntries(
+        report.tapes.map((t) => [
+          t.id,
+          buildDeskBrief({
+            id: t.id,
+            quote: board?.tapes[t.id] ?? null,
+            recipe: settings.tapes[t.id],
+            path: t.path,
+            upcoming: briefs?.upcoming?.[t.id],
+            news: briefs?.news?.[t.id],
+            now: hydrated ? undefined : 0,
+          }),
+        ]),
+      ),
+    [report, board, settings, briefs, hydrated],
+  )
 
   return (
     <section className="analyst" data-testid="analyst">
@@ -65,15 +83,7 @@ export function AnalystPanel({
       </p>
       <div className="analyst-grid">
         {report.tapes.map((t) => {
-          const brief = buildDeskBrief({
-            id: t.id,
-            quote: board?.tapes[t.id] ?? null,
-            recipe: settings.tapes[t.id],
-            path: t.path,
-            upcoming: briefs?.upcoming?.[t.id],
-            news: briefs?.news?.[t.id],
-            now: hydrated ? undefined : 0,
-          })
+          const brief = briefsByTape[t.id]
           const rules = explainRules(t.id, t.currentRecipe)
           const proposal = proposalCopy(t)
           const money = profitImpact(t, t.lean === 'down' ? t.noAsk : t.yesAsk)
