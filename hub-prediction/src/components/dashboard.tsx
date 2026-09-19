@@ -135,6 +135,17 @@ import {
   type ChiefState,
 } from '../lib/desk-chief'
 import { applyClockSettle, balanceLatchMs, clocksNeedingSettle, readTestClockSettle } from '../lib/settle-latch'
+import {
+  EXIT_WATCH_LIVE,
+  applyExitDecision,
+  decideExitWatch,
+  formatExitLocked,
+  latestExitFor,
+  loadExitLogs,
+  type ExitWatchDecision,
+  type ExitWatchInput,
+  type ExitWatchLog,
+} from '../lib/exit-watch'
 import { RaceChart, useSmoothedLive } from './race-chart'
 import { SettingsPanel } from './settings-panel'
 import { TapeIcon } from './tape-icon'
@@ -155,6 +166,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [financeOpen, setFinanceOpen] = useState(false)
   const [chief, setChief] = useState<ChiefState>(() => loadChief())
   const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
+  const [exitLogs, setExitLogs] = useState<ExitWatchLog[]>(() => loadExitLogs())
   const sentRef = useRef<Record<string, SendClaim>>({})
   const clientOrderRef = useRef<Record<string, string>>({})
   const lastLocalWrite = useRef(0)
@@ -752,6 +764,45 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     }
   }
 
+  function runExitWatch(input: ExitWatchInput) {
+    const decision = decideExitWatch(input)
+    setExitLogs((prev) => applyExitDecision(prev, decision))
+    if (decision.action === 'exit' && !EXIT_WATCH_LIVE) {
+      setMsg(decision.why)
+    }
+    return decision
+  }
+
+  function scanExitWatch(now = Date.now()) {
+    const out: ExitWatchDecision[] = []
+    for (const t of tickets) {
+      if (!isRealOrderId(t.orderId) || isPaperOrderId(t.orderId)) continue
+      const booked = book.bets.find((b) => b.orderId === t.orderId && b.status === 'open' && isLiveBet(b))
+      if (!booked) continue
+      const quote = readTestLiveQuote(t.tape) ?? board?.tapes[t.tape]
+      if (!quote || !Number.isFinite(quote.live) || !Number.isFinite(quote.beat)) continue
+      out.push(
+        runExitWatch({
+          tape: t.tape,
+          ticker: t.ticker,
+          orderId: t.orderId,
+          side: t.side,
+          contracts: t.contracts,
+          entryAsk: Number(t.ask ?? booked.ask) || 0,
+          beat: t.beat || quote.beat,
+          live: quote.live,
+          closeAt: quote.closeAt || booked.closeAt,
+          points: quote.points,
+          yesAsk: quote.yesAsk,
+          noAsk: quote.noAsk,
+          fillCount: t.contracts,
+          now,
+        }),
+      )
+    }
+    return out
+  }
+
   useEffect(() => {
     const w = window as Window & {
       __HUB_TEST_SEND?: (tape: TapeId, side: 'up' | 'down', quote: TapeQuote) => Promise<void>
@@ -843,6 +894,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         inject: (bets: FinanceState['bets']) => void
         add: (bet: FinanceState['bets'][number]) => void
       }
+      __HUB_TEST_EXIT?: {
+        apply: (input: ExitWatchInput) => ExitWatchDecision
+        scan: () => ExitWatchDecision[]
+        logs: () => ExitWatchLog[]
+        live: boolean
+      }
     }
     w.__HUB_TEST_CHIEF = {
       run: (over) => tickChief(over, { force: true }),
@@ -863,10 +920,17 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         setBook((prev) => ({ ...prev, bets: [...prev.bets, bet] }))
       },
     }
+    w.__HUB_TEST_EXIT = {
+      apply: (input) => runExitWatch(input),
+      scan: () => scanExitWatch(),
+      logs: () => loadExitLogs(),
+      live: EXIT_WATCH_LIVE,
+    }
     return () => {
       delete w.__HUB_TEST_CHIEF
       delete w.__HUB_APPLY_BOOK
       delete w.__HUB_TEST_BETS
+      delete w.__HUB_TEST_EXIT
     }
   })
 
@@ -921,6 +985,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       void sendLive(id, lean, quote)
     }
   }, [hostReady, board, printsQuery.dataUpdatedAt, settings, tickets, book, hits, rehab])
+
+  useEffect(() => {
+    if (!hostReady) return
+    scanExitWatch(wall)
+  }, [hostReady, wall, tickets, book.bets, board])
 
   useEffect(() => {
     if (!hostReady || book.killed) return
@@ -1130,12 +1199,31 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             rehab={rehab}
           />
         ) : null}
+        <section className="exit-watch" data-testid="exit-watch">
+          <p className="settings-note" data-testid="exit-watch-lock">
+            EXIT WATCH · paper first · Soft FAIL Live sell until PASS. Soft FAIL Accept. Soft FAIL ghost sells. Soft FAIL
+            recipe rewrite.
+          </p>
+          {TAPE_IDS.filter((id) => id === 'btc' || latestExitFor(exitLogs, id)).map((id) => {
+            const row = latestExitFor(exitLogs, id)
+            return (
+              <p key={id} className="tape-line" data-testid={`exit-watch-${id}`}>
+                <span data-testid={`exit-action-${id}`}>{row?.action === 'exit' ? 'EXIT' : 'HOLD'}</span>
+                {' · '}
+                <span data-testid={`exit-locked-${id}`}>{formatExitLocked(row?.locked ?? 0)}</span>
+                {' · '}
+                <span data-testid={`exit-why-${id}`}>{row?.why ?? 'waiting on a real fill'}</span>
+              </p>
+            )
+          })}
+        </section>
         {financeOpen ? (
           <FinancePanel
             book={book}
             cash={cash}
             board={board ?? null}
             chief={chief}
+            exitLogs={exitLogs}
             onKill={() => {
               setBook(engageKill(book))
               setSettings(disarmAllBots(settings))

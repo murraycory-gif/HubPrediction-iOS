@@ -24,12 +24,14 @@ import {
 import { TAPE_IDS, TAPE_META, formatCash, formatPnl } from '../lib/tapes'
 import type { CashLatch } from '../lib/tapes'
 import type { DeskBoard } from '../lib/types'
+import { formatExitLocked, latestExitFor, type ExitWatchLog } from '../lib/exit-watch'
 
 export function FinancePanel(props: {
   book: FinanceState
   cash: CashLatch
   board: DeskBoard | null
   chief: ChiefState
+  exitLogs?: ExitWatchLog[]
   onKill: () => void
   onClearKill: () => void
 }) {
@@ -81,6 +83,15 @@ export function FinancePanel(props: {
       </div>
       <section className="chief" data-testid="desk-chief">
         <p className="hud-label">Desk Chief · profit + Kalshi cash</p>
+        <p className="settings-note" data-testid="exit-watch-finance">
+          EXIT WATCH paper · Soft FAIL Live sell · Soft FAIL Accept.{' '}
+          {TAPE_IDS.map((id) => {
+            const row = latestExitFor(props.exitLogs ?? [], id)
+            return row ? `${TAPE_META[id].label} ${row.action.toUpperCase()} ${formatExitLocked(row.locked)}` : null
+          })
+            .filter(Boolean)
+            .join(' · ') || 'waiting on a real fill'}
+        </p>
         <p className="settings-note" data-testid="chief-lock">
           Paper size auto. Live size auto under floors/kill. Soft FAIL Accept. Soft FAIL Live ON. Soft FAIL recipe rewrite.
         Reserve{' '}

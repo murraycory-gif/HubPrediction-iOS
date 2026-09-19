@@ -488,3 +488,85 @@ test('BTC news + hour + same-clock Soft FAIL Accept', async ({ page }) => {
   await expect(page.locator('[data-testid^="chief-accept-"]')).toHaveCount(0)
   await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
 })
+
+test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ page }) => {
+  test.setTimeout(45_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await expect.poll(async () => page.evaluate(() => Boolean((window as Window & { __HUB_TEST_EXIT?: unknown }).__HUB_TEST_EXIT))).toBe(true)
+  const now = Date.now()
+  const fade = await page.evaluate((at) => {
+    const w = window as Window & {
+      __HUB_TEST_EXIT?: { apply: (input: Record<string, unknown>) => { action: string; locked: number; liveSell: boolean; paper: boolean } }
+      __HUB_PLACE_CALLS?: unknown[]
+    }
+    w.__HUB_PLACE_CALLS = []
+    const start = at - 40_000
+    const points = Array.from({ length: 8 }, (_, i) => ({
+      t: start + (i * 40_000) / 7,
+      px: 80_120 + ((80_040 - 80_120) * i) / 7,
+    }))
+    return w.__HUB_TEST_EXIT!.apply({
+      tape: 'btc',
+      ticker: 'KXBTC15M-EXITFADE',
+      orderId: '01exit-btc-fill-aaaa',
+      side: 'up',
+      contracts: 20,
+      entryAsk: 70,
+      beat: 80_000,
+      live: 80_040,
+      closeAt: at + 6 * 60_000,
+      points,
+      yesAsk: 75,
+      noAsk: 26,
+      fillCount: 20,
+      now: at,
+    })
+  }, now)
+  expect(fade.action).toBe('exit')
+  expect(fade.locked).toBeGreaterThan(0)
+  expect(fade.liveSell).toBe(false)
+  expect(fade.paper).toBe(true)
+  await expect(page.getByTestId('exit-action-btc')).toHaveText('EXIT')
+  await expect(page.getByTestId('exit-locked-btc')).toContainText('$')
+  await expect(page.getByTestId('exit-why-btc')).toContainText(/Profit lock/)
+  await expect(page.getByTestId('exit-watch-lock')).toContainText(/Soft FAIL Live sell/)
+  await expect(page.getByTestId('analyst-accept-btc')).toHaveCount(0)
+  await expect(page.locator('[data-testid^="chief-accept-"]')).toHaveCount(0)
+  await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
+  const sells = await page.evaluate(() => {
+    const w = window as Window & { __HUB_PLACE_CALLS?: Array<{ side?: string; action?: string }> }
+    return w.__HUB_PLACE_CALLS ?? []
+  })
+  expect(sells).toEqual([])
+  const hold = await page.evaluate((at) => {
+    const w = window as Window & {
+      __HUB_TEST_EXIT?: { apply: (input: Record<string, unknown>) => { action: string; liveSell: boolean } }
+    }
+    const start = at - 40_000
+    const points = Array.from({ length: 8 }, (_, i) => ({
+      t: start + (i * 40_000) / 7,
+      px: 80_100 + ((80_130 - 80_100) * i) / 7,
+    }))
+    return w.__HUB_TEST_EXIT!.apply({
+      tape: 'btc',
+      ticker: 'KXBTC15M-EXITHOLD',
+      orderId: '01exit-btc-hold-bbbb',
+      side: 'up',
+      contracts: 20,
+      entryAsk: 70,
+      beat: 80_000,
+      live: 80_120,
+      closeAt: at + 6 * 60_000,
+      points,
+      yesAsk: 75,
+      noAsk: 26,
+      fillCount: 20,
+      now: at,
+    })
+  }, now)
+  expect(hold.action).toBe('hold')
+  expect(hold.liveSell).toBe(false)
+  await expect(page.getByTestId('exit-watch-lock')).toContainText(/Soft FAIL Accept/)
+})
