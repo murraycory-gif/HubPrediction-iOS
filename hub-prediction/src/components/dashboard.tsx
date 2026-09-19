@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getClockSettle, getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiBook, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
 import { applyHostDeskState, hostSettingsNewer, SETTINGS_DEBOUNCE_MS, SETTINGS_LATCH_MS } from '../lib/desk-hydrate'
-import { DESK_TICK_MS, FEED_STALE_CHECK_MS, FEED_STALE_MS, FEED_STALE_RECOVER_MS, feedIsStale, feedStaleThreshold, lastDeskTickAt, subscribeDeskTick } from '../lib/desk-tick'
+import { DESK_TICK_MS, FEED_RECONNECT_MS, FEED_STALE_CHECK_MS, feedNeedsReconnect, feedStaleThreshold, lastDeskTickAt, subscribeDeskTick } from '../lib/desk-tick'
 import { setHostDeskWriter } from '../lib/desk-persist'
 import {
   TAPE_IDS,
@@ -175,7 +175,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [exitLogs, setExitLogs] = useState<ExitWatchLog[]>(() => loadExitLogs())
   const [heavyReady, setHeavyReady] = useState(false)
   const [forceFeedStale, setForceFeedStale] = useState(false)
-  const [feedStaleTick, setFeedStaleTick] = useState(false)
+  const [feedReconnectTick, setFeedReconnectTick] = useState(false)
   const [latchNow, setLatchNow] = useState(() => Date.now())
   const sentRef = useRef<Record<string, SendClaim>>({})
   const printFetches = useRef(0)
@@ -513,17 +513,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const cashLatch = balanceLatchMs(book.bets, board, latchNow)
   printsFetchingRef.current = printsQuery.isFetching
-  const feedStale =
+  const feedReconnect =
     forceFeedStale ||
-    feedStaleTick ||
-    feedIsStale({
+    feedReconnectTick ||
+    feedNeedsReconnect({
       now: latchNow,
       hostReady,
       force: forceFeedStale,
       lastPrintOkAt: lastPrintOkAt.current,
       fetchStartedAt: printFetchStartedAt.current,
       fetching: printsQuery.isFetching,
-      lastPrintRttMs: lastPrintRttMs.current,
     })
   const cashQuery = useQuery({
     queryKey: ['kalshi-balance'],
@@ -1035,10 +1034,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       tickAt: () => lastDeskTickAt(),
       printFetches: () => printFetches.current,
       printUpdatedAt: () => lastPrintOkAt.current,
-      stale: () => Boolean((document.querySelector('[data-testid="feed-stale"]') as HTMLElement | null)?.dataset.stale),
+      stale: () => Boolean((document.querySelector('[data-testid="feed-reconnect"]') as HTMLElement | null)?.dataset.stale),
       forceStale: (on = true) => {
         setForceFeedStale(on)
-        setFeedStaleTick(on)
+        setFeedReconnectTick(on)
       },
       refetchPrints: () => {
         /* filled after printsQuery exists — overwritten below */
@@ -1173,31 +1172,30 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       }
       if (now - lastStale < FEED_STALE_CHECK_MS) return
       lastStale = now
-      setFeedStaleTick(
-        feedIsStale({
+      setFeedReconnectTick(
+        feedNeedsReconnect({
           now,
           hostReady: true,
           force: forceFeedStale,
           lastPrintOkAt: lastPrintOkAt.current,
           fetchStartedAt: printFetchStartedAt.current,
           fetching: printsFetchingRef.current,
-          lastPrintRttMs: lastPrintRttMs.current,
         }),
       )
     })
   }, [hostReady, forceFeedStale])
 
   useEffect(() => {
-    if (!feedStale || forceFeedStale || printsQuery.isFetching) return
+    if (!feedReconnect || forceFeedStale || printsQuery.isFetching) return
     const now = Date.now()
-    if (now - lastRecoverAt.current < FEED_STALE_RECOVER_MS) return
+    if (now - lastRecoverAt.current < FEED_RECONNECT_MS) return
     const id = window.setTimeout(() => {
       if (printsFetchingRef.current || printDead.current) return
       lastRecoverAt.current = Date.now()
       void printsQuery.refetch()
     }, 1000)
     return () => window.clearTimeout(id)
-  }, [feedStale, forceFeedStale, printsQuery.isFetching, printsQuery.refetch])
+  }, [feedReconnect, forceFeedStale, printsQuery.isFetching, printsQuery.refetch])
 
   useEffect(() => {
     const w = window as Window & {
@@ -1219,10 +1217,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       tickAt: () => lastDeskTickAt(),
       printFetches: () => printFetches.current,
       printUpdatedAt: () => lastPrintOkAt.current,
-      stale: () => feedStale,
+      stale: () => feedReconnect,
       forceStale: (on = true) => {
         setForceFeedStale(on)
-        setFeedStaleTick(on)
+        setFeedReconnectTick(on)
       },
       refetchPrints: () => {
         void printsQuery.refetch()
@@ -1292,7 +1290,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   )
 
   return (
-    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-feed-stale={feedStale ? '1' : '0'} data-feed-stale-ms={FEED_STALE_MS} data-exit-scan={EXIT_SCAN_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0} data-book-latch={BOOK_LATCH_MS} data-settings-latch={SETTINGS_LATCH_MS}>
+    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-feed-stale="0" data-feed-stale-ms={FEED_RECONNECT_MS} data-feed-reconnect={feedReconnect ? '1' : '0'} data-exit-scan={EXIT_SCAN_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0} data-book-latch={BOOK_LATCH_MS} data-settings-latch={SETTINGS_LATCH_MS}>
       <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">
@@ -1314,9 +1312,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           />
           <Stat label="KALSHI CASH" value={formatCash(cash.cash)} testId="kalshi-cash" />
         </div>
-        {feedStale ? (
-          <p className="feed-stale" data-testid="feed-stale" data-stale="1">
-            FEED STALE — live prints or desk tick lagged. Recovering poll. Soft FAIL frozen NOW.
+        {feedReconnect ? (
+          <p className="feed-reconnect" data-testid="feed-reconnect" data-stale="1">
+            reconnecting
           </p>
         ) : (
           <p hidden data-testid="feed-ok" data-stale="0" />

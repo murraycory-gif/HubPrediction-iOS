@@ -128,12 +128,14 @@ export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
   return TAPE_SERIES[id][hydrateClock(clock)]
 }
 
-/** Structure board only. Prints ride LIVE_PRINT_MS. Fast near close so the next clock latches. Soft FAIL 1Hz. */
-export const LIVE_PRINT_MS = 100
+/** Client snapshot poll. Host warm loop owns Kalshi. Clock ticks locally. */
+export const LIVE_PRINT_MS = 250
 export const LIVE_TRAIL_MS = 60 * 60_000
 export const LIVE_TRAIL_DOTS = 480
-/** Wire last-N only. Client merge keeps the chart. Soft FAIL 480-dot JSON 10×/sec (Node bloat + FEED STALE). */
+/** Last-N on the wire. Client merge keeps the chart. */
 export const PRINT_WIRE_DOTS = 12
+/** Host Kalshi loop. One poller, every client reads this snapshot. */
+export const WARM_PRINT_MS = 250
 export const BOARD_STRUCTURE_MS = 400
 export const BOARD_ROLLOVER_MS = 350
 export const BOARD_CLOSED_MS = 200

@@ -1,100 +1,42 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   DESK_TICK_MS,
+  FEED_RECONNECT_MS,
   FEED_STALE_CHECK_MS,
-  FEED_STALE_MAX_MS,
   FEED_STALE_MS,
-  FEED_STALE_RECOVER_MS,
-  FEED_STALE_RTT_MULT,
   feedIsStale,
+  feedNeedsReconnect,
   feedStaleThreshold,
   lastDeskTickAt,
   subscribeDeskTick,
 } from '../src/lib/desk-tick'
 import { EXIT_SCAN_MS } from '../src/lib/exit-watch'
-import { BOT_SCAN_MS } from '../src/lib/tapes'
+import { BOT_SCAN_MS, LIVE_PRINT_MS, PRINT_WIRE_DOTS, WARM_PRINT_MS } from '../src/lib/tapes'
 
 describe('desk tick vs EXIT scan', () => {
   it('UI clock stays 100ms and EXIT scan is slower', () => {
     expect(DESK_TICK_MS).toBe(100)
     expect(EXIT_SCAN_MS).toBe(400)
     expect(BOT_SCAN_MS).toBe(1000)
-    expect(FEED_STALE_MS).toBe(8000)
-    expect(FEED_STALE_RTT_MULT).toBe(3)
-    expect(FEED_STALE_MAX_MS).toBe(20_000)
-    expect(FEED_STALE_RECOVER_MS).toBe(8000)
+    expect(LIVE_PRINT_MS).toBe(250)
+    expect(WARM_PRINT_MS).toBe(250)
+    expect(PRINT_WIRE_DOTS).toBe(12)
+    expect(FEED_RECONNECT_MS).toBe(15_000)
+    expect(FEED_STALE_MS).toBe(15_000)
     expect(FEED_STALE_CHECK_MS).toBe(400)
+    expect(feedStaleThreshold(4000)).toBe(15_000)
     expect(EXIT_SCAN_MS).toBeGreaterThan(DESK_TICK_MS)
     expect(BOT_SCAN_MS).toBeGreaterThan(EXIT_SCAN_MS)
   })
 
-  it('feedStaleThreshold is max(8s, 3× last print RTT) capped at 20s', () => {
-    expect(feedStaleThreshold(0)).toBe(8000)
-    expect(feedStaleThreshold(500)).toBe(8000)
-    expect(feedStaleThreshold(3000)).toBe(9000)
-    expect(feedStaleThreshold(6000)).toBe(18_000)
-    expect(feedStaleThreshold(10_000)).toBe(20_000)
-  })
-
-  it('feedIsStale Soft FAIL false-positive on 3s print latency and Soft FAIL silent freeze', () => {
+  it('4s print delay is live; reconnect only after 15s dead', () => {
     const now = 10_000_000
-    expect(feedIsStale({ now, hostReady: true, lastPrintOkAt: 0 })).toBe(false)
-    expect(feedIsStale({ now, hostReady: true, lastPrintOkAt: 0, fetching: true, fetchStartedAt: now - 400 })).toBe(false)
-    expect(feedIsStale({ now, hostReady: true, lastPrintOkAt: 0, fetching: true, fetchStartedAt: now - 3_000 })).toBe(false)
-    expect(feedIsStale({ now, hostReady: true, lastPrintOkAt: now - 400, fetching: false })).toBe(false)
-    expect(
-      feedIsStale({
-        now,
-        hostReady: true,
-        lastPrintOkAt: now - 3_000,
-        fetching: true,
-        fetchStartedAt: now - 3_000,
-      }),
-    ).toBe(false)
-    expect(
-      feedIsStale({
-        now,
-        hostReady: true,
-        lastPrintOkAt: now - 3_000,
-        fetching: false,
-      }),
-    ).toBe(false)
-    expect(
-      feedIsStale({
-        now,
-        hostReady: true,
-        lastPrintOkAt: now - 8_000,
-        fetching: true,
-        fetchStartedAt: now - 6_000,
-      }),
-    ).toBe(false)
-    expect(
-      feedIsStale({
-        now,
-        hostReady: true,
-        lastPrintOkAt: now - 12_000,
-        fetching: true,
-        fetchStartedAt: now - 12_000,
-      }),
-    ).toBe(true)
-    expect(
-      feedIsStale({
-        now,
-        hostReady: true,
-        lastPrintOkAt: now - 12_000,
-        fetching: false,
-      }),
-    ).toBe(true)
-    expect(
-      feedIsStale({
-        now,
-        hostReady: true,
-        lastPrintOkAt: now - 10_000,
-        fetching: true,
-        fetchStartedAt: now - 4_000,
-        lastPrintRttMs: 4_000,
-      }),
-    ).toBe(false)
+    expect(feedNeedsReconnect({ now, hostReady: true, lastPrintOkAt: 0 })).toBe(false)
+    expect(feedNeedsReconnect({ now, hostReady: true, lastPrintOkAt: 0, fetching: true, fetchStartedAt: now - 4_000 })).toBe(false)
+    expect(feedNeedsReconnect({ now, hostReady: true, lastPrintOkAt: now - 4_000, fetching: false })).toBe(false)
+    expect(feedNeedsReconnect({ now, hostReady: true, lastPrintOkAt: now - 10_000, fetching: false })).toBe(false)
+    expect(feedNeedsReconnect({ now, hostReady: true, lastPrintOkAt: now - 16_000, fetching: false })).toBe(true)
+    expect(feedNeedsReconnect({ now, hostReady: true, lastPrintOkAt: now - 16_000, fetching: true, fetchStartedAt: now - 16_000 })).toBe(true)
     expect(feedIsStale({ now, hostReady: true, lastPrintOkAt: now, force: true })).toBe(true)
   })
 

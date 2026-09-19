@@ -1118,7 +1118,7 @@ test('all four tapes stay Kalshi-smooth — multi-Hz NOW, continuous path, no em
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
   await expect(page.getByTestId('desk')).toHaveAttribute('data-desk-tick', '100')
-  await expect(page.getByTestId('desk')).toHaveAttribute('data-print-ms', '100')
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-print-ms', '250')
   const ids = ['btc', 'ng', 'cu', 'gld'] as const
   for (const id of ids) {
     await expect(page.getByTestId(`live-${id}`)).toBeVisible()

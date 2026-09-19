@@ -29,8 +29,13 @@ export const getLivePrints = createServerFn({ method: 'POST' })
     ) => d ?? {},
   )
   .handler(async ({ data }) => {
-    const { loadLivePrints } = await import('./kalshi.server')
+    const { hydrateClocks } = await import('./tapes')
     const { liveRangeFromCharts } = await import('./tapes')
+    const { loadLivePrints, peekLivePrints, setWarmClocks, startWarm } = await import('./kalshi.server')
+    startWarm()
+    if (data?.clocks) setWarmClocks(hydrateClocks(data.clocks))
+    const snap = peekLivePrints()
+    if (snap) return snap
     return loadLivePrints(data?.events ?? {}, liveRangeFromCharts(data?.charts, data?.clocks))
   })
 

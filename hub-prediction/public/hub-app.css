@@ -244,16 +244,20 @@ body {
 }
 
 .feed-stale {
+  display: none;
+}
+
+.feed-reconnect {
   position: relative;
   z-index: 3;
-  margin: 8px 0 0;
-  padding: 8px 10px;
-  border: 1px solid #c45a12;
-  background: #3a1c08;
-  color: #ffb36a;
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: 0.03em;
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #7d8894;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
 }
 
 .bets-24h {

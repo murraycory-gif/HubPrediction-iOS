@@ -14,6 +14,8 @@ import {
   pointsFromLiveData,
   slimLivePoints,
   PRINT_WIRE_DOTS,
+  WARM_PRINT_MS,
+  liveRangeFromCharts,
   num,
   seriesForTape,
   seriesToTape,
@@ -50,6 +52,10 @@ let printsInflight: Promise<LivePrints> | null = null
 let boardInflight: Promise<DeskBoard> | null = null
 const settledCache: Record<string, { at: number; past: Settled[] }> = {}
 let warming = false
+let warmBusy = false
+let warmTimer: ReturnType<typeof setInterval> | null = null
+let warmClocks = defaultClocks()
+let lastWarmBoardAt = 0
 
 function ua() {
   return { 'User-Agent': 'HUB-Prediction/1.0', Accept: 'application/json' }
@@ -260,7 +266,12 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
     live = prev.live
     liveSource = prev.liveSource
   }
-  const points = slimLivePoints(mergeRaceTrail(prev?.ticker === ticker ? prev.points : [], incoming, live, now), now)
+  const points = slimLivePoints(
+    mergeRaceTrail(prev?.ticker === ticker ? prev.points : [], incoming, live, now),
+    now,
+    LIVE_TRAIL_MS,
+    PRINT_WIRE_DOTS,
+  )
 
   return {
     id,
@@ -293,8 +304,8 @@ export function slimDeskBoardSeed(board: DeskBoard | null): DeskBoard | null {
   const tapes = { ...board.tapes }
   for (const id of TAPE_IDS) {
     const q = tapes[id]
-    if (!q || !Array.isArray(q.points) || q.points.length <= 32) continue
-    tapes[id] = { ...q, points: q.points.slice(-32) }
+    if (!q || !Array.isArray(q.points) || q.points.length <= PRINT_WIRE_DOTS) continue
+    tapes[id] = { ...q, points: q.points.slice(-PRINT_WIRE_DOTS) }
   }
   return { ...board, tapes }
 }
@@ -308,6 +319,56 @@ export function resetDeskBoardForTests() {
   lastPrintsKey = ''
   printsInflight = null
   boardInflight = null
+  warming = false
+  warmBusy = false
+  lastWarmBoardAt = 0
+  warmClocks = defaultClocks()
+  if (warmTimer) {
+    clearInterval(warmTimer)
+    warmTimer = null
+  }
+}
+
+export function slimPrintsSnapshot(prints: LivePrints | null): LivePrints | null {
+  if (!prints) return null
+  const tapes = { ...prints.tapes }
+  for (const id of TAPE_IDS) {
+    const q = tapes[id]
+    if (!q?.points || q.points.length <= PRINT_WIRE_DOTS) continue
+    tapes[id] = { ...q, points: q.points.slice(-PRINT_WIRE_DOTS) }
+  }
+  return { ...prints, tapes }
+}
+
+export function peekLivePrints(): LivePrints | null {
+  return slimPrintsSnapshot(lastPrints)
+}
+
+export function setWarmClocks(clocks: Record<TapeId, TapeClock>) {
+  warmClocks = clocks
+}
+
+async function warmOnce() {
+  if (warmBusy) return
+  warmBusy = true
+  try {
+    const now = Date.now()
+    const rolling = boardNeedsRollover(lastBoard, now)
+    if (!lastBoard || rolling || now - lastWarmBoardAt > 400) {
+      await loadDeskBoard(warmClocks)
+      lastWarmBoardAt = Date.now()
+    }
+    const events: Partial<Record<TapeId, string>> = {}
+    for (const id of TAPE_IDS) {
+      const ev = lastBoard?.tapes[id]?.eventTicker
+      if (ev) events[id] = ev
+    }
+    await loadLivePrints(events, liveRangeFromCharts(null, warmClocks))
+  } catch {
+    /* keep last snapshot */
+  } finally {
+    warmBusy = false
+  }
 }
 
 export async function loadLivePrints(
@@ -416,7 +477,7 @@ export async function loadDeskBoard(clocks: Record<TapeId, TapeClock> = defaultC
     for (const id of TAPE_IDS) {
       const q = latched.tapes[id]
       if (!q?.points?.length) continue
-      const slim = slimLivePoints(q.points, Date.now())
+      const slim = slimLivePoints(q.points, Date.now(), LIVE_TRAIL_MS, PRINT_WIRE_DOTS)
       if (slim.length !== q.points.length) latched = { ...latched, tapes: { ...latched.tapes, [id]: { ...q, points: slim } } }
     }
     lastBoard = latched
@@ -613,5 +674,9 @@ export async function loadDeskBriefs(clocks: Record<TapeId, TapeClock> = default
 export function startWarm() {
   if (warming) return
   warming = true
-  void loadDeskBoard().catch(() => {})
+  void warmOnce()
+  if (process.env.VITEST === 'true') return
+  warmTimer = setInterval(() => {
+    void warmOnce()
+  }, WARM_PRINT_MS)
 }

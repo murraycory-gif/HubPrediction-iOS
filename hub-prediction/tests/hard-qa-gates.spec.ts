@@ -818,19 +818,21 @@ test('live tick + prints keep moving; stale banner then recover', async ({ page 
   expect(after.tick - before.tick).toBeGreaterThanOrEqual(2_500)
   expect(after.fetches).toBeGreaterThan(before.fetches)
   await expect(page.getByTestId('desk')).toHaveAttribute('data-desk-tick', '100')
-  await expect(page.getByTestId('desk')).toHaveAttribute('data-print-ms', '100')
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-print-ms', '250')
   await expect(page.getByTestId('desk')).toHaveAttribute('data-exit-scan', '400')
+  await expect(page.getByTestId('feed-stale')).toHaveCount(0)
   await page.evaluate(() => {
     ;(window as Window & { __HUB_TEST_FEED?: { forceStale: (on?: boolean) => void } }).__HUB_TEST_FEED!.forceStale(true)
   })
-  await expect(page.getByTestId('feed-stale')).toBeVisible()
+  await expect(page.getByTestId('feed-reconnect')).toBeVisible()
+  await expect(page.getByTestId('feed-reconnect')).toHaveText('reconnecting')
   await page.evaluate(() => {
     ;(window as Window & { __HUB_TEST_FEED?: { forceStale: (on?: boolean) => void } }).__HUB_TEST_FEED!.forceStale(false)
   })
-  await expect(page.getByTestId('feed-stale')).toHaveCount(0)
+  await expect(page.getByTestId('feed-reconnect')).toHaveCount(0)
 })
 
-test('prints soak ≥10s Soft FAIL FEED STALE under normal poll', async ({ page }) => {
+test('prints soak ≥10s keeps the clock live with no FEED STALE banner', async ({ page }) => {
   test.setTimeout(45_000)
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
@@ -861,8 +863,8 @@ test('prints soak ≥10s Soft FAIL FEED STALE under normal poll', async ({ page 
   expect(end.flag).toBe('0')
 })
 
-test('3s print latency Soft FAIL banner; 12s dead paints; recover clears', async ({ page }) => {
-  test.setTimeout(60_000)
+test('clock advances 5s wall time with a 4s print delay and no FEED STALE banner', async ({ page }) => {
+  test.setTimeout(45_000)
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
@@ -871,56 +873,36 @@ test('3s print latency Soft FAIL banner; 12s dead paints; recover clears', async
       timeout: 20_000,
     })
     .toBe(true)
-  await expect(page.getByTestId('desk')).toHaveAttribute('data-feed-stale-ms', '8000')
-  await page.evaluate(() => {
-    ;(window as Window & { __HUB_TEST_FEED?: { delayPrints: (ms: number) => void } }).__HUB_TEST_FEED!.delayPrints(3000)
-  })
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-feed-stale-ms', '15000')
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-print-ms', '250')
+  const closeAt = Date.now() + 8 * 60_000
+  await page.evaluate((at) => {
+    const w = window as Window & {
+      __HUB_TEST_CLOSE_CLOCK?: { tradingActive: boolean; stale: boolean; closeAt: number }
+      __HUB_TEST_OPEN_MARKETS?: Record<string, number>
+      __HUB_TEST_FEED?: { delayPrints: (ms: number) => void }
+    }
+    w.__HUB_TEST_OPEN_MARKETS = { btc: 1, ng: 1, cu: 1, gld: 1, wti: 1, slv: 1 }
+    w.__HUB_TEST_CLOSE_CLOCK = { tradingActive: true, stale: false, closeAt: at }
+    w.__HUB_TEST_FEED!.delayPrints(4000)
+  }, closeAt)
+  await expect(page.getByTestId('close-clock-btc')).toHaveAttribute('data-clock-kind', 'live')
+  const startText = (await page.getByTestId('close-clock-btc').textContent()) ?? ''
+  const parse = (t: string) => {
+    const m = t.trim().match(/^(\d+):(\d{2})$/)
+    if (!m) return null
+    return Number(m[1]) * 60 + Number(m[2])
+  }
+  const startSec = parse(startText)
+  expect(startSec).toBeGreaterThan(60)
   await page.waitForTimeout(5_200)
-  const slow = await page.evaluate(() => {
-    const w = window as Window & { __HUB_TEST_FEED?: { stale: () => boolean; threshold: () => number } }
-    return {
-      stale: w.__HUB_TEST_FEED!.stale(),
-      banner: Boolean(document.querySelector('[data-testid="feed-stale"]')),
-      flag: document.querySelector('[data-testid="desk"]')?.getAttribute('data-feed-stale'),
-      threshold: w.__HUB_TEST_FEED!.threshold(),
-    }
-  })
-  expect(slow.stale).toBe(false)
-  expect(slow.banner).toBe(false)
-  expect(slow.flag).toBe('0')
-  expect(slow.threshold).toBeGreaterThanOrEqual(8000)
-  await page.evaluate(() => {
-    const w = window as Window & {
-      __HUB_TEST_FEED?: {
-        delayPrints: (ms: number) => void
-        killPrints: (on?: boolean) => void
-        resetRtt: () => void
-        refetchPrints: () => void
-      }
-    }
-    w.__HUB_TEST_FEED!.delayPrints(0)
-  })
-  await page.waitForTimeout(4_000)
-  await page.evaluate(() => {
-    const w = window as Window & {
-      __HUB_TEST_FEED?: {
-        killPrints: (on?: boolean) => void
-        resetRtt: () => void
-        refetchPrints: () => void
-      }
-    }
-    w.__HUB_TEST_FEED!.resetRtt()
-    w.__HUB_TEST_FEED!.killPrints(true)
-    w.__HUB_TEST_FEED!.refetchPrints()
-  })
-  await page.waitForTimeout(12_200)
-  await expect(page.getByTestId('feed-stale')).toBeVisible({ timeout: 8_000 })
-  await expect(page.getByTestId('desk')).toHaveAttribute('data-feed-stale', '1')
-  await page.evaluate(() => {
-    const w = window as Window & { __HUB_TEST_FEED?: { killPrints: (on?: boolean) => void; refetchPrints: () => void } }
-    w.__HUB_TEST_FEED!.killPrints(false)
-    w.__HUB_TEST_FEED!.refetchPrints()
-  })
-  await expect(page.getByTestId('feed-stale')).toHaveCount(0, { timeout: 15_000 })
+  const endText = (await page.getByTestId('close-clock-btc').textContent()) ?? ''
+  const endSec = parse(endText)
+  expect(endSec).not.toBeNull()
+  expect(startSec! - endSec!).toBeGreaterThanOrEqual(4)
+  expect(startSec! - endSec!).toBeLessThanOrEqual(7)
+  await expect(page.getByTestId('feed-stale')).toHaveCount(0)
+  await expect(page.getByTestId('feed-reconnect')).toHaveCount(0)
   await expect(page.getByTestId('desk')).toHaveAttribute('data-feed-stale', '0')
+  await expect(page.getByTestId('live-btc')).not.toHaveText('')
 })

@@ -1,25 +1,21 @@
 import { useEffect, useState } from 'react'
 
-/** One desk clock. Soft FAIL a rAF loop per tape / chart / timer. Soft FAIL 1Hz. */
+/** Local desk clock. Countdown and NOW ease off this, not the print poll. */
 export const DESK_TICK_MS = 100
-/** Floor for visible FEED STALE. Soft FAIL 2.5s — real getLivePrints is often 3–6s. */
-export const FEED_STALE_MS = 8_000
-/** Adaptive ceiling: max(FEED_STALE_MS, last successful print RTT × this). */
-export const FEED_STALE_RTT_MULT = 3
-/** Cap so a slow RTT Soft FAIL hiding a truly dead feed. */
-export const FEED_STALE_MAX_MS = 20_000
-/** How often the desk re-checks stale. Soft FAIL a 100ms full-tree render just to paint the banner. */
+/** Quiet reconnect only after the print snapshot is this dead. No orange cry-wolf banner. */
+export const FEED_RECONNECT_MS = 15_000
+export const FEED_STALE_MS = FEED_RECONNECT_MS
 export const FEED_STALE_CHECK_MS = 400
-/** Recover refetch gap. Soft FAIL pile-up that Soft FAILs the host. */
-export const FEED_STALE_RECOVER_MS = 8_000
+export const FEED_STALE_RECOVER_MS = 15_000
+export const FEED_STALE_RTT_MULT = 1
+export const FEED_STALE_MAX_MS = FEED_RECONNECT_MS
 
-export function feedStaleThreshold(lastPrintRttMs = 0) {
-  const rtt = Number.isFinite(lastPrintRttMs) && lastPrintRttMs > 0 ? lastPrintRttMs : 0
-  return Math.min(FEED_STALE_MAX_MS, Math.max(FEED_STALE_MS, Math.round(rtt * FEED_STALE_RTT_MULT)))
+export function feedStaleThreshold(_lastPrintRttMs = 0) {
+  return FEED_RECONNECT_MS
 }
 
-/** Soft FAIL banner while a print is in flight under threshold. Soft FAIL 2.5s false alarm. Soft FAIL silent freeze. */
-export function feedIsStale(opts: {
+/** True only when the last good print is older than 15s. 4s latency is live. */
+export function feedNeedsReconnect(opts: {
   now: number
   hostReady: boolean
   force?: boolean
@@ -30,15 +26,18 @@ export function feedIsStale(opts: {
 }): boolean {
   if (opts.force) return true
   if (!opts.hostReady) return false
-  const threshold = feedStaleThreshold(opts.lastPrintRttMs)
   const started = opts.fetchStartedAt ?? 0
   const fetchAge = started > 0 ? opts.now - started : 0
-  if (opts.fetching && fetchAge < threshold) return false
-  if (opts.lastPrintOkAt && opts.now - opts.lastPrintOkAt <= threshold) return false
-  if (opts.fetching && fetchAge >= threshold) return true
-  if (opts.lastPrintOkAt && opts.now - opts.lastPrintOkAt > threshold) return true
-  if (!opts.lastPrintOkAt && started > 0 && fetchAge > threshold) return true
+  if (opts.fetching && fetchAge < FEED_RECONNECT_MS) return false
+  if (opts.lastPrintOkAt && opts.now - opts.lastPrintOkAt <= FEED_RECONNECT_MS) return false
+  if (opts.fetching && fetchAge >= FEED_RECONNECT_MS) return true
+  if (opts.lastPrintOkAt && opts.now - opts.lastPrintOkAt > FEED_RECONNECT_MS) return true
+  if (!opts.lastPrintOkAt && started > 0 && fetchAge > FEED_RECONNECT_MS) return true
   return false
+}
+
+export function feedIsStale(opts: Parameters<typeof feedNeedsReconnect>[0]): boolean {
+  return feedNeedsReconnect(opts)
 }
 
 type TickFn = (now: number) => void
