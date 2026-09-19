@@ -1045,7 +1045,7 @@ function TapeRow({
 
   const fillLine = ticket ? ticketFillStrip(ticket, shownQuote, booked) : ''
   const session = tapeSessionHours(id)
-  const tradingLive = Boolean(liveOn && !stale && session.open)
+  const tradingLive = Boolean(liveOn && !stale)
   const hoursLine = tapeHoursLine(id, shownQuote, clock, Date.now(), tradingLive)
   const nextOpenLabel = session.open ? nextClockLabel(Date.now(), clock, shownQuote) : session.nextOpenLabel
   const modeLabel = ticket ? (ticket.orderId.startsWith('deskfill') || booked?.kind === 'paper' ? 'PAPER' : 'LIVE') : 'PAPER'

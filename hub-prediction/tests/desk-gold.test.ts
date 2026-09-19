@@ -151,6 +151,23 @@ describe('settings persist', () => {
     expect(again).not.toHaveProperty('liveBets')
   })
 
+  it('hydrate Soft KEEP Bot / Live cash / contracts even without togglesPicked', () => {
+    const raw = {
+      tapes: {
+        btc: { contracts: 10, botOn: false, liveOn: true },
+        ng: { contracts: 8, botOn: true, liveOn: true },
+        cu: { contracts: 5, botOn: false, liveOn: false },
+        gld: { contracts: 3, botOn: true, liveOn: false },
+      },
+    }
+    const s = hydrateSettings(raw)
+    expect(s.tapes.btc).toMatchObject({ contracts: 10, botOn: false, liveOn: true })
+    expect(s.tapes.ng).toMatchObject({ contracts: 8, botOn: true, liveOn: true })
+    expect(s.tapes.cu).toMatchObject({ contracts: 5, botOn: false, liveOn: false })
+    expect(s.tapes.gld).toMatchObject({ contracts: 3, botOn: true, liveOn: false })
+    expect(s).not.toHaveProperty('liveBets')
+  })
+
   it('keeps Bot OFF and Live cash ON after reload when the user picked them', () => {
     const first = loadSettings()
     expect(first.tapes.btc.botOn).toBe(true)

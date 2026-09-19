@@ -615,8 +615,9 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     const stored = o.tapes?.[id]
     const next = recipeFrom(stored, gold, id)
     if (stored) {
-      if (picked && typeof stored.botOn === 'boolean') next.botOn = stored.botOn === true
-      next.liveOn = stored.liveOn === true
+      if (typeof stored.botOn === 'boolean') next.botOn = stored.botOn === true
+      if (typeof stored.liveOn === 'boolean') next.liveOn = stored.liveOn === true
+      if (stored.contracts != null) next.contracts = clampContracts(Number(stored.contracts))
     }
     tapes[id] = next
   }

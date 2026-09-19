@@ -1211,6 +1211,8 @@ test('phone 390: TO BEAT and NOW are not same-line; tape cards do not overflow',
         sameLine,
         clock: (document.querySelector(`[data-testid="close-clock-${tapeId}"]`) as HTMLElement | null)?.textContent || '',
         kind: (document.querySelector(`[data-testid="close-clock-${tapeId}"]`) as HTMLElement | null)?.getAttribute('data-clock-kind') || '',
+        liveFlag: Boolean(card.querySelector('.tape-live-flag')),
+        staleFlag: Boolean(card.querySelector(`[data-testid="stale-${tapeId}"]`)),
       }
     }, id)
     expect(hit.sameLine).toBe(false)
@@ -1218,8 +1220,13 @@ test('phone 390: TO BEAT and NOW are not same-line; tape cards do not overflow',
     expect(hit.nowBelow || hit.nowClearRight).toBe(true)
     expect(hit.overflow).toBeLessThanOrEqual(1)
     expect(hit.clock).not.toMatch(/\d{3,}:/)
+    if (hit.liveFlag && !hit.staleFlag) {
+      expect(hit.kind).toBe('live')
+      expect(hit.clock).not.toMatch(/CLOSED/)
+      expect(hit.clock.trim()).toMatch(/^(\d{1,2}:\d{2}|--:--)$/)
+    }
     if (hit.kind === 'closed') expect(hit.clock).toMatch(/CLOSED/)
-    if (hit.kind === 'live') expect(hit.clock.trim()).toMatch(/^\d{1,2}:\d{2}$/)
+    if (hit.kind === 'live') expect(hit.clock.trim()).toMatch(/^(\d{1,2}:\d{2}|--:--)$/)
     await expect(page.getByTestId(`beat-label-${id}`)).toHaveText('TO BEAT')
     await expect(page.getByTestId(`hours-${id}`)).toContainText(/Hours/)
   }

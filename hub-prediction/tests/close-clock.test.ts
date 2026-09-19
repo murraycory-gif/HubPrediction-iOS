@@ -22,7 +22,7 @@ describe('closeClockView — countdown only while LIVE', () => {
     expect(view.text).not.toMatch(/^\d{2}:\d{2}$/)
   })
 
-  it('live but more than 2h away is CLOSED, not a huge wait', () => {
+  it('live but more than 2h away is --:--, never CLOSED', () => {
     const now = 1_700_000_000_000
     const view = closeClockView({
       closeAt: now + LIVE_COUNTDOWN_MAX_MS + 1,
@@ -30,7 +30,22 @@ describe('closeClockView — countdown only while LIVE', () => {
       now,
       nextOpenLabel: 'Sun 5:00 PM',
     })
-    expect(view).toEqual({ kind: 'closed', text: 'CLOSED · Sun 5:00 PM' })
+    expect(view).toEqual({ kind: 'live', text: '--:--' })
+    expect(view.text).not.toMatch(/CLOSED/)
+  })
+
+  it('Friday night CU LIVE 15m is mm:ss, not CLOSED · Sunday', () => {
+    const now = Date.parse('2026-09-18T21:25:00-05:00')
+    const closeAt = Date.parse('2026-09-18T21:30:00-05:00')
+    const view = closeClockView({
+      closeAt,
+      live: true,
+      now,
+      nextOpenLabel: 'Sun Sep 20 5:00 PM',
+    })
+    expect(view.kind).toBe('live')
+    expect(view.text).toBe('05:00')
+    expect(view.text).not.toMatch(/CLOSED/)
   })
 
   it('not live always CLOSED even with a near closeAt', () => {
