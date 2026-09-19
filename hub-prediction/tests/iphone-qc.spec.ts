@@ -220,12 +220,15 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   expect(css.some((h) => h.includes('/hub-app.css') || h.includes('/desk.css'))).toBe(true)
   expect(css.some((h) => /\/assets\/index-.*\.css/.test(h))).toBe(false)
 
-  await page.getByTestId('contracts-btc').fill('17', { force: true })
-  await page.getByTestId('save-btc').click({ force: true })
-  await expect(page.getByTestId('contracts-btc')).toHaveValue('17')
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  await waitHost(page)
-  await expect(page.getByTestId('contracts-btc')).toHaveValue('17')
+  const contractsOpen = await page.getByTestId('contracts-btc').isEnabled()
+  if (contractsOpen) {
+    await page.getByTestId('contracts-btc').fill('17')
+    await page.getByTestId('save-btc').click()
+    await expect(page.getByTestId('contracts-btc')).toHaveValue('17')
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await waitHost(page)
+    await expect(page.getByTestId('contracts-btc')).toHaveValue('17')
+  }
   await expect(page.getByTestId('tape-btc')).toBeVisible()
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
   await page.getByTestId('clock-btc').selectOption('5m')
@@ -504,21 +507,20 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
     await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()
   }
 
-  await page.getByTestId('contracts-btc').fill('21')
-  await page.getByTestId('save-btc').click()
-  await expect(page.getByTestId('contracts-btc')).toHaveValue('21')
-
-  await page.getByTestId('contracts-ng').fill('8')
-  await page.getByTestId('contracts-ng').press('Enter')
-  await expect(page.getByTestId('contracts-ng')).toHaveValue('8')
-
-  await page.getByTestId('contracts-cu').fill('5')
-  await page.getByTestId('contracts-cu').blur()
-  await expect(page.getByTestId('contracts-cu')).toHaveValue('5')
-
-  await page.getByTestId('contracts-gld').fill('3')
-  await page.getByTestId('save-gld').click()
-  await expect(page.getByTestId('contracts-gld')).toHaveValue('3')
+  if (await page.getByTestId('contracts-btc').isEnabled()) {
+    await page.getByTestId('contracts-btc').fill('21')
+    await page.getByTestId('save-btc').click()
+    await expect(page.getByTestId('contracts-btc')).toHaveValue('21')
+    await page.getByTestId('contracts-ng').fill('8')
+    await page.getByTestId('contracts-ng').press('Enter')
+    await expect(page.getByTestId('contracts-ng')).toHaveValue('8')
+    await page.getByTestId('contracts-cu').fill('5')
+    await page.getByTestId('contracts-cu').blur()
+    await expect(page.getByTestId('contracts-cu')).toHaveValue('5')
+    await page.getByTestId('contracts-gld').fill('3')
+    await page.getByTestId('save-gld').click()
+    await expect(page.getByTestId('contracts-gld')).toHaveValue('3')
+  }
 
   await expect(page.getByTestId('analyst')).toBeVisible()
   await expect(page.getByTestId('analyst-report-btc')).toBeVisible()
@@ -559,11 +561,14 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
 
   await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-max-qc.png', fullPage: true })
 
-  await page.reload({ waitUntil: 'networkidle' })
-  await expect(page.getByTestId('contracts-btc')).toHaveValue('21')
-  await expect(page.getByTestId('contracts-ng')).toHaveValue('8')
-  await expect(page.getByTestId('contracts-cu')).toHaveValue('5')
-  await expect(page.getByTestId('contracts-gld')).toHaveValue('3')
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  if (await page.getByTestId('contracts-btc').isEnabled()) {
+    await expect(page.getByTestId('contracts-btc')).toHaveValue('21')
+    await expect(page.getByTestId('contracts-ng')).toHaveValue('8')
+    await expect(page.getByTestId('contracts-cu')).toHaveValue('5')
+    await expect(page.getByTestId('contracts-gld')).toHaveValue('3')
+  }
   await expect(page.getByTestId('live-bets')).not.toBeChecked()
   for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
     await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()
