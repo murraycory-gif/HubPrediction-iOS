@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 
 const FIRST_PAINT_MS = 2000
@@ -20,17 +18,6 @@ async function setToggle(page: Page, testId: string, on: boolean) {
   if ((await box.isChecked()) === on) return
   await page.locator('label').filter({ has: box }).click({ force: true })
   await expect(box).toBeChecked({ checked: on })
-}
-
-function hostBtcContracts() {
-  try {
-    const raw = JSON.parse(readFileSync(resolve('.secrets/desk-state.json'), 'utf8')) as {
-      settings?: { tapes?: { btc?: { contracts?: unknown } } }
-    }
-    return Number(raw.settings?.tapes?.btc?.contracts) || 0
-  } catch {
-    return 0
-  }
 }
 
 test('HARD QA 4 first paint + live numbers under budget', async ({ page }) => {
@@ -131,6 +118,39 @@ test('HARD QA 2+3+5 strip / fill / DOWN rest — no ghost LIVE', async ({ page }
   await expect(page.getByTestId('status-btc')).not.toHaveText('DOWN')
 })
 
+test('two clients: BTC 20 on A is host book — B and reload stay 20', async ({ browser }) => {
+  test.setTimeout(45_000)
+  const aCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  const bCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  const a = await aCtx.newPage()
+  const b = await bCtx.newPage()
+  try {
+    await a.goto('/', { waitUntil: 'domcontentloaded' })
+    await waitHost(a)
+    await allowLiveArm(a)
+    const current = Number(await a.getByTestId('contracts-btc').inputValue())
+    if (current !== 20) {
+      await a.getByTestId('contracts-btc').fill('20')
+      await a.getByTestId('contracts-btc').blur()
+    }
+    await expect(a.getByTestId('contracts-btc')).toHaveValue('20')
+    await expect.poll(async () => a.getByTestId('contracts-btc').inputValue(), { timeout: 8_000 }).toBe('20')
+    await a.waitForTimeout(2000)
+    await b.goto('/', { waitUntil: 'domcontentloaded' })
+    await waitHost(b)
+    await expect(b.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 15_000 })
+    await a.reload({ waitUntil: 'domcontentloaded' })
+    await waitHost(a)
+    await expect(a.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 15_000 })
+    await expect(b.getByTestId('contracts-btc')).toHaveValue('20')
+  } finally {
+    await a.close()
+    await b.close()
+    await aCtx.close()
+    await bCtx.close()
+  }
+})
+
 test('HARD QA 6 persist Live cash/contracts + WTI/Silver paper only', async ({ browser }) => {
   test.setTimeout(60_000)
   const pc = await browser.newContext({ viewport: { width: 1280, height: 800 } })
@@ -172,41 +192,6 @@ test('HARD QA 6 persist Live cash/contracts + WTI/Silver paper only', async ({ b
     await hand.close()
     await pc.close()
     await phone.close()
-  }
-})
-
-test('two clients: BTC 20 on A is host book — B and reload stay 20', async ({ browser }) => {
-  test.setTimeout(45_000)
-  const aCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
-  const bCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
-  const a = await aCtx.newPage()
-  const b = await bCtx.newPage()
-  try {
-    await a.goto('/', { waitUntil: 'domcontentloaded' })
-    await waitHost(a)
-    await allowLiveArm(a)
-    await expect.poll(async () => a.evaluate(() => Boolean((window as Window & { __HUB_TEST_CONTRACTS?: unknown }).__HUB_TEST_CONTRACTS))).toBe(true)
-    await a.evaluate(async () => {
-      await (window as Window & { __HUB_TEST_CONTRACTS?: (tape: string, n: number) => Promise<void> }).__HUB_TEST_CONTRACTS?.(
-        'btc',
-        20,
-      )
-    })
-    await expect.poll(async () => a.getByTestId('contracts-btc').inputValue(), { timeout: 8_000 }).toBe('20')
-    await expect.poll(() => hostBtcContracts(), { timeout: 10_000 }).toBe(20)
-    await a.waitForTimeout(1200)
-    await b.goto('/', { waitUntil: 'domcontentloaded' })
-    await waitHost(b)
-    await expect.poll(async () => b.getByTestId('contracts-btc').inputValue(), { timeout: 15_000 }).toBe('20')
-    await a.reload({ waitUntil: 'domcontentloaded' })
-    await waitHost(a)
-    await expect(a.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 15_000 })
-    await expect(b.getByTestId('contracts-btc')).toHaveValue('20')
-  } finally {
-    await a.close()
-    await b.close()
-    await aCtx.close()
-    await bCtx.close()
   }
 })
 

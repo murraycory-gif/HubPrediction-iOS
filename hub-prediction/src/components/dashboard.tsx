@@ -832,16 +832,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         setBook((prev) => ({ ...prev, bets: [...prev.bets, bet] }))
       },
     }
-    ;(w as Window & { __HUB_TEST_CONTRACTS?: (tape: TapeId, n: number) => Promise<void> }).__HUB_TEST_CONTRACTS = async (tape, n) => {
-      const next = patchTape(loadSettings(), tape, { contracts: clampContracts(n) })
-      setSettings(next)
-      await saveDeskState({ data: { settings: next } })
-    }
     return () => {
       delete w.__HUB_TEST_CHIEF
       delete w.__HUB_APPLY_BOOK
       delete w.__HUB_TEST_BETS
-      delete (w as Window & { __HUB_TEST_CONTRACTS?: unknown }).__HUB_TEST_CONTRACTS
     }
   })
 
@@ -924,7 +918,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const desk24 = last24hBets(book, hits, Date.now(), TAPE_IDS)
   const desk24Ref = useRef(desk24)
-  const reset24 = (window as Window & { __HUB_RESET_BETS24?: boolean }).__HUB_RESET_BETS24 === true
+  const reset24 =
+    typeof window !== 'undefined' && (window as Window & { __HUB_RESET_BETS24?: boolean }).__HUB_RESET_BETS24 === true
   if (reset24) {
     desk24Ref.current = desk24
     delete (window as Window & { __HUB_RESET_BETS24?: boolean }).__HUB_RESET_BETS24
