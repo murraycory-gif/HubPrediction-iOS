@@ -93,7 +93,7 @@ describe('EXIT WATCH paper', () => {
     expect(d.vel).toBeGreaterThanOrEqual(VELOCITY_USD_PER_SEC)
     expect(d.locked).toBeGreaterThanOrEqual(MIN_LOCK_USD)
     expect(d.why).toMatch(/Profit lock/)
-    expect(d.why).toMatch(/Live Soft FAIL/)
+    expect(d.why).toMatch(/No Live sell/)
     expect(d.liveSell).toBe(false)
     expect(contractBidCents('up', 75, 22)).toBe(78)
     expect(exitLockedDollars({ count: 20, entryAsk: 70, bidCents: 78 })).toBeGreaterThanOrEqual(MIN_LOCK_USD)
@@ -143,7 +143,7 @@ describe('EXIT WATCH paper', () => {
     expect(salvageHold.action).toBe('hold')
     expect(salvageHold.locked).toBeLessThan(MIN_LOCK_USD)
     expect(salvageHold.dist).toBeGreaterThanOrEqual(BUFFER_SALVAGE_USD)
-    expect(salvageHold.why).toMatch(/salvage above \$12/)
+    expect(salvageHold.why).toMatch(/salvage sits above \$12/)
 
     const salvageExit = decideExitWatch(
       fill({

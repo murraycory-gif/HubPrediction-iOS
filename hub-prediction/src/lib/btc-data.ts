@@ -192,8 +192,10 @@ export const placeKalshi = createServerFn({ method: 'POST' })
     })
     if (!gate.ok) throw new Error(gate.reason)
     const { askAllowedByGold } = await import('./finance')
+    const { hydrateSettings, isTapeId } = await import('./tapes')
     const ask = data.side === 'down' ? data.noAsk : data.yesAsk
-    if (data.tape && !askAllowedByGold(data.tape, ask)) {
+    const recipe = data.tape && isTapeId(data.tape) ? hydrateSettings(host?.settings).tapes[data.tape] : undefined
+    if (data.tape && !askAllowedByGold(data.tape, ask, { recipe })) {
       throw new Error(`Ask ${ask}¢ skip (≥80 unless locked)`)
     }
     return placeContract({

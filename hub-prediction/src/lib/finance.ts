@@ -82,7 +82,7 @@ export const LIVE_PAIR_SECONDARY = ['ng', 'cu'] as const
 /** BTC + one of NG/CU. Soft FAIL 3–4 Live clocks. Soft FAIL GLD in the pair. */
 export function livePairGate(tape: TapeId, heat: readonly TapeId[]): Gate {
   if (heat.includes(tape)) return { ok: true }
-  if (tape === 'gld') return { ok: false, reason: 'GLD Soft FAIL Live pair — BTC + one of NG/CU' }
+  if (tape === 'gld') return { ok: false, reason: 'GLD paper pair — Live is BTC + one of NG/CU' }
   if (tape === 'ng' || tape === 'cu') {
     const other = tape === 'ng' ? 'cu' : 'ng'
     if (heat.includes(other)) return { ok: false, reason: 'Live pair is BTC + one of NG/CU' }
@@ -538,14 +538,14 @@ export function paper48hPassed(state: FinanceState, now = Date.now()) {
 export const LIVE_ASK_HI = ASK_CAP - 1
 
 /** Soft FAIL Live ask ≥80¢ unless the book is explicitly locked. Soft FAIL treating factory centHi 89 as that lock. */
-export function askAllowedByGold(tape: TapeId, ask: number, opts?: { locked?: boolean }) {
+export function askAllowedByGold(tape: TapeId, ask: number, opts?: { locked?: boolean; recipe?: TapeRecipe }) {
   if (!Number.isFinite(ask)) return false
-  const gold = GOLD_RECIPES[tape]
+  const band = opts?.recipe ?? GOLD_RECIPES[tape]
   if (ask >= ASK_CAP) {
     if (opts?.locked !== true) return false
-    return ask >= gold.centLo && ask <= gold.centHi
+    return ask >= band.centLo && ask <= band.centHi
   }
-  return ask >= gold.centLo && ask <= Math.min(gold.centHi, LIVE_ASK_HI)
+  return ask >= band.centLo && ask <= Math.min(band.centHi, LIVE_ASK_HI)
 }
 
 export function recommendSize(tape: TapeId) {
@@ -614,13 +614,13 @@ export function liveArmGate(
   if (!opts.hasKeys) return { ok: false, reason: 'LIVE needs keys' }
   const settled = state.bets.filter((b) => b.status === 'settled').length
   if (!paper48hPassed(state, now) && settled < 12) {
-    return { ok: false, reason: `Paper ${paperHoursLeft(state, now).toFixed(1)}h left — Soft FAIL Live ON` }
+    return { ok: false, reason: `Paper ${paperHoursLeft(state, now).toFixed(1)}h left — Live cash stays off` }
   }
   const cash = opts.cash
   if (!Number.isFinite(cash ?? NaN)) return { ok: false, reason: 'LIVE needs Kalshi cash' }
   const floor = liveCashFloor(opts.deposits)
   if ((cash as number) < floor) {
-    return { ok: false, reason: `Cash ${cash} under live floor ${floor} — Soft FAIL Live` }
+    return { ok: false, reason: `Cash ${cash} under live floor ${floor} — Live cash stays off` }
   }
   return { ok: true }
 }
@@ -722,7 +722,9 @@ export function liveTapeDecision(opts: {
   if (lean === 'sit') return { action: 'sit', reason: 'Sit — no through / hug' }
   const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
   const askOk =
-    ask != null && Number.isFinite(ask) && (opts.liveCash ? askAllowedByGold(opts.id, ask) : askInBand(ask, opts.recipe))
+    ask != null &&
+    Number.isFinite(ask) &&
+    (opts.liveCash ? askAllowedByGold(opts.id, ask, { recipe: opts.recipe }) : askInBand(ask, opts.recipe))
   if (!askOk) return { action: 'sit', reason: 'Sit — ask out of band' }
   const call = liveBotCall({
     tabOpen: opts.tabOpen !== false,
@@ -814,15 +816,16 @@ export function liveSendGate(
     deposits: number | null
     spent: number
     locked?: boolean
-    /** Already-Live tape. Soft FAIL feeEV / paper48h / lock-in / 12-settle sit. */
+    recipe?: TapeRecipe
+    /** Already-Live tape. Skip feeEV / paper48h / lock-in / 12-settle sit. */
     liveOn?: boolean
   },
   now = Date.now(),
 ): Gate {
   if (state.killed) return { ok: false, reason: 'KILL on — Place blocked until cleared' }
-  if (!tapeAllowsLive(opts.tape)) return { ok: false, reason: `${TAPE_META[opts.tape].label} paper desk — Soft FAIL Live` }
+  if (!tapeAllowsLive(opts.tape)) return { ok: false, reason: `${TAPE_META[opts.tape].label} paper desk — Live cash stays off` }
   if (!opts.ticker) return { ok: false, reason: 'No ticker' }
-  if (!askAllowedByGold(opts.tape, opts.ask, { locked: opts.locked === true })) {
+  if (!askAllowedByGold(opts.tape, opts.ask, { locked: opts.locked === true, recipe: opts.recipe })) {
     return { ok: false, reason: `Ask ${opts.ask}¢ skip (≥${ASK_CAP} unless locked)` }
   }
   const alreadyLive = opts.liveOn === true
@@ -872,7 +875,7 @@ export function bookFill(
   },
 ): { ok: true; state: FinanceState; bet: BookedBet } | { ok: false; state: FinanceState; reason: string } {
   if (!isPaperOrderId(input.orderId) && !isRealOrderId(input.orderId)) {
-    return { ok: false, state, reason: 'Soft FAIL ghost BOT BOUGHT — no real order id' }
+    return { ok: false, state, reason: 'No Kalshi fill — ghost BOT BOUGHT blocked' }
   }
   if (openDeskFillOnTicker(state, input.ticker)) {
     return { ok: false, state, reason: 'One ticket/clock — already booked' }
@@ -1285,11 +1288,11 @@ export function recipeRetuneGate(state: FinanceState, patch: Partial<TapeRecipe>
   if (!isRecipeRetune(patch)) return { ok: true }
   if (state.killed) return { ok: false, reason: 'KILL on — recipe lock' }
   if (chasingLosses(state, now)) {
-    return { ok: false, reason: 'Soft FAIL mid-session recipe retune to chase losses' }
+    return { ok: false, reason: 'Recipe lock — mid-session retune blocked while chasing losses' }
   }
   return { ok: true }
 }
 
 export function financeSendsOrders(): never {
-  throw new Error('Soft FAIL: finance manager must not send Kalshi orders')
+  throw new Error('Finance manager must not send Kalshi orders')
 }

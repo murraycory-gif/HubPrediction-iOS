@@ -157,19 +157,19 @@ export function tapeLiveArmGate(id: TapeId, quote?: ChiefQuote | null, now = Dat
   const test = readTestLiveArm()
   if (test) return test
   if (!tapeAllowsLive(id)) {
-    return { ok: false, reason: `${TAPE_META[id].label} paper desk — Soft FAIL Live` }
+    return { ok: false, reason: `${TAPE_META[id].label} paper desk — Live cash stays off` }
   }
   const session = tapeSessionHours(id, now)
   const closed = quote?.tradingActive === false
   const stale = quote?.stale === true || closed
   if (id === 'gld' && (stale || closed || quote?.tradingActive !== true)) {
-    return { ok: false, reason: 'GLD STALE — Soft FAIL Live arm' }
+    return { ok: false, reason: 'GLD STALE — Live cash stays off' }
   }
   if (stale || closed) {
-    return { ok: false, reason: `${TAPE_META[id].label} STALE/CLOSED — Soft FAIL Live arm` }
+    return { ok: false, reason: `${TAPE_META[id].label} STALE/CLOSED — Live cash stays off` }
   }
   if (!session.open && quote?.tradingActive !== true) {
-    return { ok: false, reason: `${TAPE_META[id].label} hours closed — Soft FAIL Live arm` }
+    return { ok: false, reason: `${TAPE_META[id].label} hours closed — Live cash stays off` }
   }
   return { ok: true }
 }
@@ -559,9 +559,9 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
     const blockLiveUp = !sizeUp
       ? ''
       : killed
-        ? 'KILL on — Soft FAIL Live size-up'
+        ? 'KILL on — Live size-up stays off'
         : Number.isFinite(input.cash ?? NaN) && (input.cash as number) < floor
-          ? `Cash ${input.cash} under live floor ${floor} — Soft FAIL Live size-up`
+          ? `Cash ${input.cash} under live floor ${floor} — Live size-up stays off`
           : !arm.ok
             ? arm.reason
             : !pair.ok
@@ -647,7 +647,7 @@ export function decideChiefProposal(state: ChiefState, id: string, accept: boole
   const p = next.proposals[i]
   if (p.kind === 'live-arm') {
     next.proposals[i] = { ...p, status: accept ? 'rejected' : 'rejected' }
-    next.actions = remember(next.actions, `${TAPE_META[p.tape].label} Live arm stays a toggle — Chief Soft FAIL Live ON`, p.tape, now)
+    next.actions = remember(next.actions, `${TAPE_META[p.tape].label} Live arm stays a toggle — Chief does not flip Live ON`, p.tape, now)
     return { state: { ...next, asOf: now }, apply: null, liveOn: false }
   }
   if (p.kind === 'block') {

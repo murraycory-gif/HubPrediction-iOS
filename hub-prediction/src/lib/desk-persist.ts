@@ -27,8 +27,22 @@ function settingsTapes(raw: unknown) {
   return tapes && typeof tapes === 'object' ? tapes : {}
 }
 
+const GOLD_LIVE_ON: Record<string, boolean> = {
+  btc: true,
+  ng: false,
+  cu: false,
+  gld: false,
+  wti: false,
+  slv: false,
+}
+
+/** Paper-tape Live cash ON after a user toggle. Factory BTC Live ON is not a user pick. */
 export function settingsHasUserLive(settings: unknown) {
-  return Object.values(settingsTapes(settings)).some((t) => t?.liveOn === true)
+  if (settingsTogglesAt(settings) <= 0) {
+    const o = settings && typeof settings === 'object' ? (settings as { togglesPicked?: unknown }) : null
+    if (o?.togglesPicked !== true) return false
+  }
+  return TOGGLE_IDS.some((id) => settingsTapes(settings)[id]?.liveOn === true && GOLD_LIVE_ON[id] !== true)
 }
 
 export function settingsTogglesAt(settings: unknown): number {
@@ -49,10 +63,10 @@ function tapeContracts(t: { contracts?: unknown } | undefined) {
 function tapeIsGoldDefault(t: { liveOn?: unknown; contracts?: unknown } | undefined, id: string) {
   if (!t) return true
   const factory: Record<string, { liveOn: boolean; contracts: number }> = {
-    btc: { liveOn: true, contracts: 20 },
-    ng: { liveOn: true, contracts: 15 },
-    cu: { liveOn: true, contracts: 15 },
-    gld: { liveOn: false, contracts: 1 },
+    btc: { liveOn: true, contracts: 30 },
+    ng: { liveOn: false, contracts: 30 },
+    cu: { liveOn: false, contracts: 30 },
+    gld: { liveOn: false, contracts: 30 },
     wti: { liveOn: false, contracts: 1 },
     slv: { liveOn: false, contracts: 1 },
   }
@@ -64,19 +78,14 @@ export function settingsHasUserPicks(settings: unknown) {
   if (!settings || typeof settings !== 'object') return false
   const o = settings as { togglesPicked?: unknown; togglesAt?: unknown }
   if (o.togglesPicked === true || (Number(o.togglesAt) || 0) > 0) return true
-  return TOGGLE_IDS.some((id) => {
-    const t = settingsTapes(settings)[id]
-    return !tapeIsGoldDefault(t, id) || t?.botOn === false
-  })
+  return TOGGLE_IDS.some((id) => settingsTapes(settings)[id]?.botOn === false)
 }
 
 function incomingIsUnsavedFactory(settings: unknown) {
   if (!settings || typeof settings !== 'object') return true
   const o = settings as { savedAt?: unknown; togglesPicked?: unknown; togglesAt?: unknown }
   if (o.togglesPicked === true || (Number(o.togglesAt) || 0) > 0) return false
-  const allGold = TOGGLE_IDS.every((id) => tapeIsGoldDefault(settingsTapes(settings)[id], id))
-  if (allGold) return true
-  return (Number(o.savedAt) || 0) === 0
+  return true
 }
 
 /** Soft FAIL GOLD contracts 1 / liveOn false overwriting a user/phone pick. */
@@ -98,13 +107,21 @@ function protectUserSizes(winner: unknown, other: unknown) {
     let liveOn = w.liveOn === true
     let botOn = w.botOn === true
     let contracts = wC
-    if (o.liveOn === true && w.liveOn !== true && !winnerNewer) {
-      liveOn = true
-      changed = true
-    }
-    if (o.liveOn !== true && w.liveOn === true && !winnerNewer) {
-      liveOn = false
-      changed = true
+    if (winT === 0 && otherT === 0) {
+      const goldLive = GOLD_LIVE_ON[id] === true
+      if (liveOn !== goldLive) {
+        liveOn = goldLive
+        changed = true
+      }
+    } else if (otherT > 0 && !winnerNewer) {
+      if (o.liveOn === true && w.liveOn !== true) {
+        liveOn = true
+        changed = true
+      }
+      if (o.liveOn !== true && w.liveOn === true) {
+        liveOn = false
+        changed = true
+      }
     }
     if (oC > 1 && wC !== oC && !winnerNewer) {
       contracts = oC

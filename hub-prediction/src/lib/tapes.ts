@@ -534,12 +534,12 @@ export const TAPE_META: Record<
   slv: { id: 'slv', label: 'SLV', short: 'SLV', series: 'KXSILVER15M', decimals: 2, pulseName: 'SILVER 15 MINUTE' },
 }
 
-/** Final locked Grok Build recipes — Soft FAIL inventing new ones. Soft FAIL sitting all day on 8→3 / $40 / 69¢. */
+/** Grok Build locked recipes (dump 2026-09-17). BTC Live cash ON. NG/CU/GLD paper. Host write wins. */
 export const GOLD_RECIPES: Record<TapeId, TapeRecipe> = {
-  btc: { contracts: 20, botOn: true, liveOn: true, armFromMin: 12, armToMin: 0.5, through: 15, centLo: 45, centHi: 89 },
-  ng: { contracts: 15, botOn: true, liveOn: true, armFromMin: 12, armToMin: 0.45, through: 0.001, centLo: 34, centHi: 89 },
-  cu: { contracts: 15, botOn: true, liveOn: true, armFromMin: 12, armToMin: 0.45, through: 0.001, centLo: 34, centHi: 89 },
-  gld: { contracts: 1, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 },
+  btc: { contracts: 30, botOn: true, liveOn: true, armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 },
+  ng: { contracts: 30, botOn: true, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
+  cu: { contracts: 30, botOn: true, liveOn: false, armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
+  gld: { contracts: 30, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 },
   wti: { contracts: 1, botOn: true, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.05, centLo: 34, centHi: 89 },
   slv: { contracts: 1, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 0.05, centLo: 34, centHi: 89 },
 }
@@ -639,19 +639,18 @@ function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe, 
   return next
 }
 
-/** Bots default ON. BTC/NG/CU gold Live cash ON. User Bot / Live cash choices persist. Soft FAIL factory 1/off overwrite. */
+/** Bots default ON. BTC Live cash ON. NG/CU/GLD paper. User toggles persist. Host write wins. */
 export function hydrateSettings(raw: unknown): DeskSettings {
   const o = raw && typeof raw === 'object' ? (raw as Partial<DeskSettings> & { tapes?: Partial<Record<TapeId, Partial<TapeRecipe>>> }) : {}
   const savedAt = Number((o as { savedAt?: unknown }).savedAt) || undefined
   const togglesAt = Number((o as { togglesAt?: unknown }).togglesAt) || undefined
+  const userToggles = o.togglesPicked === true || (togglesAt ?? 0) > 0
   const picked =
-    o.togglesPicked === true ||
-    (togglesAt ?? 0) > 0 ||
+    userToggles ||
     ((savedAt ?? 0) > 0 &&
       TAPE_IDS.some((id) => {
         const stored = o.tapes?.[id]
         return (
-          (typeof stored?.liveOn === 'boolean' && stored.liveOn !== GOLD_RECIPES[id].liveOn) ||
           (typeof stored?.botOn === 'boolean' && stored.botOn !== GOLD_RECIPES[id].botOn) ||
           (stored?.contracts != null && clampContracts(Number(stored.contracts)) !== GOLD_RECIPES[id].contracts)
         )
@@ -663,7 +662,8 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     const next = recipeFrom(stored, gold, id)
     if (stored) {
       if (typeof stored.botOn === 'boolean') next.botOn = stored.botOn === true
-      if (typeof stored.liveOn === 'boolean') next.liveOn = stored.liveOn === true
+      if (userToggles && typeof stored.liveOn === 'boolean') next.liveOn = stored.liveOn === true
+      else next.liveOn = gold.liveOn === true
       if (stored.contracts != null) next.contracts = clampContracts(Number(stored.contracts))
     }
     if (!tapeAllowsLive(id)) next.liveOn = false
@@ -881,7 +881,7 @@ export function hostLivePlaceGate(opts: {
   hasKeys?: boolean
 }) {
   if (!opts.tape || !isTapeId(opts.tape)) return { ok: false as const, reason: 'Kalshi POST needs a tape' }
-  if (!tapeAllowsLive(opts.tape)) return { ok: false as const, reason: `${opts.tape.toUpperCase()} paper desk — Soft FAIL Live` }
+  if (!tapeAllowsLive(opts.tape)) return { ok: false as const, reason: `${opts.tape.toUpperCase()} paper desk — Live cash stays off` }
   const recipe = hydrateSettings(opts.settings).tapes[opts.tape]
   return livePlaceGate({
     botOn: opts.clientBotOn === true || (opts.clientBotOn !== false && recipe.botOn === true),

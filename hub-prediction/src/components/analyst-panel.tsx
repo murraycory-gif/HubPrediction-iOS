@@ -77,8 +77,8 @@ export function AnalystPanel({
     <section className="analyst" data-testid="analyst">
       <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal · drafts</p>
       <p className="settings-note" data-testid="analyst-lock">
-        Each tape has its own desk chief. Analyst proposes paper drafts only. Soft FAIL Accept. Soft FAIL
-        auto Live recipe rewrite. Chief auto-size under floors/kill. More than two losses halt that desk for
+        Each tape has its own desk chief. Analyst proposes paper drafts only. Drafts stay paper. Live
+        recipes stay as you left them. Chief auto-size under floors/kill. More than two losses halt that desk for
         paper rehab — Live cash stays as you left it. Paper-test {REHAB_PAPER_RUNS} consistent runs.
       </p>
       <div className="analyst-grid">
@@ -112,7 +112,7 @@ export function AnalystPanel({
               <div className="analyst-block" data-testid={`analyst-proposed-${t.id}`}>
                 <p className="analyst-report-label">Proposed</p>
                 <p className="tape-recipe" data-testid={`analyst-next-${t.id}`}>
-                  {t.changed ? 'Proposed only — Soft FAIL Accept' : proposal.title}
+                  {t.changed ? 'Proposed only — drafts stay paper' : proposal.title}
                 </p>
                 {proposal.lines.map((line) => (
                   <p key={line} className="analyst-plain">
@@ -199,10 +199,10 @@ export function AnalystPanel({
                 data-testid={`analyst-auto-${t.id}`}
               >
                 {killed
-                  ? 'KILL on — recipe lock. Soft FAIL Accept.'
+                  ? 'KILL on — recipe lock. Drafts stay paper.'
                   : rehabNote ||
                     (t.changed
-                      ? `Draft only. Soft FAIL Accept. Chief auto-size toward ${HIT_FLOOR}%.`
+                      ? `Draft only. Live recipe unchanged. Chief auto-size toward ${HIT_FLOOR}%.`
                       : `Matching the ${HIT_FLOOR}% book. No draft.`)}
               </p>
             </article>

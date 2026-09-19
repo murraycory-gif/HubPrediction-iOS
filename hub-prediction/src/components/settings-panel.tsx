@@ -15,9 +15,8 @@ export function SettingsPanel(props: {
       <p className="settings-note">
         Bot, live cash, and contracts sit on each tape card. Factory gold is the default. Analyst auto-updates
         each tape toward {HIT_FLOOR}%. Three losses in a row halt that desk’s live cash and paper-test 12 runs. For a
-        manual paper test: Bot ON, Live cash OFF. Live cash ON + Bot ON + host keys posts to Kalshi. Soft
-        FAIL paste PEM. Soft FAIL Live POST without Bot + Live cash + keys. Soft FAIL flipping Live cash from
-        Analyst.
+        manual paper test: Bot ON, Live cash OFF. Live cash ON + Bot ON + host keys posts to Kalshi. Keys stay
+        on the Windows host. Analyst drafts never flip Live cash.
         {props.recipeLocked ? ' KILL / chase lock still blocks silent Settings retunes.' : ''}
       </p>
 

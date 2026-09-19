@@ -707,7 +707,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       return
     }
     if (!tapeAllowsLive(tape)) {
-      abortLive(`${TAPE_META[tape].label} paper desk — Soft FAIL Live`)
+      abortLive(`${TAPE_META[tape].label} paper desk — Live cash stays off`)
       return
     }
     const flags = liveDeskFlags(tape)
@@ -750,6 +750,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       deposits: cash.deposits,
       spent,
       liveOn: true,
+      recipe: settings.tapes[tape],
     })
     if (!gate.ok) {
       abortLive(`${TAPE_META[tape].label} Kalshi error — ${gate.reason}`)
@@ -1077,7 +1078,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       const quote = readTestLiveQuote(id) ?? boardNow?.tapes[id]
       const recipe = settingsNow.tapes[id]
       const botOn = stored.tapes[id].botOn === true || recipe.botOn === true
-      const liveCash = stored.tapes[id].liveOn === true || recipe.liveOn === true
+      const liveCash = tapeAllowsLive(id) && (stored.tapes[id].liveOn === true || recipe.liveOn === true)
       if (!quote?.ticker || !botOn) continue
       if (quote.tradingActive === false) continue
       const liveGate = trueLiveGate({
@@ -1092,7 +1093,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         recipe,
         botOn,
         liveCash,
-        haveRealOrder: Boolean(have && isRealOrderId(have.orderId)),
+        haveRealOrder: Boolean(have && (isRealOrderId(have.orderId) || isPaperOrderId(have.orderId))),
         killed: bookNow.killed,
         tabOpen: true,
         rehabPaper: isRehabPaper(rehabNow, id),
@@ -1362,7 +1363,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                   inArm: quote?.closeAt ? inArmWindow(recipe, quote.closeAt) : false,
                   askOk:
                     ask != null &&
-                    (recipe.liveOn ? askAllowedByGold(id, ask) : askInBand(ask, recipe)),
+                    (recipe.liveOn ? askAllowedByGold(id, ask, { recipe }) : askInBand(ask, recipe)),
                   lean,
                   hitOk: hitFloorGate(cell.w, cell.l).ok,
                   armFromMin: recipe.armFromMin,
@@ -1378,7 +1379,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                   return
                 }
                 if (patch.liveOn === true && !tapeAllowsLive(id)) {
-                  setMsg(`${TAPE_META[id].label} paper desk — Soft FAIL Live`)
+                  setMsg(`${TAPE_META[id].label} paper desk — Live cash stays off`)
                   return
                 }
                 if (patch.liveOn === true) {
@@ -1462,8 +1463,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ) : null}
         <section className="exit-watch" data-testid="exit-watch">
           <p className="settings-note" data-testid="exit-watch-lock">
-            EXIT WATCH · paper first · Soft FAIL Live sell until PASS. Soft FAIL Accept. Soft FAIL ghost sells. Soft FAIL
-            recipe rewrite.
+            EXIT WATCH · paper first · no Live sell until PASS. Drafts only. No ghost sells. Recipe stays.
           </p>
           {TAPE_IDS.filter((id) => id === 'btc' || latestExitFor(exitLogs, id)).map((id) => {
             const row = latestExitFor(exitLogs, id)
@@ -1532,7 +1532,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                 return
               }
               if (patch.liveOn === true && !tapeAllowsLive(id)) {
-                setMsg(`${TAPE_META[id].label} paper desk — Soft FAIL Live`)
+                setMsg(`${TAPE_META[id].label} paper desk — Live cash stays off`)
                 return
               }
               if (patch.liveOn === true) {
@@ -2016,7 +2016,7 @@ function Bets24Strip({
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
       <p className="hud-label">
-        Last 24 hours · desk paper + live · Soft FAIL hist · LIVE walks CASH · PAPER
+        Last 24 hours · desk paper + live · no hist dump · LIVE walks CASH · PAPER
         CASH N/A · WINDOW · CLOCK · MODE · CASH · {HIT_FLOOR}% win-ratio goal
       </p>
       <div className="bets-filter" data-testid="bets-filter">
@@ -2118,7 +2118,7 @@ function Bets24Strip({
         </div>
         {rows.length ? null : (
           <p className="settings-note" data-testid="bets-empty">
-            No fills since first deposit. Paper deskfill and Kalshi HIST show here. Soft FAIL Live POST.
+            No fills since first deposit. Paper deskfill and Kalshi HIST show here.
           </p>
         )}
       </div>

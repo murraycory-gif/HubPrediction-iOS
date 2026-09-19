@@ -23,16 +23,16 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     const first = loadSettings()
     expect(first).not.toHaveProperty('liveBets')
     expect(first.tapes.btc.liveOn).toBe(true)
-    expect(first.tapes.btc.contracts).toBe(20)
-    expect(first.tapes.btc.centLo).toBe(45)
+    expect(first.tapes.btc.contracts).toBe(30)
+    expect(first.tapes.btc.centLo).toBe(69)
     const armed = patchTape(first, 'btc', { liveOn: true, botOn: true, contracts: 20, centLo: 45, through: 15 })
     expect(armed.tapes.btc.liveOn).toBe(true)
     writeDeskState({ settings: armed })
     localStorage.clear()
     const factory = hydrateSettings(null)
     expect(factory.tapes.btc.liveOn).toBe(true)
-    expect(factory.tapes.btc.contracts).toBe(20)
-    expect(factory.tapes.btc.centLo).toBe(45)
+    expect(factory.tapes.btc.contracts).toBe(30)
+    expect(factory.tapes.btc.centLo).toBe(69)
     const host = readDeskState()
     expect(host?.settings).toBeTruthy()
     applyHostDeskState(host)
@@ -209,6 +209,53 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     expect(loadSettings().tapes.cu.liveOn).toBe(true)
     expect(loadSettings().tapes.cu.contracts).toBe(12)
     await rm(dir, { recursive: true, force: true })
+  })
+
+  it('hydrate keeps BTC Live ON and NG/CU/GLD paper unless the user toggled', () => {
+    const gold = hydrateSettings(null)
+    expect(gold.tapes.btc.liveOn).toBe(true)
+    expect(gold.tapes.ng.liveOn).toBe(false)
+    expect(gold.tapes.cu.liveOn).toBe(false)
+    expect(gold.tapes.gld.liveOn).toBe(false)
+    const printEra = hydrateSettings({
+      savedAt: 1_000,
+      tapes: {
+        btc: { ...GOLD_RECIPES.btc, liveOn: true, contracts: 20 },
+        ng: { ...GOLD_RECIPES.ng, liveOn: true, contracts: 15 },
+        cu: { ...GOLD_RECIPES.cu, liveOn: true, contracts: 15 },
+        gld: { ...GOLD_RECIPES.gld, liveOn: true, contracts: 30 },
+      },
+    })
+    expect(printEra.tapes.btc.liveOn).toBe(true)
+    expect(printEra.tapes.ng.liveOn).toBe(false)
+    expect(printEra.tapes.cu.liveOn).toBe(false)
+    expect(printEra.tapes.gld.liveOn).toBe(false)
+    expect(printEra.tapes.btc.contracts).toBe(20)
+    expect(printEra.tapes.ng.contracts).toBe(15)
+    const user = hydrateSettings({
+      togglesAt: 5,
+      togglesPicked: true,
+      tapes: {
+        btc: { ...GOLD_RECIPES.btc, liveOn: false },
+        ng: { ...GOLD_RECIPES.ng, liveOn: true },
+      },
+    })
+    expect(user.tapes.btc.liveOn).toBe(false)
+    expect(user.tapes.ng.liveOn).toBe(true)
+    const kept = pickNewerSettings(user, hydrateSettings(null))
+    expect((kept as { tapes: { btc: { liveOn: boolean }; ng: { liveOn: boolean } } }).tapes.btc.liveOn).toBe(false)
+    expect((kept as { tapes: { btc: { liveOn: boolean }; ng: { liveOn: boolean } } }).tapes.ng.liveOn).toBe(true)
+    const merged = pickNewerSettings(gold, {
+      savedAt: 2_000,
+      tapes: {
+        btc: { liveOn: false, contracts: 30 },
+        ng: { liveOn: true, contracts: 30 },
+        cu: { liveOn: true, contracts: 30 },
+      },
+    })
+    expect((merged as { tapes: { btc: { liveOn: boolean }; ng: { liveOn: boolean }; cu: { liveOn: boolean } } }).tapes.btc.liveOn).toBe(true)
+    expect((merged as { tapes: { btc: { liveOn: boolean }; ng: { liveOn: boolean }; cu: { liveOn: boolean } } }).tapes.ng.liveOn).toBe(false)
+    expect((merged as { tapes: { btc: { liveOn: boolean }; ng: { liveOn: boolean }; cu: { liveOn: boolean } } }).tapes.cu.liveOn).toBe(false)
   })
 
   it('Desk Chief state persists on host Soft FAIL wipe on refresh', async () => {

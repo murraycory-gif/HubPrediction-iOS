@@ -62,7 +62,7 @@ describe('defaults Soft FAIL Live / bots ON', () => {
       tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } },
     }
     savePaperDrafts(makePaperDrafts(analyzeDesk(null, hits)))
-    expect(loadSettings().tapes.btc).toMatchObject({ armFromMin: 12, through: 15, centLo: 45, contracts: 20, liveOn: true })
+    expect(loadSettings().tapes.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69, contracts: 30, liveOn: true })
     expect(loadSettings()).not.toHaveProperty('liveBets')
   })
 
@@ -72,8 +72,8 @@ describe('defaults Soft FAIL Live / bots ON', () => {
     expect(DEFAULT_SETTINGS).not.toHaveProperty('liveBets')
     expect(hydrateSettings({ liveBets: true })).not.toHaveProperty('liveBets')
     expect(s.tapes.btc.liveOn).toBe(true)
-    expect(s.tapes.ng.liveOn).toBe(true)
-    expect(s.tapes.cu.liveOn).toBe(true)
+    expect(s.tapes.ng.liveOn).toBe(false)
+    expect(s.tapes.cu.liveOn).toBe(false)
     expect(s.tapes.gld.liveOn).toBe(false)
     for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
       expect(s.tapes[id].botOn).toBe(true)
@@ -93,9 +93,9 @@ describe('defaults Soft FAIL Live / bots ON', () => {
       tapes: { btc: { armFromMin: 1, through: 99, centLo: 10 } },
     })
     expect(wild.tapes.btc.armFromMin).toBe(1)
-    expect(wild.tapes.btc.through).toBe(60)
+    expect(wild.tapes.btc.through).toBe(99)
     expect(wild.tapes.btc.centLo).toBe(45)
-    expect(GOLD_RECIPES.btc.armFromMin).toBe(12)
+    expect(GOLD_RECIPES.btc.armFromMin).toBe(8)
   })
 
   it('does not turn live on just because a stored blob omitted the flag', () => {
@@ -108,12 +108,12 @@ describe('defaults Soft FAIL Live / bots ON', () => {
 })
 
 describe('Grok Build recipes', () => {
-  it('keeps BTC 12–0.5 / $15 / 45–89¢', () => {
-    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 12, armToMin: 0.5, through: 15, centLo: 45, centHi: 89, contracts: 20, liveOn: true })
+  it('keeps BTC 8–3 / $40 / 69–89¢', () => {
+    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89, contracts: 30, liveOn: true })
   })
   it('keeps NG 8:00–0:45 / $0.002 / 34–89¢ and CU 9:00–0:45', () => {
-    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, centLo: 34, centHi: 89, contracts: 15, liveOn: true })
-    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, centLo: 34, centHi: 89, contracts: 15, liveOn: true })
+    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89, contracts: 30, liveOn: false })
+    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89, contracts: 30, liveOn: false })
   })
   it('keeps gold 10:00–3:00 / $2 / 34–89¢ including 56–68', () => {
     expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 })
@@ -121,12 +121,12 @@ describe('Grok Build recipes', () => {
     expect(tapeLean({ id: 'gld', live: 4361, beat: 4358, recipe: GOLD_RECIPES.gld })).toBe('up')
   })
   it('skips BTC 34–55 and 56–68; hug sits', () => {
-    expect(askInBand(50, GOLD_RECIPES.btc)).toBe(true)
-    expect(askInBand(44, GOLD_RECIPES.btc)).toBe(false)
+    expect(askInBand(50, GOLD_RECIPES.btc)).toBe(false)
+    expect(askInBand(68, GOLD_RECIPES.btc)).toBe(false)
     expect(askInBand(73, GOLD_RECIPES.btc)).toBe(true)
     expect(askInBand(62, GOLD_RECIPES.gld)).toBe(true)
-    expect(tapeLean({ id: 'btc', live: 76520, beat: 76500, recipe: GOLD_RECIPES.btc })).toBe('up')
-    expect(tapeLean({ id: 'btc', live: 76510, beat: 76500, recipe: GOLD_RECIPES.btc })).toBe('sit')
+    expect(tapeLean({ id: 'btc', live: 76540, beat: 76500, recipe: GOLD_RECIPES.btc })).toBe('up')
+    expect(tapeLean({ id: 'btc', live: 76520, beat: 76500, recipe: GOLD_RECIPES.btc })).toBe('sit')
   })
 })
 
@@ -156,18 +156,18 @@ describe('settings persist', () => {
     expect(again).not.toHaveProperty('liveBets')
   })
 
-  it('hydrate Soft KEEP Bot / Live cash / contracts even without togglesPicked', () => {
+  it('hydrate keeps Bot / contracts; liveOn without togglesAt uses gold', () => {
     const raw = {
       tapes: {
-        btc: { contracts: 10, botOn: false, liveOn: true },
+        btc: { contracts: 10, botOn: false, liveOn: false },
         ng: { contracts: 8, botOn: true, liveOn: true },
-        cu: { contracts: 5, botOn: false, liveOn: false },
-        gld: { contracts: 3, botOn: true, liveOn: false },
+        cu: { contracts: 5, botOn: false, liveOn: true },
+        gld: { contracts: 3, botOn: true, liveOn: true },
       },
     }
     const s = hydrateSettings(raw)
     expect(s.tapes.btc).toMatchObject({ contracts: 10, botOn: false, liveOn: true })
-    expect(s.tapes.ng).toMatchObject({ contracts: 8, botOn: true, liveOn: true })
+    expect(s.tapes.ng).toMatchObject({ contracts: 8, botOn: true, liveOn: false })
     expect(s.tapes.cu).toMatchObject({ contracts: 5, botOn: false, liveOn: false })
     expect(s.tapes.gld).toMatchObject({ contracts: 3, botOn: true, liveOn: false })
     expect(s).not.toHaveProperty('liveBets')
@@ -178,7 +178,7 @@ describe('settings persist', () => {
     expect(empty.togglesPicked).not.toBe(true)
     expect(settingsReadyToPush(empty)).toBe(false)
     expect(empty.tapes.btc.liveOn).toBe(true)
-    expect(empty.tapes.btc.contracts).toBe(20)
+    expect(empty.tapes.btc.contracts).toBe(30)
     expect(settingsReadyToPush({ ...empty, savedAt: Date.now() })).toBe(false)
     const user = hydrateSettings({
       togglesPicked: true,
@@ -201,7 +201,7 @@ describe('settings persist', () => {
     expect(again.tapes.btc.botOn).toBe(false)
     expect(again.tapes.btc.liveOn).toBe(true)
     expect(again.tapes.ng.botOn).toBe(false)
-    expect(again.tapes.ng.liveOn).toBe(true)
+    expect(again.tapes.ng.liveOn).toBe(false)
     expect(again.tapes.cu.botOn).toBe(true)
     expect(again).not.toHaveProperty('liveBets')
   })
@@ -232,11 +232,11 @@ describe('settings persist', () => {
     const saved = setTapeClock(first, 'btc', '5m')
     expect(saved.clocks.btc).toBe('5m')
     expect(saved.clocks.ng).toBe('15m')
-    expect(saved.tapes.btc.armFromMin).toBe(12)
-    expect(saved.tapes.btc.through).toBe(15)
+    expect(saved.tapes.btc.armFromMin).toBe(8)
+    expect(saved.tapes.btc.through).toBe(40)
     expect(loadSettings().clocks.btc).toBe('5m')
     expect(hydrateSettings(loadSettings())).not.toHaveProperty('liveBets')
-    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 12, through: 15, centLo: 45 })
+    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69 })
   })
 })
 
@@ -420,11 +420,12 @@ describe('marketTradingActive Soft KEEP open window', () => {
 })
 
 describe('arm / pulse / send tab', () => {
-  it('BTC arm window is 12–0.5 minutes remaining', () => {
+  it('BTC arm window is 8–3 minutes remaining', () => {
     const now = 1_000_000
     const close = now + 5 * 60_000
     expect(inArmWindow(GOLD_RECIPES.btc, close, now)).toBe(true)
-    expect(inArmWindow(GOLD_RECIPES.btc, now + 2 * 60_000, now)).toBe(true)
+    expect(inArmWindow(GOLD_RECIPES.btc, now + 4 * 60_000, now)).toBe(true)
+    expect(inArmWindow(GOLD_RECIPES.btc, now + 2 * 60_000, now)).toBe(false)
     expect(inArmWindow(GOLD_RECIPES.btc, now + 14 * 60_000, now)).toBe(false)
     expect(inArmWindow(GOLD_RECIPES.btc, now + 0.2 * 60_000, now)).toBe(false)
     expect(inArmWindow(GOLD_RECIPES.ng, now + 13 * 60_000, now)).toBe(false)
@@ -614,7 +615,7 @@ describe('gold race path', () => {
     expect(kept.charts.btc).toBe('15m')
     expect(kept.charts.ng).toBe('live')
     expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
-    expect(GOLD_RECIPES.btc.centLo).toBe(45)
+    expect(GOLD_RECIPES.btc.centLo).toBe(69)
     expect(formatBetWindow(Date.parse('2026-09-18T16:45:00-05:00'), 15 * 60_000)).toBe('Sep 18, 4:30–4:45 PM CDT')
     expect(formatBetWindow(Date.parse('2026-09-18T12:11:00-05:00'), 15 * 60_000)).toBe('Sep 18, 11:56 AM–12:11 PM CDT')
   })
@@ -743,7 +744,7 @@ describe('Kalshi-settled 24h latch', () => {
     expect(official.cash.pnl).toBe(-497)
     expect(desk.cash.firstDepositAt).toBeGreaterThan(0)
     expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
-    expect(GOLD_RECIPES.btc.centLo).toBe(45)
+    expect(GOLD_RECIPES.btc.centLo).toBe(69)
   })
 
   it('paper ticket books without a Kalshi POST id prefix', () => {

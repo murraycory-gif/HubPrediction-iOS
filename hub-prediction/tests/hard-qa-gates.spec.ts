@@ -209,7 +209,7 @@ test('HARD QA 6 persist Live cash/contracts + WTI/Silver paper only', async ({ b
     await desk.getByTestId('tape-wti').scrollIntoViewIfNeeded()
     await desk.locator('label').filter({ has: desk.getByTestId('live-cash-wti') }).click({ force: true })
     await expect(desk.getByTestId('live-cash-wti')).not.toBeChecked()
-    await expect(desk.getByTestId('desk-msg')).toContainText(/paper desk|Soft FAIL Live/i)
+    await expect(desk.getByTestId('desk-msg')).toContainText(/paper desk/i)
   } finally {
     await desk.close()
     await hand.close()
@@ -427,25 +427,102 @@ test('BTC liveOn sit→send: 50¢ lean-through Soft FAIL sit', async ({ page }) 
   }, { at: closeAt, ticker })
   await setToggle(page, 'bot-btc', true)
   await setToggle(page, 'live-cash-btc', true)
-  await expect
-    .poll(async () =>
-      page.evaluate(() => {
-        const w = window as Window & { __HUB_TEST_BOTS?: { scan: () => void }; __HUB_PLACE_CALLS?: unknown[] }
-        w.__HUB_TEST_BOTS?.scan()
-        return w.__HUB_PLACE_CALLS?.length ?? 0
-      }),
-    { timeout: 12_000 },
-    )
-    .toBeGreaterThan(0)
+  await page.evaluate(() => {
+    const w = window as Window & { __HUB_TEST_BOTS?: { scan: () => void } }
+    w.__HUB_TEST_BOTS?.scan()
+  })
+  await page.waitForTimeout(800)
   const placed = await page.evaluate(() => {
     const w = window as Window & {
       __HUB_PLACE_CALLS?: Array<{ yesAsk?: number; ticker?: string; liveOn?: boolean }>
     }
-    return w.__HUB_PLACE_CALLS?.[0] ?? null
+    return w.__HUB_PLACE_CALLS ?? []
   })
-  expect(placed?.ticker).toBe(ticker)
-  expect(placed?.yesAsk).toBe(50)
-  expect(placed?.liveOn).toBe(true)
+  expect(placed).toEqual([])
+})
+
+test('NG/CU/GLD paper tickets fire in bets strip when rules fire', async ({ page }) => {
+  test.setTimeout(45_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  const closeAt = Date.now() + 5 * 60_000
+  await page.evaluate(({ at }) => {
+    const w = window as Window & {
+      __HUB_PLACE_CALLS?: unknown[]
+      __HUB_PLACE?: (p: unknown) => Promise<unknown>
+      __HUB_TEST_LIVE_QUOTE?: Record<string, unknown>
+    }
+    w.__HUB_PLACE_CALLS = []
+    w.__HUB_PLACE = async (p) => {
+      w.__HUB_PLACE_CALLS!.push(p)
+      return { order: { order_id: 'should-not-post', status: 'executed', fill_count: 1 } }
+    }
+    w.__HUB_TEST_LIVE_QUOTE = {
+      ng: {
+        ticker: `KXNATGAS15M-PAPER-${at}`,
+        clock: '15m',
+        clockId: '15m',
+        closeAt: at,
+        tradingActive: true,
+        openMarkets: 1,
+        live: 3.12,
+        beat: 3.1,
+        yesAsk: 50,
+        noAsk: 51,
+        fetchedAt: Date.now(),
+      },
+      cu: {
+        ticker: `KXCOPPER15M-PAPER-${at}`,
+        clock: '15m',
+        clockId: '15m',
+        closeAt: at,
+        tradingActive: true,
+        openMarkets: 1,
+        live: 4.12,
+        beat: 4.1,
+        yesAsk: 48,
+        noAsk: 53,
+        fetchedAt: Date.now(),
+      },
+      gld: {
+        ticker: `KXGOLD15M-PAPER-${at}`,
+        clock: '15m',
+        clockId: '15m',
+        closeAt: at,
+        tradingActive: true,
+        openMarkets: 1,
+        live: 4362,
+        beat: 4358,
+        yesAsk: 46,
+        noAsk: 55,
+        fetchedAt: Date.now(),
+      },
+    }
+  }, { at: closeAt })
+  await setToggle(page, 'bot-ng', true)
+  await setToggle(page, 'live-cash-ng', false)
+  await setToggle(page, 'bot-cu', true)
+  await setToggle(page, 'live-cash-cu', false)
+  await setToggle(page, 'bot-gld', true)
+  await setToggle(page, 'live-cash-gld', false)
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const w = window as Window & { __HUB_TEST_BOTS?: { scan: () => void } }
+        w.__HUB_TEST_BOTS?.scan()
+        const rows = [...document.querySelectorAll('[data-testid="bets-log"] [data-kind="paper"]')]
+        const tapes = rows.map((el) => (el.textContent || '').toUpperCase())
+        return {
+          places: (w as Window & { __HUB_PLACE_CALLS?: unknown[] }).__HUB_PLACE_CALLS?.length ?? 0,
+          ng: tapes.some((t) => t.includes('NG')),
+          cu: tapes.some((t) => t.includes('CU')),
+          gld: tapes.some((t) => t.includes('GLD')),
+        }
+      }),
+    { timeout: 12_000 },
+    )
+    .toMatchObject({ places: 0, ng: true, cu: true, gld: true })
 })
 
 test('BTC liveOn arm-cross: out of arm sits, in-arm tick posts', async ({ page }) => {
@@ -689,7 +766,7 @@ test('BTC news + hour + same-clock Soft FAIL Accept', async ({ page }) => {
   await expect(page.getByTestId('analyst-clock-prior-btc')).toBeVisible()
   await expect(page.getByTestId('analyst-hour-btc')).toContainText(/Hour|Sat hour/)
   await expect(page.getByTestId('analyst-clock-prior-btc')).toContainText(/Same-clock prior/)
-  await expect(page.getByTestId('analyst-lock')).toContainText(/Soft FAIL Accept/)
+  await expect(page.getByTestId('analyst-lock')).toContainText(/drafts stay paper/)
   await expect(page.getByTestId('analyst-accept-btc')).toHaveCount(0)
   await expect(page.locator('[data-testid^="chief-accept-"]')).toHaveCount(0)
   await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
@@ -780,8 +857,8 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
   expect(out.hold.action).toBe('hold')
   expect(out.hold.liveSell).toBe(false)
   expect(out.sells).toEqual([])
-  expect(out.lock).toMatch(/Soft FAIL Live sell/)
-  expect(out.lock).toMatch(/Soft FAIL Accept/)
+  expect(out.lock).toMatch(/no Live sell/)
+  expect(out.lock).toMatch(/drafts stay paper/)
   expect(out.accepts).toBe(0)
   expect(out.ghosts).toBe(0)
   expect(out.fadeLog?.action).toBe('exit')

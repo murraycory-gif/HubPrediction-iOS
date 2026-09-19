@@ -178,7 +178,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
   })
 
   if (!(input.fillCount > 0) || !isRealOrderId(input.orderId)) {
-    return hold('Soft FAIL EXIT — need fill_count > 0 and a real order id')
+    return hold('EXIT sits — need fill_count > 0 and a real order id')
   }
   const dist = distanceToBeat(input.side, input.live, input.beat)
   const motion = velocityTowardBeat(input.tape, input.side, input.points, now)
@@ -188,7 +188,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
   const path = projectedCrossesBeat({ dist, vel: motion.vel, closeAt: input.closeAt, now })
 
   if (through) {
-    return hold(`${label} already through beat — Soft FAIL late sell. Hold to settle.`, {
+    return hold(`${label} already through beat — late sell sits. Hold to settle.`, {
       locked,
       bidCents,
       dist,
@@ -199,7 +199,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
     })
   }
   if (motion.firstTick) {
-    return hold(`${label} Soft FAIL first down tick — need a 45s path, not one print.`, {
+    return hold(`${label} first down tick sits — need a 45s path, not one print.`, {
       locked,
       bidCents,
       dist,
@@ -210,7 +210,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
   const fastEnough = motion.vel >= VELOCITY_USD_PER_SEC
   const armed = dist < BUFFER_USD || path.crosses
   if (!fastEnough) {
-    return hold(`${label} hold — Soft FAIL sell without adverse ≥ ${VELOCITY_USD_PER_SEC.toFixed(2)}/s over 45s.`, {
+    return hold(`${label} hold — sell sits without adverse ≥ ${VELOCITY_USD_PER_SEC.toFixed(2)}/s over 45s.`, {
       locked,
       bidCents,
       dist,
@@ -221,7 +221,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
   }
   if (locked >= MIN_LOCK_USD) {
     if (!armed) {
-      return hold(`${label} hold — buffer ≥ $${BUFFER_USD} and path Soft FAIL beat before close.`, {
+      return hold(`${label} hold — buffer ≥ $${BUFFER_USD} and path does not beat before close.`, {
         locked,
         bidCents,
         dist,
@@ -233,7 +233,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
     return {
       ...base,
       action: 'exit',
-      why: `${label} EXIT paper — fade + ${motion.vel.toFixed(2)}/s. Profit lock ${locked >= 0 ? '+' : ''}$${Math.abs(locked).toFixed(2)}. Live Soft FAIL.`,
+      why: `${label} EXIT paper — fade + ${motion.vel.toFixed(2)}/s. Profit lock ${locked >= 0 ? '+' : ''}$${Math.abs(locked).toFixed(2)}. No Live sell.`,
       locked,
       bidCents,
       dist,
@@ -248,7 +248,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
     return {
       ...base,
       action: 'exit',
-      why: `${label} EXIT paper — fade crosses beat. Max salvage ${locked >= 0 ? '+' : ''}$${Math.abs(locked).toFixed(2)}. Live Soft FAIL.`,
+      why: `${label} EXIT paper — fade crosses beat. Max salvage ${locked >= 0 ? '+' : ''}$${Math.abs(locked).toFixed(2)}. No Live sell.`,
       locked,
       bidCents,
       dist,
@@ -260,7 +260,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
     }
   }
   if (dist >= BUFFER_SALVAGE_USD) {
-    return hold(`${label} hold — Soft FAIL salvage above $${BUFFER_SALVAGE_USD}.`, {
+    return hold(`${label} hold — salvage sits above $${BUFFER_SALVAGE_USD}.`, {
       locked,
       bidCents,
       dist,
@@ -269,7 +269,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
       crosses: path.crosses,
     })
   }
-  return hold(`${label} hold to settle — path Soft FAIL beat before close.`, {
+  return hold(`${label} hold to settle — path does not beat before close.`, {
     locked,
     bidCents,
     dist,

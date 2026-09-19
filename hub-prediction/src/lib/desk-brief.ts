@@ -15,17 +15,17 @@ import type { TapeQuote } from './types'
 export const DESK_EXPERT: Record<TapeId, { title: string; focus: string; newsQ: string }> = {
   btc: {
     title: 'BTC desk chief · 15m bitcoin',
-    focus: 'Spot vs Kalshi strike, 45–89¢ band, $15 hug. Fade noise, take only a clean through.',
+    focus: 'Spot vs Kalshi strike, 69–89¢ band, $40 hug. Fade noise, take only a clean through.',
     newsQ: 'Bitcoin OR BTC price',
   },
   ng: {
     title: 'NG desk chief · Henry Hub',
-    focus: 'Nat-gas ticks vs $0.001 through, 34–89¢. Weather and storage headlines move this tape.',
+    focus: 'Nat-gas ticks vs $0.002 through, 34–89¢. Weather and storage headlines move this tape.',
     newsQ: 'natural gas Henry Hub price',
   },
   cu: {
     title: 'CU desk chief · COMEX copper',
-    focus: 'Copper vs $0.001 through, 34–89¢. China demand and dollar swings are the tell.',
+    focus: 'Copper vs $0.002 through, 34–89¢. China demand and dollar swings are the tell.',
     newsQ: 'copper COMEX price',
   },
   gld: {

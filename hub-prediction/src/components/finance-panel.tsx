@@ -84,7 +84,7 @@ export function FinancePanel(props: {
       <section className="chief" data-testid="desk-chief">
         <p className="hud-label">Desk Chief · profit + Kalshi cash</p>
         <p className="settings-note" data-testid="exit-watch-finance">
-          EXIT WATCH paper · Soft FAIL Live sell · Soft FAIL Accept.{' '}
+          EXIT WATCH paper · no Live sell · drafts stay paper.{' '}
           {TAPE_IDS.map((id) => {
             const row = latestExitFor(props.exitLogs ?? [], id)
             return row ? `${TAPE_META[id].label} ${row.action.toUpperCase()} ${formatExitLocked(row.locked)}` : null
@@ -93,7 +93,7 @@ export function FinancePanel(props: {
             .join(' · ') || 'waiting on a real fill'}
         </p>
         <p className="settings-note" data-testid="chief-lock">
-          Paper size auto. Live size auto under floors/kill. Soft FAIL Accept. Soft FAIL Live ON. Soft FAIL recipe rewrite.
+          Paper size auto. Live size auto under floors/kill. Drafts stay paper. Live cash stays a toggle. Recipe stays.
         Reserve{' '}
           {Math.round(RESERVE_CASH * 100)}/{Math.round(RESERVE_RISK * 100)} · max {MAX_LIVE_CLOCKS} Live clocks (BTC + NG/CU)
           · lock-in +$
@@ -138,7 +138,7 @@ export function FinancePanel(props: {
           {pending.length ? (
             pending.map((p: ChiefProposal) => (
               <div key={p.id} className="chief-propose" data-testid={`chief-proposal-${p.id}`}>
-                <p className="tape-line">{p.reason} · Soft FAIL Accept</p>
+                <p className="tape-line">{p.reason} · drafts stay paper</p>
               </div>
             ))
           ) : (

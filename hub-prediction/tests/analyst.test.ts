@@ -87,7 +87,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
     )
     expect(report.tapes.find((t) => t.id === 'btc')?.hug).toBe('hug')
     expect(report.tapes.find((t) => t.id === 'gld')?.hug).toBe('hug')
-    expect(report.tapes.find((t) => t.id === 'btc')?.proposed).toMatch(/BTC 12–0\.5 \/ \$15/)
+    expect(report.tapes.find((t) => t.id === 'btc')?.proposed).toMatch(/BTC 8–3 \/ \$40/)
     expect(report.tapes.find((t) => t.id === 'btc')?.proposed).toMatch(/80%/)
     expect(report.tapes.find((t) => t.id === 'gld')?.proposed).toMatch(/GLD 10–3 \/ \$2/)
     expect(report.tapes.find((t) => t.id === 'btc')?.w).toBe(20)
@@ -97,7 +97,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
   it('saves paper drafts without writing live settings or flipping Live', () => {
     const report = analyzeDesk(board(), emptyHits())
     savePaperDrafts(makePaperDrafts(report))
-    expect(loadPaperDrafts()?.recipes.btc.through).toBe(15)
+    expect(loadPaperDrafts()?.recipes.btc.through).toBe(40)
     expect(localStorage.getItem(SETTINGS_KEY)).toBeNull()
     expect(loadSettings()).not.toHaveProperty('liveBets')
     expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
@@ -109,7 +109,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
 
   it('Accept recipe write leaves Live OFF and does not arm live cash', () => {
     const start = loadSettings()
-    expect(start.tapes.btc.through).toBe(15)
+    expect(start.tapes.btc.through).toBe(40)
     const next = applyAnalystAccept(start, 'btc', { ...GOLD_RECIPES.btc, through: 46, botOn: true, liveOn: false })
     expect(next.tapes.btc.through).toBe(46)
     expect(next.tapes.btc.botOn).toBe(true)
@@ -117,7 +117,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
     expect(next).not.toHaveProperty('liveBets')
     expect(loadSettings().tapes.btc.through).toBe(46)
     expect(loadSettings()).not.toHaveProperty('liveBets')
-    expect(GOLD_RECIPES.btc.through).toBe(15)
+    expect(GOLD_RECIPES.btc.through).toBe(40)
   })
 
   it('Accept recipe write keeps user Live cash ON and contracts', () => {
@@ -238,9 +238,9 @@ describe('analyst 24h / 48h path and bets vs recipe', () => {
 describe('analyst current rules + profit dollars', () => {
   it('explains gold BTC rules in plain English and never flips Live', () => {
     const rules = explainRules('btc', GOLD_RECIPES.btc)
-    expect(rules.arm).toMatch(/12 min down to 0\.5 min/)
-    expect(rules.through).toMatch(/\$15/)
-    expect(rules.cents).toMatch(/45–89/)
+    expect(rules.arm).toMatch(/8 min down to 3 min/)
+    expect(rules.through).toMatch(/\$40/)
+    expect(rules.cents).toMatch(/69–89/)
     expect(rules.size).toMatch(/Live cash ON/)
     expect(expectedTakeDollars(72, 1, 80)).toBeCloseTo(0.08)
     expect(expectedTakeDollars(72, 1, 50)).toBeCloseTo(-0.22)
@@ -250,7 +250,7 @@ describe('analyst current rules + profit dollars', () => {
     const quiet = analyzeDesk(board(), emptyHits())
     const btc = quiet.tapes.find((t) => t.id === 'btc')!
     const keep = profitImpact(btc, 72)
-    expect(keep.headline).toMatch(/\$1\.60/)
+    expect(keep.headline).toMatch(/\$2\.40/)
     expect(keep.detail).toMatch(/grows dollars/)
     expect(keep.detail).toMatch(/Live/)
 
@@ -311,6 +311,8 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
       { tape: 'btc' as const, side: 'up' as const, ask: 71, pnl: 0.29, status: 'settled' as const, filledAt: now - 3000, settledAt: now - 300, closeAt: now + 4 * 60_000, betId: 'c' },
     ]
     const start = hydrateSettings({
+      togglesPicked: true,
+      togglesAt: 1,
       tapes: { btc: { ...GOLD_RECIPES.btc, botOn: true, liveOn: false } },
     })
     const report = analyzeDesk(board({ btc: quote('btc', 76600, 76500) }), emptyHits(), bets, start.tapes)
@@ -319,15 +321,15 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
     const first = runAutoAnalyst({ settings: start, report, bets, rehab: emptyAutoState() })
     expect(first.didChange).toBe(true)
     expect(first.settings.tapes.btc.through).toBe(start.tapes.btc.through)
-    expect(first.settings.tapes.btc.through).toBe(15)
+    expect(first.settings.tapes.btc.through).toBe(40)
     expect(first.settings.tapes.btc.armFromMin).toBe(start.tapes.btc.armFromMin)
     expect(first.settings.tapes.btc.centLo).toBe(start.tapes.btc.centLo)
-    expect(first.msg).toMatch(/proposed rules only — Soft FAIL Accept/)
+    expect(first.msg).toMatch(/proposed rules only — drafts stay paper/)
     expect(first.settings).not.toHaveProperty('liveBets')
     expect(first.settings.tapes.btc.liveOn).toBe(false)
     const again = runAutoAnalyst({ settings: first.settings, report, bets, rehab: first.rehab })
     expect(again.didChange).toBe(false)
-    expect(again.settings.tapes.btc.through).toBe(15)
+    expect(again.settings.tapes.btc.through).toBe(40)
     const accepted = acceptAnalystRecipe(start, 'btc', note!.nextRecipe, {
       killed: false,
       paperStartedAt: 1,
@@ -335,7 +337,7 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
     })
     expect(accepted.ok).toBe(true)
     if (accepted.ok) {
-      expect(accepted.settings.tapes.btc.through).not.toBe(15)
+      expect(accepted.settings.tapes.btc.through).not.toBe(40)
       expect(accepted.settings.tapes.btc.liveOn).toBe(false)
     }
     const liveOn = patchTape(start, 'btc', { liveOn: true, botOn: true })
@@ -407,6 +409,8 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
     const now = 6_000_000
     const losses = [0, 1, 2].map((i) => settled('ng', -1, now - i * 1000))
     const armed = hydrateSettings({
+      togglesPicked: true,
+      togglesAt: 1,
       tapes: { ng: { ...GOLD_RECIPES.ng, botOn: true, liveOn: true } },
     })
     const halted = runAutoAnalyst({
@@ -446,6 +450,8 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
       orderId: `settled-KXGOLD15M-L${i}`,
     }))
     const armed = hydrateSettings({
+      togglesPicked: true,
+      togglesAt: 1,
       tapes: { gld: { ...GOLD_RECIPES.gld, botOn: true, liveOn: true } },
     })
     const halted = runAutoAnalyst({
@@ -472,6 +478,8 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
     const now = 8_000_000
     const losses = [0, 1, 2].map((i) => settled('cu', -1, now - i * 1000, { kind: 'live' }))
     const armed = hydrateSettings({
+      togglesPicked: true,
+      togglesAt: 1,
       tapes: { cu: { ...GOLD_RECIPES.cu, botOn: true, liveOn: true } },
     })
     const halted = runAutoAnalyst({

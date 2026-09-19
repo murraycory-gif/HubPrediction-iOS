@@ -75,6 +75,8 @@ describe('Desk Chief paper allocator', () => {
 
   it('paper 3W sizes up and Soft FAIL flipping Live', () => {
     const settings = hydrateSettings({
+      togglesPicked: true,
+      togglesAt: 1,
       tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, botOn: true, contracts: 1 } },
     })
     const book = {
@@ -155,7 +157,7 @@ describe('Desk Chief paper allocator', () => {
 
   it('3W steps +1 and 2L cuts −50% Soft FAIL 1→20', () => {
     const up = runDeskChief({
-      settings: hydrateSettings({ tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, contracts: 2 } } }),
+      settings: hydrateSettings({ togglesPicked: true, togglesAt: 1, tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, contracts: 2 } } }),
       book: { ...emptyFinance(), bets: [1, 2, 3].map((i) => paperSettled('btc', i, 0.3)) },
       cash: 400,
       deposits: 760,
@@ -165,7 +167,7 @@ describe('Desk Chief paper allocator', () => {
     })
     expect(up.paperApplies.some((a) => a.tape === 'btc' && a.contracts === 3)).toBe(true)
     const cut = runDeskChief({
-      settings: hydrateSettings({ tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, contracts: 8 } } }),
+      settings: hydrateSettings({ togglesPicked: true, togglesAt: 1, tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, contracts: 8 } } }),
       book: { ...emptyFinance(), bets: [1, 2].map((i) => paperSettled('btc', i, -0.7)) },
       cash: 400,
       deposits: 760,
@@ -221,6 +223,8 @@ describe('Desk Chief paper allocator', () => {
 
   it('Live clock change is a draft — Soft FAIL auto clock + Soft FAIL Live ON', () => {
     const settings = hydrateSettings({
+      togglesPicked: true,
+      togglesAt: 1,
       tapes: { gld: { ...GOLD_RECIPES.gld, liveOn: true, botOn: true, contracts: 1 } },
       clocks: { btc: '15m', ng: '15m', cu: '15m', gld: '5m' },
     })
@@ -271,6 +275,8 @@ describe('Desk Chief paper allocator', () => {
       pickChiefClock('15m', { closed: false, stale: false, halt: false, hitPct: 100, w: 1, l: 0 }),
     ).toBeNull()
     const settings = hydrateSettings({
+      togglesPicked: true,
+      togglesAt: 1,
       tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, contracts: 1 } },
     })
     const book = { ...emptyFinance(), bets: [paperSettled('btc', 1, 0.3)] }
@@ -288,6 +294,8 @@ describe('Desk Chief paper allocator', () => {
 
   it('BTC Sat fade intel holds paper size Soft FAIL Live recipe rewrite', () => {
     const settings = hydrateSettings({
+      togglesPicked: true,
+      togglesAt: 1,
       tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, botOn: true, contracts: 4 } },
     })
     const book = {
