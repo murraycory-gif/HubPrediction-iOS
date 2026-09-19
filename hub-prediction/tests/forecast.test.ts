@@ -141,6 +141,9 @@ describe('cashFromBalancePayload first-paint', () => {
     expect(cashFromBalancePayload({ data: { balance_dollars: 293.37 } })).toBeCloseTo(293.37)
     expect(cashFromBalancePayload({ portfolio_value: 29337 })).toBeCloseTo(293.37)
     expect(cashFromBalancePayload({ balance: 293.37 })).toBeCloseTo(293.37)
+    expect(cashFromBalancePayload({ balance_dollars: '293.63' })).toBeCloseTo(293.63)
+    expect(cashFromBalancePayload({ balance: 29363 })).toBeCloseTo(293.63)
+    expect(cashFromBalancePayload({ data: { balance_dollars: 293.63 } })).toBeCloseTo(293.63)
   })
 
   it('does not paint cash from an empty payload', () => {

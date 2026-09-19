@@ -1,7 +1,16 @@
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
-import { defineConfig, type Plugin } from 'vite'
+import { createLogger, defineConfig, type Plugin } from 'vite'
+
+const logger = createLogger()
+const info = logger.info.bind(logger)
+logger.info = (msg, options) => {
+  if (typeof msg === 'string' && (/(Local|Network):/.test(msg) || /:12783\b/.test(msg) || /:1808\d\b/.test(msg))) {
+    return
+  }
+  info(msg, options)
+}
 
 function stubNodeAsyncHooks(): Plugin {
   return {
@@ -27,10 +36,23 @@ export default { AsyncLocalStorage };
   }
 }
 
+const publicPort = Number(process.env.DESK_PUBLIC_PORT || 8080)
+const vitePort = Number(process.env.DESK_VITE_PORT || publicPort)
+
 export default defineConfig({
+  customLogger: logger,
   server: {
-    port: 8080,
-    host: true,
+    port: vitePort,
+    strictPort: true,
+    host: process.env.DESK_VITE_HOST || true,
+    allowedHosts: true,
+    watch: {
+      ignored: ['**/.secrets/**', '**/test-results/**', '**/playwright-report/**'],
+    },
+    hmr: {
+      protocol: 'ws',
+      clientPort: publicPort,
+    },
   },
   resolve: {
     tsconfigPaths: true,

@@ -1,9 +1,9 @@
+import { HIT_FLOOR } from '../lib/finance'
 import type { DeskSettings, TapeId, TapeRecipe } from '../lib/tapes'
 import { TAPE_IDS, TAPE_META } from '../lib/tapes'
 
 export function SettingsPanel(props: {
   settings: DeskSettings
-  onLiveBets: (on: boolean) => void
   onTape: (id: TapeId, patch: Partial<TapeRecipe>) => void
   onRefreshCash: () => void
   cashLabel: string
@@ -13,9 +13,12 @@ export function SettingsPanel(props: {
     <section className="settings" data-testid="settings">
       <p className="hud-label">Settings · same desk on phone</p>
       <p className="settings-note">
-        Bot, live cash, and contracts sit on each tape card. Kalshi keys live on the Windows host (env or
-        .secrets) — Soft FAIL paste PEM in the browser. Live bets stay OFF unless you confirm Live.
-        {props.recipeLocked ? ' Recipe lock on — Soft FAIL chase retune after a loss / KILL.' : ''}
+        Bot, live cash, and contracts sit on each tape card. Factory gold is the default. Analyst auto-updates
+        each tape toward {HIT_FLOOR}%. Three losses in a row halt that desk’s live cash and paper-test 12 runs. For a
+        manual paper test: Bot ON, Live cash OFF. Live cash ON + Bot ON + host keys posts to Kalshi. Soft
+        FAIL paste PEM. Soft FAIL Live POST without Bot + Live cash + keys. Soft FAIL flipping Live cash from
+        Analyst.
+        {props.recipeLocked ? ' KILL / chase lock still blocks silent Settings retunes.' : ''}
       </p>
 
       <div className="settings-master">
@@ -38,7 +41,7 @@ function TapeRecipeLock({ id, recipe }: { id: TapeId; recipe: TapeRecipe }) {
   const meta = TAPE_META[id]
   return (
     <div className="tape-settings" data-testid={`settings-${id}`}>
-      <p className="tape-settings-title">{meta.label} gold recipe · locked</p>
+      <p className="tape-settings-title">{meta.label} active recipe</p>
       <div className="settings-grid">
         <label>
           Arm from (min)

@@ -1,13 +1,25 @@
 import { deskStorage } from './desk-storage'
+import { pushHostDesk } from './desk-persist'
 import { ticketCost } from './size-cash'
 import {
   GOLD_RECIPES,
   TAPE_IDS,
   TAPE_META,
+  askInBand,
+  inArmWindow,
+  tapeAllowsLive,
+  tapeLean,
+  eventsFromKalshiSettlements,
   hydrateBetsFilter,
+  isPaperOrderId,
   isRealOrderId,
   isTapeId,
   nextBetsFilter,
+  num,
+  seriesToTape,
+  clockFromTicker,
+  isTapeClock,
+  windowMsForClock,
   type DeskTicket,
   type TapeId,
   type TapeRecipe,
@@ -59,6 +71,59 @@ export const LIVE_FLOOR_PCT = 0.2
 export const ASK_CAP = 80
 export const PAPER_HOURS = 48
 export const DAILY_PNL_FLOOR_PAPER = -50
+/** Covers a 20ct BTC ticket at the 79¢ Live band. Soft FAIL silent sit on recipe size. */
+export const CLOCK_MAX_SPEND = 80
+export const HIT_FLOOR = 80
+export const DAILY_PROFIT_LOCK = 40
+export const MAX_LIVE_CLOCKS = 2
+export const LIVE_PAIR_PRIMARY: TapeId = 'btc'
+export const LIVE_PAIR_SECONDARY = ['ng', 'cu'] as const
+
+/** BTC + one of NG/CU. Soft FAIL 3–4 Live clocks. Soft FAIL GLD in the pair. */
+export function livePairGate(tape: TapeId, heat: readonly TapeId[]): Gate {
+  if (heat.includes(tape)) return { ok: true }
+  if (tape === 'gld') return { ok: false, reason: 'GLD Soft FAIL Live pair — BTC + one of NG/CU' }
+  if (tape === 'ng' || tape === 'cu') {
+    const other = tape === 'ng' ? 'cu' : 'ng'
+    if (heat.includes(other)) return { ok: false, reason: 'Live pair is BTC + one of NG/CU' }
+  }
+  const pair = heat.filter((id) => id === LIVE_PAIR_PRIMARY || (LIVE_PAIR_SECONDARY as readonly string[]).includes(id))
+  if (pair.length >= MAX_LIVE_CLOCKS) {
+    return { ok: false, reason: `Max ${MAX_LIVE_CLOCKS} Live clocks` }
+  }
+  return { ok: true }
+}
+
+export function kalshiTakerFeeDollars(askCents: number, contracts: number) {
+  const ask = Math.max(1, Math.min(99, askCents)) / 100
+  const n = Math.max(1, Math.round(contracts))
+  return Math.round(0.07 * ask * (1 - ask) * n * 100) / 100
+}
+
+/** After-fee EV at the 80% hit goal. Sit when this is not > 0. */
+export function feeAwareEv(askCents: number, contracts: number, winPct = HIT_FLOOR) {
+  const ask = Math.max(1, Math.min(99, askCents)) / 100
+  const n = Math.max(1, Math.round(contracts))
+  const p = Math.max(0, Math.min(100, winPct)) / 100
+  const raw = n * (p * (1 - ask) - (1 - p) * ask)
+  return Math.round((raw - kalshiTakerFeeDollars(askCents, n)) * 100) / 100
+}
+
+export function feeAwareEvGate(askCents: number, contracts = 1, winPct = HIT_FLOOR): Gate {
+  const ev = feeAwareEv(askCents, contracts, winPct)
+  if (ev > 0) return { ok: true }
+  return { ok: false, reason: `After-fee EV ${ev} ≤ 0 at ${winPct}% — sit` }
+}
+
+export function openLiveClockTapes(state: FinanceState) {
+  const tapes = new Set<TapeId>()
+  for (const b of state.bets) {
+    if (b.status === 'open' && isLiveBet(b)) tapes.add(b.tape)
+  }
+  return [...tapes]
+}
+
+export type BetKind = 'live' | 'paper' | 'hist'
 
 export type BookedBet = {
   betId: string
@@ -75,6 +140,112 @@ export type BookedBet = {
   pnl: number | null
   filledAt: number
   settledAt: number | null
+  kind: BetKind
+}
+
+export { isPaperOrderId } from './tapes'
+
+export function isImportedKalshiRow(b: { betId?: unknown; orderId?: unknown }) {
+  const id = typeof b.betId === 'string' ? b.betId : ''
+  const ord = typeof b.orderId === 'string' ? b.orderId : ''
+  if (id.startsWith('kalshi:')) return true
+  if (/^(settled|pos|fill)-/i.test(ord)) return true
+  return false
+}
+
+/** Stored kind after the Kalshi book latch. deskfill = PAPER. Soft FAIL ghost LIVE on hydrate. */
+export function betKind(b: { kind?: unknown; orderId?: unknown; betId?: unknown }): BetKind {
+  if (isPaperOrderId(b.orderId) || (typeof b.betId === 'string' && /^paper:/i.test(b.betId))) return 'paper'
+  if (b.kind === 'live') return 'live'
+  if (b.kind === 'paper') return 'paper'
+  if (isImportedKalshiRow(b) || b.kind === 'hist') return 'hist'
+  if (typeof b.betId === 'string' && b.betId.startsWith('bet_') && isRealOrderId(b.orderId)) return 'live'
+  return 'paper'
+}
+
+/** This desk POSTed the order. Imported Kalshi history is HIST — Soft FAIL MODE LIVE. */
+export function isDeskLiveBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  return betKind(b) === 'live'
+}
+
+export function isPaperBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  return betKind(b) === 'paper'
+}
+
+export function isHistBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  return betKind(b) === 'hist'
+}
+
+export function isLiveBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  return betKind(b) === 'live'
+}
+
+export function isKalshiRecordedBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  const kind = betKind(b)
+  return kind === 'live' || kind === 'hist'
+}
+
+/** Only this-desk LIVE settled W/L move Kalshi cash. PAPER / HIST do not. */
+export function cashUpdateForBet(b: {
+  kind?: unknown
+  orderId?: unknown
+  betId?: unknown
+  status: 'open' | 'settled'
+  pnl: number | null
+}): { kind: 'paper' | 'hist' | 'open' | 'live'; amount: number | null } {
+  if (isHistBet(b)) return { kind: 'hist', amount: null }
+  if (isPaperBet(b)) return { kind: 'paper', amount: null }
+  if (!isLiveBet(b) || b.status !== 'settled' || b.pnl == null) return { kind: 'open', amount: null }
+  return { kind: 'live', amount: b.pnl }
+}
+
+function money(n: number) {
+  return Math.round(n * 100) / 100
+}
+
+export function betStamp(b: { settledAt?: number | null; closeAt?: number; filledAt?: number }) {
+  return Number(b.settledAt) || Number(b.closeAt) || Number(b.filledAt) || 0
+}
+
+/**
+ * LIVE CASH cells = GET /portfolio/balance (same $ as the scoreboard).
+ * PAPER / HIST = N/A. Soft FAIL an invented walk that drifts from Kalshi.
+ */
+export function cashAfterEachBet(
+  bets: Array<{
+    betId: string
+    kind?: unknown
+    orderId?: unknown
+    status: 'open' | 'settled'
+    pnl: number | null
+    settledAt?: number | null
+    closeAt?: number
+    filledAt?: number
+  }>,
+  currentCash: number | null | undefined,
+  deposits: number | null | undefined = null,
+): Record<string, number | null> {
+  const kalshi = Number.isFinite(currentCash ?? NaN)
+    ? money(Number(currentCash))
+    : Number.isFinite(deposits ?? NaN)
+      ? money(Number(deposits))
+      : null
+  const out: Record<string, number | null> = {}
+  for (const b of bets) {
+    out[b.betId] = isLiveBet(b) ? kalshi : null
+  }
+  return out
+}
+
+export function betWindowMs(b: { clock?: string; ticker?: string }) {
+  return windowMsForClock(b.clock || '') || windowMsForClock(b.ticker || '')
+}
+
+export function betClockLabel(b: { clock?: string; ticker?: string }) {
+  const fromTicker = clockFromTicker(b.ticker || '')
+  if (fromTicker) return fromTicker
+  if (isTapeClock(b.clock)) return b.clock
+  return clockFromTicker(b.clock || '') || '—'
 }
 
 export type FinanceState = {
@@ -87,20 +258,36 @@ export function emptyFinance(): FinanceState {
   return { killed: false, paperStartedAt: Date.now(), bets: [] }
 }
 
-export function hydrateFinance(raw: unknown): FinanceState {
+export function hydrateFinance(raw: unknown, trustKinds = false): FinanceState {
   const base = emptyFinance()
   if (!raw || typeof raw !== 'object') return base
   const o = raw as Partial<FinanceState>
   const bets = Array.isArray(o.bets)
-    ? o.bets.filter((b): b is BookedBet => {
-        return (
-          !!b &&
-          isTapeId(b.tape) &&
-          isRealOrderId(b.orderId) &&
-          (b.side === 'up' || b.side === 'down') &&
-          typeof b.ticker === 'string'
-        )
-      })
+    ? o.bets
+        .filter((b): b is BookedBet => {
+          if (!b || !isTapeId(b.tape) || (b.side !== 'up' && b.side !== 'down') || typeof b.ticker !== 'string') {
+            return false
+          }
+          const id = typeof b.betId === 'string' ? b.betId : ''
+          const ord = typeof b.orderId === 'string' ? b.orderId : ''
+          return (
+            isRealOrderId(ord) ||
+            id.startsWith('kalshi:') ||
+            id.startsWith('paper:') ||
+            id.startsWith('bet_') ||
+            /^deskfill-/i.test(ord)
+          )
+        })
+        .map((b) => {
+          if (isPaperOrderId(b.orderId) || (typeof b.betId === 'string' && /^paper:/i.test(b.betId))) {
+            return { ...b, kind: 'paper' as const }
+          }
+          if (trustKinds && (b.kind === 'live' || b.kind === 'paper' || b.kind === 'hist')) {
+            return { ...b, kind: b.kind }
+          }
+          if (!trustKinds && isImportedKalshiRow(b)) return { ...b, kind: 'hist' as const }
+          return { ...b, kind: betKind(b) }
+        })
     : []
   return {
     killed: o.killed === true,
@@ -121,7 +308,7 @@ export function loadFinance(): FinanceState {
 }
 
 export function saveFinance(state: FinanceState): FinanceState {
-  const next = hydrateFinance(state)
+  const next = hydrateFinance(state, true)
   const ls = deskStorage()
   if (!ls) return next
   try {
@@ -129,6 +316,7 @@ export function saveFinance(state: FinanceState): FinanceState {
   } catch {
     /* quota */
   }
+  pushHostDesk({ finance: next })
   return next
 }
 
@@ -148,46 +336,191 @@ export function pnlVsDeposits(cash: number | null | undefined, deposits: number 
 
 export function bookRealizedPnl(state: FinanceState) {
   return Math.round(
-    state.bets.filter((b) => b.status === 'settled' && b.pnl != null).reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
+    state.bets
+      .filter((b) => isLiveBet(b) && b.status === 'settled' && b.pnl != null)
+      .reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
   ) / 100
+}
+
+export function hitFromMs(now = Date.now(), fromMs?: number) {
+  if (fromMs != null && Number.isFinite(Number(fromMs)) && Number(fromMs) > 0) return Number(fromMs)
+  return now - 24 * 60 * 60 * 1000
+}
+
+function isDeskfillGhost(b: { orderId?: unknown; betId?: unknown }) {
+  const ord = String(b.orderId ?? '').trim()
+  const bet = String(b.betId ?? '').trim()
+  return /^deskfill-/i.test(ord) || /^deskfill-/i.test(bet)
+}
+
+/** This desk booked it. Soft FAIL imported Kalshi hist and deskfill ghosts in the 24H table. */
+export function isDeskBookedBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  if (isDeskfillGhost(b) || isPaperOrderId(b.orderId)) return false
+  if (isImportedKalshiRow(b) || isHistBet(b)) return false
+  if (isLiveBet(b) && isDeskfillGhost(b)) return false
+  return isPaperBet(b) || isLiveBet(b)
+}
+
+export type DeskBetRow = {
+  betId?: string
+  tape: TapeId
+  kind?: unknown
+  orderId?: unknown
+  status?: 'open' | 'settled'
+  spent?: number
+  pnl?: number | null
+  settledAt?: number | null
+  closeAt?: number
+  filledAt?: number
+}
+
+/** Last 24h of desk paper + live. Soft FAIL hist / imported settlements. */
+export function deskBooked24h<T extends DeskBetRow>(
+  bets: T[],
+  tapes: readonly TapeId[] = TAPE_IDS,
+  now = Date.now(),
+  fromMs?: number,
+) {
+  const allow = new Set(hydrateBetsFilter([...tapes]))
+  const from = hitFromMs(now, fromMs)
+  return bets
+    .filter((b) => allow.has(b.tape) && isDeskBookedBet(b) && betStamp(b) >= from)
+    .slice()
+    .sort((a, b) => betStamp(b) - betStamp(a))
+}
+
+export function deskBets24Key(rows: Array<{ betId?: unknown; orderId?: unknown }>) {
+  return rows
+    .map((r) => String(r.betId || r.orderId || ''))
+    .filter(Boolean)
+    .sort()
+    .join('|')
+}
+
+/** Stats from the same 24h desk rows. Soft FAIL a second compute / hits.events. */
+export function statsFromDeskBets24(rows: Array<{ status?: 'open' | 'settled'; spent?: number; pnl?: number | null }>) {
+  const settled = rows.filter((b) => b.status === 'settled')
+  const w = settled.filter((b) => (b.pnl ?? 0) > 0).length
+  const l = settled.filter((b) => (b.pnl ?? 0) < 0).length
+  const placed = Math.round(rows.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
+  const pnl = Math.round(settled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
+  const open = rows.filter((b) => b.status === 'open').length
+  const n = w + l
+  return { placed, w, l, pnl, open, pct: n ? Math.round((w / n) * 100) : 0 }
+}
+
+export type DeskBets24<T extends DeskBetRow = DeskBetRow> = ReturnType<typeof statsFromDeskBets24> & { rows: T[] }
+
+/** Soft FAIL overwrite unless the desk betId set actually changed. Soft FAIL poll flicker. */
+export function latchDeskBets24<T extends DeskBetRow>(prev: DeskBets24<T> | null | undefined, next: DeskBets24<T>): DeskBets24<T> {
+  if (!prev || !prev.rows.length) return next
+  if (deskBets24Key(prev.rows) === deskBets24Key(next.rows)) return next
+  if (!next.rows.length) return prev
+  if (next.rows.every((r) => isHistBet(r) || isImportedKalshiRow(r))) return prev
+  const prevIds = new Set(prev.rows.map((r) => String(r.betId || r.orderId || '')))
+  const added = next.rows.filter((r) => !prevIds.has(String(r.betId || r.orderId || '')))
+  if (added.length && added.every((r) => isHistBet(r) || isImportedKalshiRow(r))) return prev
+  const overlap = next.rows.filter((r) => prevIds.has(String(r.betId || r.orderId || ''))).length
+  if (overlap === 0) return prev
+  return next
 }
 
 export function last24hBets(
   state: FinanceState,
-  hits: { tapes: Record<TapeId, { w: number; l: number }>; events?: Array<{ tape: TapeId; at: number; spent?: number; pnl?: number }> },
+  _hits: {
+    tapes: Record<TapeId, { w: number; l: number }>
+    events?: Array<{ tape: TapeId; ticker?: string; win?: boolean; at: number; spent?: number; pnl?: number }>
+  },
   now = Date.now(),
   tapes: readonly TapeId[] = TAPE_IDS,
+  fromMs?: number,
+): DeskBets24<BookedBet> {
+  const rows = deskBooked24h(state.bets, tapes, now, fromMs)
+  return { rows, ...statsFromDeskBets24(rows) }
+}
+
+/** Same array as last24hBets. Soft FAIL a second book. */
+export function stripDeskRows<T extends DeskBetRow>(
+  bets: T[],
+  tapes: readonly TapeId[] = TAPE_IDS,
+  now = Date.now(),
+  fromMs?: number,
 ) {
-  const allow = new Set(hydrateBetsFilter([...tapes]))
-  const from = now - 24 * 60 * 60 * 1000
-  const recent = state.bets.filter((b) => allow.has(b.tape) && (b.filledAt || b.settledAt || 0) >= from)
-  const settled = recent.filter((b) => b.status === 'settled')
-  const bookW = settled.filter((b) => (b.pnl ?? 0) > 0).length
-  const bookL = settled.filter((b) => (b.pnl ?? 0) < 0).length
-  const selected = TAPE_IDS.filter((id) => allow.has(id))
-  const hitW = selected.reduce((s, id) => s + (hits.tapes[id]?.w ?? 0), 0)
-  const hitL = selected.reduce((s, id) => s + (hits.tapes[id]?.l ?? 0), 0)
-  const w = hitW + hitL > 0 ? hitW : bookW
-  const l = hitW + hitL > 0 ? hitL : bookL
-  const ev = (hits.events ?? []).filter((e) => allow.has(e.tape) && e.at >= from)
-  const placed =
-    recent.length > 0
-      ? Math.round(recent.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
-      : Math.round(ev.reduce((s, e) => s + (Number(e.spent) || 0), 0) * 100) / 100
-  const pnl =
-    recent.length > 0
-      ? Math.round(settled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
-      : Math.round(ev.reduce((s, e) => s + (Number(e.pnl) || 0), 0) * 100) / 100
-  return { placed, w, l, pnl }
+  return deskBooked24h(bets, tapes, now, fromMs)
+}
+
+function betWon(b: { pnl: number | null; win?: boolean }): boolean | null {
+  if (b.pnl != null && b.pnl !== 0) return b.pnl > 0
+  if (typeof b.win === 'boolean') return b.win
+  return null
+}
+
+/**
+ * Per-tape Hit percent. Union latch events + booked settled in the same window as the bets strip.
+ * A stale 0W–2L latch must not hide a fuller Kalshi book.
+ */
+export function tapeHitCell(
+  id: TapeId,
+  hits: {
+    tapes: Record<TapeId, { w: number; l: number }>
+    events?: Array<{ tape: TapeId; ticker?: string; win?: boolean; at: number; pnl?: number }>
+  },
+  bets: Array<{
+    tape: TapeId
+    ticker?: string
+    status: 'open' | 'settled'
+    pnl: number | null
+    settledAt?: number | null
+    closeAt?: number
+    filledAt?: number
+    kind?: unknown
+    orderId?: unknown
+    betId?: unknown
+  }>,
+  now = Date.now(),
+  fromMs?: number,
+) {
+  const from = hitFromMs(now, fromMs)
+  const byTicker = new Map<string, boolean>()
+  for (const b of bets) {
+    if (isHistBet(b) || isPaperBet(b)) continue
+    if (b.tape !== id || b.status !== 'settled' || betStamp(b) < from) continue
+    const ticker = typeof b.ticker === 'string' && b.ticker ? b.ticker : ''
+    if (!ticker || byTicker.has(ticker)) continue
+    const won = betWon(b)
+    if (won == null) continue
+    byTicker.set(ticker, won)
+  }
+  let w = 0
+  let l = 0
+  for (const win of byTicker.values()) {
+    if (win) w += 1
+    else l += 1
+  }
+  return { w, l }
+}
+
+function dayStartMs(now: number) {
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  return start.getTime()
 }
 
 export function dailyRealizedPnl(state: FinanceState, now = Date.now()) {
-  const start = new Date(now)
-  start.setHours(0, 0, 0, 0)
-  const from = start.getTime()
+  const from = dayStartMs(now)
   return Math.round(
     state.bets
-      .filter((b) => b.status === 'settled' && b.settledAt != null && b.settledAt >= from && b.pnl != null)
+      .filter((b) => isLiveBet(b) && b.status === 'settled' && b.settledAt != null && b.settledAt >= from && b.pnl != null)
+      .reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
+  ) / 100
+}
+
+/** Today’s desk-posted live P/L. Imported Kalshi history must not sit the bot. */
+export function deskDailyRealizedPnl(state: FinanceState, now = Date.now()) {
+  const from = dayStartMs(now)
+  return Math.round(
+    state.bets
+      .filter((b) => isDeskLiveBet(b) && b.status === 'settled' && b.settledAt != null && b.settledAt >= from && b.pnl != null)
       .reduce((s, b) => s + (b.pnl ?? 0), 0) * 100,
   ) / 100
 }
@@ -201,12 +534,18 @@ export function paper48hPassed(state: FinanceState, now = Date.now()) {
   return paperHoursLeft(state, now) <= 0
 }
 
-/** Soft FAIL asks ≥80¢ unless the gold lock band includes that ask. */
-export function askAllowedByGold(tape: TapeId, ask: number) {
+/** Live effective ask cap. Factory centHi 89 does not unlock ≥80. */
+export const LIVE_ASK_HI = ASK_CAP - 1
+
+/** Soft FAIL Live ask ≥80¢ unless the book is explicitly locked. Soft FAIL treating factory centHi 89 as that lock. */
+export function askAllowedByGold(tape: TapeId, ask: number, opts?: { locked?: boolean }) {
   if (!Number.isFinite(ask)) return false
   const gold = GOLD_RECIPES[tape]
-  if (ask >= ASK_CAP && (ask < gold.centLo || ask > gold.centHi)) return false
-  return ask >= gold.centLo && ask <= gold.centHi
+  if (ask >= ASK_CAP) {
+    if (opts?.locked !== true) return false
+    return ask >= gold.centLo && ask <= gold.centHi
+  }
+  return ask >= gold.centLo && ask <= Math.min(gold.centHi, LIVE_ASK_HI)
 }
 
 export function recommendSize(tape: TapeId) {
@@ -217,7 +556,54 @@ export function openOnTicker(state: FinanceState, ticker: string) {
   return state.bets.some((b) => b.ticker === ticker && b.status === 'open')
 }
 
+/** HIST imports do not occupy the desk-fill slot. Paper deskfill still books beside them. */
+export function openDeskFillOnTicker(state: FinanceState, ticker: string) {
+  return state.bets.some((b) => b.ticker === ticker && b.status === 'open' && betKind(b) !== 'hist')
+}
+
+/** One desk LIVE/PAPER row per ticker. Soft FAIL 4 CU LIVE ghosts from in-flight retries. */
+export function collapseClockBets(state: FinanceState): FinanceState {
+  const hist: BookedBet[] = []
+  const desk: BookedBet[] = []
+  for (const b of state.bets) {
+    if (betKind(b) === 'hist') hist.push(b)
+    else desk.push(b)
+  }
+  desk.sort((a, b) => (a.filledAt || 0) - (b.filledAt || 0))
+  const byTicker = new Map<string, BookedBet>()
+  for (const b of desk) {
+    const cur = byTicker.get(b.ticker)
+    if (!cur) {
+      byTicker.set(b.ticker, b)
+      continue
+    }
+    if (cur.status === 'open' && b.status === 'settled') {
+      byTicker.set(b.ticker, { ...b, betId: cur.betId })
+    }
+  }
+  const next = [...byTicker.values(), ...hist]
+  if (next.length === state.bets.length && next.every((b, i) => b.betId === state.bets[i]?.betId && b.orderId === state.bets[i]?.orderId && b.status === state.bets[i]?.status)) {
+    return state
+  }
+  return saveFinance({ ...state, bets: next })
+}
+
 export type Gate = { ok: true } | { ok: false; reason: string }
+
+export function readTestLiveArm(): Gate | null {
+  if (typeof window === 'undefined') return null
+  const v = (window as Window & { __HUB_TEST_LIVE_ARM?: Gate }).__HUB_TEST_LIVE_ARM
+  if (!v || typeof v !== 'object' || !('ok' in v)) return null
+  return v
+}
+
+export function liveArmGateForDesk(
+  state: FinanceState,
+  opts: { cash: number | null; deposits: number | null; hasKeys: boolean },
+  now = Date.now(),
+): Gate {
+  return readTestLiveArm() ?? liveArmGate(state, opts, now)
+}
 
 export function liveArmGate(
   state: FinanceState,
@@ -226,7 +612,8 @@ export function liveArmGate(
 ): Gate {
   if (state.killed) return { ok: false, reason: 'KILL on — Place blocked until cleared' }
   if (!opts.hasKeys) return { ok: false, reason: 'LIVE needs keys' }
-  if (!paper48hPassed(state, now)) {
+  const settled = state.bets.filter((b) => b.status === 'settled').length
+  if (!paper48hPassed(state, now) && settled < 12) {
     return { ok: false, reason: `Paper ${paperHoursLeft(state, now).toFixed(1)}h left — Soft FAIL Live ON` }
   }
   const cash = opts.cash
@@ -238,6 +625,185 @@ export function liveArmGate(
   return { ok: true }
 }
 
+/** Paper only when Live cash OFF or HALT. Soft FAIL silent deskfill when Live cash ON. */
+export function paperFillAllowed(opts: { liveCash: boolean; rehabPaper: boolean; stale: boolean }) {
+  if (opts.rehabPaper) return { ok: true as const, reason: 'Live cash HALT — paper rehab, not sent to Kalshi' }
+  if (opts.liveCash === true) return { ok: false as const, reason: 'Live cash ON — next through posts to Kalshi' }
+  if (opts.stale) return { ok: true as const, reason: 'STALE — paper only' }
+  return { ok: true as const, reason: 'Live cash OFF — paper only, not sent to Kalshi' }
+}
+
+/** Instant bot call. Bot ON + Live cash ON → live POST. Soft FAIL liveBets. Soft FAIL paper when Live cash ON unless HALT / STALE. */
+export function liveBotCall(opts: {
+  tabOpen: boolean
+  killed: boolean
+  botOn: boolean
+  liveCash: boolean
+  rehabPaper: boolean
+  tradingActive: boolean
+  inArm: boolean
+  askOk: boolean
+  lean: 'up' | 'down' | 'sit'
+  hitOk: boolean
+  fresh?: boolean
+  stale?: boolean
+}): 'live' | 'paper' | 'sit' {
+  if (
+    !opts.tabOpen ||
+    opts.killed ||
+    !opts.botOn ||
+    opts.tradingActive === false ||
+    !opts.inArm ||
+    !opts.askOk ||
+    opts.lean === 'sit'
+  ) {
+    return 'sit'
+  }
+  const stale = opts.stale === true || opts.fresh === false
+  if (opts.rehabPaper) return 'paper'
+  if (opts.liveCash === true) {
+    if (stale && opts.tradingActive !== true) return 'sit'
+    return 'live'
+  }
+  if (stale && opts.tradingActive !== true) return 'paper'
+  return 'paper'
+}
+
+export type LiveTapeDecision =
+  | { action: 'send'; call: 'live' | 'paper'; lean: 'up' | 'down'; ask: number }
+  | { action: 'sit'; reason: string }
+
+/**
+ * Sit → send for one tape. Already-Live + inArm + ask in band + lean up/down → send.
+ * Soft FAIL feeEV / paper48h / lock-in here (those live in liveSendGate, skipped when liveOn).
+ */
+export function liveTapeDecision(opts: {
+  id: TapeId
+  quote:
+    | {
+        ticker?: string
+        closeAt?: number
+        tradingActive?: boolean
+        live?: number | null
+        beat?: number
+        yesAsk?: number
+        noAsk?: number
+      }
+    | null
+    | undefined
+  recipe: TapeRecipe
+  botOn: boolean
+  liveCash: boolean
+  haveRealOrder?: boolean
+  killed?: boolean
+  tabOpen?: boolean
+  rehabPaper?: boolean
+  hitOk?: boolean
+  fresh?: boolean
+  stale?: boolean
+  now?: number
+}): LiveTapeDecision {
+  if (opts.tabOpen === false) return { action: 'sit', reason: 'Sit — tab hidden' }
+  if (opts.killed) return { action: 'sit', reason: 'KILL on — Place blocked until cleared' }
+  if (!opts.botOn) return { action: 'sit', reason: 'Bot OFF' }
+  const quote = opts.quote
+  if (!quote?.ticker) return { action: 'sit', reason: 'Sit — no ticker' }
+  if (quote.tradingActive === false) return { action: 'sit', reason: 'Kalshi window closed — sit' }
+  if (opts.haveRealOrder) return { action: 'sit', reason: 'Sit — one ticket this clock' }
+  if (!quote.closeAt || !inArmWindow(opts.recipe, quote.closeAt, opts.now)) {
+    return { action: 'sit', reason: `Sit — arm ${opts.recipe.armFromMin}–${opts.recipe.armToMin} min` }
+  }
+  const lean = tapeLean({
+    id: opts.id,
+    live: quote.live ?? null,
+    beat: quote.beat ?? 0,
+    recipe: opts.recipe,
+  })
+  if (lean === 'sit') return { action: 'sit', reason: 'Sit — no through / hug' }
+  const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
+  const askOk =
+    ask != null && Number.isFinite(ask) && (opts.liveCash ? askAllowedByGold(opts.id, ask) : askInBand(ask, opts.recipe))
+  if (!askOk) return { action: 'sit', reason: 'Sit — ask out of band' }
+  const call = liveBotCall({
+    tabOpen: opts.tabOpen !== false,
+    killed: opts.killed === true,
+    botOn: opts.botOn,
+    liveCash: opts.liveCash,
+    rehabPaper: opts.rehabPaper === true,
+    tradingActive: quote.tradingActive !== false,
+    inArm: true,
+    askOk: true,
+    lean,
+    hitOk: opts.hitOk !== false,
+    fresh: opts.fresh,
+    stale: opts.stale,
+  })
+  if (call === 'sit') return { action: 'sit', reason: 'Sit — liveBotCall' }
+  return { action: 'send', call, lean, ask: ask as number }
+}
+
+/** Why this tape is sitting / paper / live — Live cash ON is not silent. Soft FAIL master Live copy. */
+export function tapeBotNote(opts: {
+  botOn: boolean
+  liveCash: boolean
+  rehabPaper: boolean
+  hostCreds: boolean
+  tradingActive: boolean
+  inArm: boolean
+  askOk: boolean
+  lean: 'up' | 'down' | 'sit'
+  hitOk: boolean
+  armFromMin: number
+  armToMin: number
+  stale?: boolean
+}) {
+  if (!opts.botOn) return 'Bot OFF'
+  if (opts.rehabPaper) return 'Live cash HALT — paper rehab, not sent to Kalshi'
+  if (opts.tradingActive === false) return 'Kalshi window closed — sit'
+  if (opts.stale && opts.tradingActive !== true) return 'STALE — paper only'
+  if (!opts.liveCash) return 'Live cash OFF — paper only, not sent to Kalshi'
+  if (!opts.inArm) return `Sit — arm ${opts.armFromMin}–${opts.armToMin} min`
+  if (opts.lean === 'sit') return 'Sit — no through / hug'
+  if (!opts.askOk) return 'Sit — ask out of band'
+  if (!opts.liveCash && !opts.hitOk) return `Sit — under ${HIT_FLOOR}% goal`
+  if (!opts.hostCreds) return 'Kalshi keys missing on this PC — cannot POST'
+  return 'Live cash ON — next through posts to Kalshi'
+}
+
+/** Sit when the tape is under the 80% goal after enough settled results. */
+export function hitFloorGate(w: number, l: number): Gate {
+  const n = Math.max(0, Math.round(w) + Math.round(l))
+  if (n < 4) return { ok: true }
+  const pct = Math.round((Math.max(0, w) / n) * 100)
+  if (pct < HIT_FLOOR) return { ok: false, reason: `${pct}% < ${HIT_FLOOR}% goal — sit` }
+  return { ok: true }
+}
+
+/** Last N desk-live settled W–L on one tape. Soft FAIL lifetime hit lock. */
+export function recentLiveTapeWL(
+  bets: Array<{
+    tape: TapeId
+    status: 'open' | 'settled'
+    pnl: number | null
+    settledAt?: number | null
+    closeAt?: number
+    filledAt?: number
+    kind?: unknown
+    orderId?: unknown
+    betId?: unknown
+  }>,
+  id: TapeId,
+  n = 12,
+) {
+  const mine = bets
+    .filter((b) => b.tape === id && b.status === 'settled' && b.pnl != null && isLiveBet(b))
+    .sort((a, b) => betStamp(b) - betStamp(a))
+    .slice(0, Math.max(1, n))
+  const w = mine.filter((b) => (b.pnl ?? 0) > 0).length
+  const l = mine.filter((b) => (b.pnl ?? 0) < 0).length
+  return { w, l, n: w + l }
+}
+
 export function liveSendGate(
   state: FinanceState,
   opts: {
@@ -247,21 +813,47 @@ export function liveSendGate(
     cash: number | null
     deposits: number | null
     spent: number
+    locked?: boolean
+    /** Already-Live tape. Soft FAIL feeEV / paper48h / lock-in / 12-settle sit. */
+    liveOn?: boolean
   },
   now = Date.now(),
 ): Gate {
   if (state.killed) return { ok: false, reason: 'KILL on — Place blocked until cleared' }
+  if (!tapeAllowsLive(opts.tape)) return { ok: false, reason: `${TAPE_META[opts.tape].label} paper desk — Soft FAIL Live` }
   if (!opts.ticker) return { ok: false, reason: 'No ticker' }
-  if (!askAllowedByGold(opts.tape, opts.ask)) {
-    return { ok: false, reason: `Ask ${opts.ask}¢ blocked (≥${ASK_CAP} unless gold lock)` }
+  if (!askAllowedByGold(opts.tape, opts.ask, { locked: opts.locked === true })) {
+    return { ok: false, reason: `Ask ${opts.ask}¢ skip (≥${ASK_CAP} unless locked)` }
   }
-  const daily = dailyRealizedPnl(state, now)
-  if (daily <= DAILY_PNL_FLOOR_PAPER) {
-    return { ok: false, reason: `Daily P/L floor ${DAILY_PNL_FLOOR_PAPER} — KILL / sit` }
+  const alreadyLive = opts.liveOn === true
+  const daily = deskDailyRealizedPnl(state, now)
+  if (!alreadyLive && daily <= DAILY_PNL_FLOOR_PAPER) {
+    return { ok: false, reason: `Daily P/L floor ${DAILY_PNL_FLOOR_PAPER} — floor hit` }
   }
+  const capCount = Math.max(1, Math.floor(CLOCK_MAX_SPEND / Math.max(0.01, opts.ask / 100)))
+  if (opts.spent > CLOCK_MAX_SPEND && !alreadyLive) {
+    return { ok: false, reason: `Clock spend $${opts.spent} over $${CLOCK_MAX_SPEND} cap` }
+  }
+  if (opts.spent > CLOCK_MAX_SPEND && alreadyLive && capCount < 1) {
+    return { ok: false, reason: `Clock spend $${opts.spent} over $${CLOCK_MAX_SPEND} cap` }
+  }
+  if (!alreadyLive && dailyProfitLockHit(state, now)) {
+    return { ok: false, reason: `Daily lock-in +$${DAILY_PROFIT_LOCK} — sit` }
+  }
+  const count = Math.max(1, Math.round(opts.spent / Math.max(0.01, opts.ask / 100)))
+  if (!alreadyLive) {
+    const ev = feeAwareEvGate(opts.ask, count)
+    if (!ev.ok) return ev
+  }
+  const heat = openLiveClockTapes(state)
+  const pair = livePairGate(opts.tape, heat)
+  if (!pair.ok) return pair
   const floor = liveCashFloor(opts.deposits)
-  if (Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) - opts.spent < floor) {
+  if (!alreadyLive && Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) - opts.spent < floor) {
     return { ok: false, reason: `Cash floor ${floor} blocks Place` }
+  }
+  if (alreadyLive && Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) < opts.spent) {
+    return { ok: false, reason: `Cash ${opts.cash} cannot cover $${opts.spent}` }
   }
   return { ok: true }
 }
@@ -279,10 +871,10 @@ export function bookFill(
     orderId: unknown
   },
 ): { ok: true; state: FinanceState; bet: BookedBet } | { ok: false; state: FinanceState; reason: string } {
-  if (!isRealOrderId(input.orderId)) {
+  if (!isPaperOrderId(input.orderId) && !isRealOrderId(input.orderId)) {
     return { ok: false, state, reason: 'Soft FAIL ghost BOT BOUGHT — no real order id' }
   }
-  if (openOnTicker(state, input.ticker)) {
+  if (openDeskFillOnTicker(state, input.ticker)) {
     return { ok: false, state, reason: 'One ticket/clock — already booked' }
   }
   const spent = ticketCost(input.count, input.ask)
@@ -301,6 +893,7 @@ export function bookFill(
     pnl: null,
     filledAt: Date.now(),
     settledAt: null,
+    kind: isPaperOrderId(input.orderId) ? 'paper' : 'live',
   }
   const next = saveFinance({ ...state, bets: [...state.bets, bet] })
   return { ok: true, state: next, bet }
@@ -309,8 +902,9 @@ export function bookFill(
 export function syncTicketsIntoBook(state: FinanceState, tickets: DeskTicket[], clockOf: (t: DeskTicket) => { clock: string; closeAt: number; ask: number }) {
   let next = state
   for (const t of tickets) {
-    if (!isRealOrderId(t.orderId)) continue
-    if (next.bets.some((b) => b.orderId === t.orderId || (b.ticker === t.ticker && b.status === 'open'))) continue
+    if (!isPaperOrderId(t.orderId) && !isRealOrderId(t.orderId)) continue
+    if (next.bets.some((b) => b.orderId === t.orderId)) continue
+    if (openDeskFillOnTicker(next, t.ticker)) continue
     const meta = clockOf(t)
     const booked = bookFill(next, {
       tape: t.tape,
@@ -325,6 +919,310 @@ export function syncTicketsIntoBook(state: FinanceState, tickets: DeskTicket[], 
     if (booked.ok) next = booked.state
   }
   return next
+}
+
+export function mergeSettlementEventsToBook(
+  state: FinanceState,
+  events: Array<{ tape: TapeId; ticker: string; win: boolean; at: number; spent?: number; pnl?: number }>,
+): FinanceState {
+  const have = new Set(state.bets.map((b) => b.ticker))
+  const extra: BookedBet[] = []
+  for (const e of events) {
+    if (have.has(e.ticker)) continue
+    have.add(e.ticker)
+    extra.push({
+      betId: `kalshi:${e.ticker}`,
+      tape: e.tape,
+      ticker: e.ticker,
+      clock: '',
+      closeAt: e.at,
+      side: e.win ? 'up' : 'down',
+      count: 1,
+      ask: 50,
+      spent: e.spent ?? 0,
+      orderId: `settled-${e.ticker}`.slice(0, 48),
+      status: 'settled',
+      pnl: e.pnl ?? (e.win ? 0.01 : -0.01),
+      filledAt: e.at,
+      settledAt: e.at,
+      kind: 'hist',
+    })
+  }
+  if (!extra.length) return state
+  return saveFinance({ ...state, bets: [...state.bets, ...extra] })
+}
+
+function listFromPayload(raw: unknown, keys: string[]) {
+  if (Array.isArray(raw)) return raw as Record<string, unknown>[]
+  if (!raw || typeof raw !== 'object') return []
+  const o = raw as Record<string, unknown>
+  const nested = o.data && typeof o.data === 'object' ? (o.data as Record<string, unknown>) : null
+  for (const key of keys) {
+    if (Array.isArray(o[key])) return o[key] as Record<string, unknown>[]
+    if (nested && Array.isArray(nested[key])) return nested[key] as Record<string, unknown>[]
+  }
+  return []
+}
+
+function kalshiAt(row: Record<string, unknown>, keys: string[], fallback = 0) {
+  for (const key of keys) {
+    const raw = row[key]
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw < 1e12 ? raw * 1000 : raw
+    const parsed = Date.parse(String(raw ?? ''))
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return fallback
+}
+
+function dollarsFrom(row: Record<string, unknown>, dollarKeys: string[], centKeys: string[] = []) {
+  for (const key of dollarKeys) {
+    const n = num(row[key])
+    if (n != null) return Number.isInteger(n) && Math.abs(n) >= 1000 ? n / 100 : n
+  }
+  for (const key of centKeys) {
+    const n = num(row[key])
+    if (n != null) return n / 100
+  }
+  return 0
+}
+
+function fillPriceDollars(row: Record<string, unknown>, dollarKey: string, centKey: string) {
+  const d = num(row[dollarKey])
+  if (d != null) {
+    if (Number.isInteger(d) && d >= 1 && d <= 99) return d / 100
+    return d
+  }
+  const c = num(row[centKey])
+  return c != null ? c / 100 : 0
+}
+
+function fillSide(row: Record<string, unknown>): 'up' | 'down' {
+  const outcome = String(row.outcome_side ?? row.side ?? '').toLowerCase()
+  if (outcome === 'no') return 'down'
+  if (outcome === 'yes') return 'up'
+  const book = String(row.book_side ?? '').toLowerCase()
+  if (book === 'ask') return 'down'
+  return 'up'
+}
+
+export function betsFromKalshiFills(raw: unknown, fromMs = 0): BookedBet[] {
+  const groups = new Map<
+    string,
+    { tape: TapeId; ticker: string; upSpent: number; downSpent: number; upCount: number; downCount: number; filledAt: number; orderId: string }
+  >()
+  for (const row of listFromPayload(raw, ['fills'])) {
+    if (!row || typeof row !== 'object') continue
+    const ticker = String(row.ticker ?? row.market_ticker ?? '')
+    const tape = seriesToTape(ticker)
+    if (!tape) continue
+    const at = kalshiAt(row, ['created_time', 'ts', 'created_ts'], 0)
+    if (at && at < fromMs) continue
+    const side = fillSide(row)
+    const count = Math.abs(num(row.count_fp) ?? num(row.count) ?? 0)
+    const yesPx = fillPriceDollars(row, 'yes_price_dollars', 'yes_price')
+    const noPx = fillPriceDollars(row, 'no_price_dollars', 'no_price')
+    const px = side === 'up' ? yesPx || noPx : noPx || yesPx
+    const spent = Math.round(count * px * 100) / 100
+    const orderId = String(row.order_id ?? row.fill_id ?? row.trade_id ?? `fill-${ticker}`).trim()
+    const cur = groups.get(ticker) ?? {
+      tape,
+      ticker,
+      upSpent: 0,
+      downSpent: 0,
+      upCount: 0,
+      downCount: 0,
+      filledAt: at || Date.now(),
+      orderId,
+    }
+    if (side === 'up') {
+      cur.upSpent += spent
+      cur.upCount += count
+    } else {
+      cur.downSpent += spent
+      cur.downCount += count
+    }
+    if (at && at < cur.filledAt) cur.filledAt = at
+    if (isRealOrderId(orderId)) cur.orderId = orderId
+    groups.set(ticker, cur)
+  }
+  const out: BookedBet[] = []
+  for (const g of groups.values()) {
+    const side: 'up' | 'down' = g.upSpent >= g.downSpent ? 'up' : 'down'
+    const spent = Math.round((g.upSpent + g.downSpent) * 100) / 100
+    const count = Math.max(1, Math.round(side === 'up' ? g.upCount : g.downCount) || 1)
+    const ask = count > 0 ? Math.round(((side === 'up' ? g.upSpent : g.downSpent) / count) * 100) : 50
+    out.push({
+      betId: `kalshi:${g.ticker}`,
+      tape: g.tape,
+      ticker: g.ticker,
+      clock: clockFromTicker(g.ticker),
+      closeAt: 0,
+      side,
+      count,
+      ask: Number.isFinite(ask) && ask > 0 ? ask : 50,
+      spent,
+      orderId: isRealOrderId(g.orderId) ? g.orderId : `fill-${g.ticker}`.slice(0, 48),
+      status: 'open',
+      pnl: null,
+      filledAt: g.filledAt,
+      settledAt: null,
+      kind: 'hist',
+    })
+  }
+  return out
+}
+
+export function betsFromKalshiSettlements(raw: unknown, fromMs = 0, now = Date.now()): BookedBet[] {
+  return eventsFromKalshiSettlements(raw, now, fromMs).map((e) => ({
+    betId: `kalshi:${e.ticker}`,
+    tape: e.tape,
+    ticker: e.ticker,
+    clock: clockFromTicker(e.ticker),
+    closeAt: e.at,
+    side: e.win ? ('up' as const) : ('down' as const),
+    count: 1,
+    ask: 50,
+    spent: e.spent ?? 0,
+    orderId: `settled-${e.ticker}`.slice(0, 48),
+    status: 'settled' as const,
+    pnl: e.pnl ?? (e.win ? 0.01 : -0.01),
+    filledAt: e.at,
+    settledAt: e.at,
+    kind: 'hist' as const,
+  }))
+}
+
+export function betsFromKalshiPositions(raw: unknown, fromMs = 0): BookedBet[] {
+  const out: BookedBet[] = []
+  for (const row of listFromPayload(raw, ['market_positions', 'positions'])) {
+    if (!row || typeof row !== 'object') continue
+    const ticker = String(row.ticker ?? '')
+    const tape = seriesToTape(ticker)
+    if (!tape) continue
+    const pos = num(row.position_fp) ?? num(row.position) ?? 0
+    if (pos === 0) continue
+    const at = kalshiAt(row, ['last_updated_ts', 'updated_ts', 'ts'], Date.now())
+    if (at < fromMs) continue
+    const spent = dollarsFrom(row, ['market_exposure_dollars', 'total_traded_dollars'], ['market_exposure', 'total_traded'])
+    const count = Math.max(1, Math.round(Math.abs(pos)))
+    out.push({
+      betId: `kalshi:${ticker}`,
+      tape,
+      ticker,
+      clock: clockFromTicker(ticker),
+      closeAt: 0,
+      side: pos < 0 ? 'down' : 'up',
+      count,
+      ask: count > 0 && spent > 0 ? Math.round((spent / count) * 100) : 50,
+      spent: Math.round(spent * 100) / 100,
+      orderId: `pos-${ticker}`.slice(0, 48),
+      status: 'open',
+      pnl: null,
+      filledAt: at,
+      settledAt: null,
+      kind: 'hist',
+    })
+  }
+  return out
+}
+
+export function betsFromKalshiOrders(raw: unknown, fromMs = 0): BookedBet[] {
+  const out: BookedBet[] = []
+  for (const row of listFromPayload(raw, ['orders', 'event_orders'])) {
+    if (!row || typeof row !== 'object') continue
+    const ticker = String(row.ticker ?? row.market_ticker ?? '')
+    const tape = seriesToTape(ticker)
+    if (!tape) continue
+    const status = String(row.status ?? '').toLowerCase()
+    if (status === 'canceled' || status === 'cancelled') continue
+    const at = kalshiAt(row, ['created_time', 'created_ts', 'ts'], Date.now())
+    if (at && at < fromMs) continue
+    const side = fillSide(row)
+    const count = Math.max(1, Math.round(Math.abs(num(row.remaining_count_fp) ?? num(row.count_fp) ?? num(row.count) ?? 1)))
+    const yesPx = fillPriceDollars(row, 'yes_price_dollars', 'yes_price')
+    const noPx = fillPriceDollars(row, 'no_price_dollars', 'no_price')
+    const px = side === 'up' ? yesPx || noPx : noPx || yesPx
+    const spent = Math.round(count * px * 100) / 100
+    const orderId = String(row.order_id ?? row.client_order_id ?? `order-${ticker}`).trim()
+    out.push({
+      betId: `kalshi:${ticker}`,
+      tape,
+      ticker,
+      clock: clockFromTicker(ticker),
+      closeAt: 0,
+      side,
+      count,
+      ask: px > 0 ? Math.round(px * 100) : 50,
+      spent,
+      orderId: isRealOrderId(orderId) ? orderId : `order-${ticker}`.slice(0, 48),
+      status: 'open',
+      pnl: null,
+      filledAt: at,
+      settledAt: null,
+      kind: 'hist',
+    })
+  }
+  return out
+}
+
+export function mergeKalshiHistoryToBook(
+  state: FinanceState,
+  input: { fills?: unknown; settlements?: unknown; positions?: unknown; orders?: unknown; fromMs?: number },
+  now = Date.now(),
+): FinanceState {
+  const fromMs = Number.isFinite(input.fromMs) ? Number(input.fromMs) : 0
+  const byTicker = new Map<string, BookedBet>()
+  for (const b of betsFromKalshiSettlements(input.settlements, fromMs, now)) byTicker.set(b.ticker, b)
+  for (const b of betsFromKalshiFills(input.fills, fromMs)) {
+    const cur = byTicker.get(b.ticker)
+    if (!cur) {
+      byTicker.set(b.ticker, b)
+      continue
+    }
+    byTicker.set(b.ticker, {
+      ...cur,
+      side: b.side,
+      count: b.count || cur.count,
+      ask: b.ask || cur.ask,
+      spent: cur.spent || b.spent,
+      orderId: isRealOrderId(b.orderId) ? b.orderId : cur.orderId,
+      filledAt: Math.min(cur.filledAt || b.filledAt, b.filledAt || cur.filledAt),
+      kind: betKind(b),
+    })
+  }
+  for (const b of betsFromKalshiPositions(input.positions, fromMs)) {
+    if (!byTicker.has(b.ticker)) byTicker.set(b.ticker, b)
+  }
+  for (const b of betsFromKalshiOrders(input.orders, fromMs)) {
+    if (!byTicker.has(b.ticker)) byTicker.set(b.ticker, b)
+  }
+  const kalshi = [...byTicker.values()].map((b) => ({ ...b, kind: betKind(b) }))
+  if (!kalshi.length) return state
+  const desk = state.bets.filter((b) => !isImportedKalshiRow(b))
+  const imported = state.bets.filter((b) => isImportedKalshiRow(b))
+  const deskTickers = new Set(desk.map((b) => b.ticker))
+  const deskNext = desk.map((b) => {
+    const k = kalshi.find((row) => row.ticker === b.ticker)
+    if (!k) return { ...b, kind: betKind(b) }
+    if (b.status === 'settled') {
+      if (k.status === 'settled' && k.pnl != null && isLiveBet(b) && k.pnl !== b.pnl) {
+        return { ...b, pnl: k.pnl, settledAt: b.settledAt ?? k.settledAt, spent: b.spent || k.spent, kind: betKind(b) }
+      }
+      return { ...b, kind: betKind(b) }
+    }
+    if (k.status !== 'settled') return { ...b, kind: betKind(b), spent: b.spent || k.spent }
+    return {
+      ...b,
+      status: 'settled' as const,
+      pnl: k.pnl ?? b.pnl,
+      settledAt: b.settledAt ?? k.settledAt,
+      spent: b.spent || k.spent,
+      kind: betKind(b),
+    }
+  })
+  const extra: BookedBet[] = []
+  const keptImported = imported.filter((b) => !deskTickers.has(b.ticker))
+  return saveFinance({ ...state, bets: [...deskNext, ...extra, ...keptImported] })
 }
 
 export function settleBook(
@@ -350,6 +1248,14 @@ export function settleBook(
   return changed ? saveFinance({ ...state, bets }) : state
 }
 
+export function dailyPnlFloorHit(state: FinanceState, now = Date.now()) {
+  return deskDailyRealizedPnl(state, now) <= DAILY_PNL_FLOOR_PAPER
+}
+
+export function dailyProfitLockHit(state: FinanceState, now = Date.now()) {
+  return deskDailyRealizedPnl(state, now) >= DAILY_PROFIT_LOCK
+}
+
 export function engageKill(state: FinanceState) {
   return saveFinance({ ...state, killed: true })
 }
@@ -372,7 +1278,7 @@ export function isRecipeRetune(patch: Partial<TapeRecipe>) {
 /** Session is chasing if KILL is on or today's booked P/L is red. */
 export function chasingLosses(state: FinanceState, now = Date.now()) {
   if (state.killed) return true
-  return dailyRealizedPnl(state, now) < 0
+  return deskDailyRealizedPnl(state, now) < 0
 }
 
 export function recipeRetuneGate(state: FinanceState, patch: Partial<TapeRecipe>, now = Date.now()): Gate {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { V2_EVENTS_ORDERS, v2EventsOrderBody } from '../src/lib/kalshi-trade.server'
-import { GOLD_RECIPES, cashGates, extractOrderId, hydrateSettings, tabIsOpen } from '../src/lib/tapes'
+import { GOLD_RECIPES, cashGates, confirmedPlaceOrderId, extractOrderId, hydrateSettings, hostLivePlaceGate, isRealOrderId, livePlaceGate, placeOrderStatus, tabIsOpen, tapeAllowsLive } from '../src/lib/tapes'
 
 describe('placeContract V2 Soft KEEP', () => {
   it('BUY UP is bid at yes_ask 0.xxxx with taker_at_cross', () => {
@@ -23,7 +23,7 @@ describe('placeContract V2 Soft KEEP', () => {
     expect(body).not.toHaveProperty('no_price')
   })
 
-  it('BUY DOWN is ask at (1 − no_ask), not no_ask and not bid', () => {
+  it('BUY DOWN is V2 ask at (1 − no_ask) — BUY NO, not bid YES', () => {
     const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     const body = v2EventsOrderBody({
       ticker: 'KXCOPPER15M-1',
@@ -37,6 +37,7 @@ describe('placeContract V2 Soft KEEP', () => {
     expect(body.side).not.toBe('bid')
     expect(body.price).toBe('0.8800')
     expect(body.price).not.toBe('0.1200')
+    expect(body.time_in_force).toBe('good_till_canceled')
     expect(body.self_trade_prevention_type).toBe('taker_at_cross')
     expect(body.client_order_id).toBe(id)
   })
@@ -54,15 +55,74 @@ describe('placeContract V2 Soft KEEP', () => {
     expect(extractOrderId({ status: 'paper' })).toBeNull()
     expect(extractOrderId({ order: { order_id: 'ord-live-fill-01' } })).toBe('ord-live-fill-01')
     expect(extractOrderId({ position: { position_id: 'pos-live-fill-01' } })).toBe('pos-live-fill-01')
+    expect(isRealOrderId('deskfill-btc-ghost01')).toBe(false)
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b74f-7b30-701f-8eb6-fa1303b858ad', status: 'executed', fill_count: 1 } })).toBe(
+      '01a0b74f-7b30-701f-8eb6-fa1303b858ad',
+    )
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'executed' } })).toBeNull()
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'canceled', fill_count: 0, action: 'sell', side: 'yes' } })).toBeNull()
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'resting', fill_count: 0 } })).toBeNull()
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'canceled', fill_count: 0, count_fp: '20.00' } })).toBeNull()
+    expect(confirmedPlaceOrderId({ order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', fill_count: '0.00' })).toBeNull()
+    expect(confirmedPlaceOrderId({ order: { order_id: 'deskfill-btc-ghost01' } })).toBeNull()
+    expect(placeOrderStatus({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'canceled', fill_count: 0 } })).toBe('canceled')
+    expect(placeOrderStatus({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'resting', fill_count: 0 } })).toBe('resting')
+    expect(placeOrderStatus({ order: { order_id: '01a0b74f-7b30-701f-8eb6-fa1303b858ad', status: 'executed', fill_count: 1 } })).toBe('filled')
+    expect(tapeAllowsLive('btc')).toBe(true)
+    expect(tapeAllowsLive('wti')).toBe(false)
+    expect(tapeAllowsLive('slv')).toBe(false)
   })
 
   it('does not flip Live/bots ON or retune recipes', () => {
     const s = hydrateSettings(null)
-    expect(s.liveBets).toBe(false)
-    expect(cashGates(s, 'btc').ok).toBe(false)
-    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })
-    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002 })
-    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002 })
+    expect(s).not.toHaveProperty('liveBets')
+    expect(hydrateSettings({ liveBets: true })).not.toHaveProperty('liveBets')
+    expect(cashGates(s, 'btc').ok).toBe(true)
+    expect(livePlaceGate({ botOn: true, liveOn: true, hasKeys: true }).ok).toBe(true)
+    expect(livePlaceGate({ botOn: false, liveOn: true, hasKeys: true }).ok).toBe(false)
+    expect(livePlaceGate({ botOn: true, liveOn: false, hasKeys: true }).ok).toBe(false)
+    expect(livePlaceGate({ botOn: true, liveOn: true, hasKeys: false }).ok).toBe(false)
+    const factory = hydrateSettings(null)
+    expect(hostLivePlaceGate({ settings: factory, tape: 'btc', clientBotOn: true, clientLiveOn: true, hasKeys: true }).ok).toBe(true)
+    expect(
+      hostLivePlaceGate({
+        settings: { ...factory, tapes: { ...factory.tapes, btc: { ...factory.tapes.btc, botOn: true, liveOn: true } } },
+        tape: 'btc',
+        clientBotOn: true,
+        clientLiveOn: true,
+        hasKeys: true,
+      }).ok,
+    ).toBe(true)
+    expect(
+      hostLivePlaceGate({
+        settings: {
+          ...factory,
+          togglesPicked: true,
+          tapes: { ...factory.tapes, btc: { ...factory.tapes.btc, botOn: false, liveOn: false } },
+        },
+        tape: 'btc',
+        clientBotOn: true,
+        clientLiveOn: true,
+        hasKeys: true,
+      }).ok,
+    ).toBe(true)
+    expect(hostLivePlaceGate({ settings: factory, tape: 'btc', clientBotOn: true, clientLiveOn: false, hasKeys: true }).ok).toBe(false)
+    expect(hostLivePlaceGate({ settings: factory, tape: 'btc', clientBotOn: true, clientLiveOn: false, hasKeys: true }).reason).toMatch(/Live cash/)
+    expect(hostLivePlaceGate({ settings: factory, clientBotOn: true, clientLiveOn: true, hasKeys: true }).ok).toBe(false)
+    for (const tape of ['btc', 'ng', 'cu'] as const) {
+      expect(
+        hostLivePlaceGate({
+          settings: factory,
+          tape,
+          clientBotOn: true,
+          clientLiveOn: true,
+          hasKeys: true,
+        }).ok,
+      ).toBe(true)
+    }
+    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 12, armToMin: 0.5, through: 15, centLo: 45, centHi: 89, contracts: 20, liveOn: true })
+    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, contracts: 15, liveOn: true })
+    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, contracts: 15, liveOn: true })
     expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 10, armToMin: 3, through: 2, centLo: 34 })
     expect(tabIsOpen()).toBe(true)
   })
