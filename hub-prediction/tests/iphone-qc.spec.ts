@@ -821,13 +821,17 @@ test('hit goal is 80% — Soft FAIL leftover 83%', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
   await expect(page.getByTestId('ttl-value')).toContainText(/80% goal|<80%/)
-  await expect(page.getByTestId('ttl-value')).not.toContainText('83%')
-  await expect(page.getByTestId('analyst')).toContainText(/80%/)
-  await expect(page.getByTestId('analyst')).not.toContainText('83%')
+  await expect(page.getByTestId('ttl-value')).not.toContainText('83% goal')
+  await expect(page.getByTestId('analyst-lock')).toContainText(/80%|paper-test/)
   await expect(page.getByTestId('desk')).not.toContainText('83% goal')
+  await expect(page.locator('.hud-label', { hasText: 'Analyst' })).toContainText('80%')
+  await expect(page.locator('.hud-label', { hasText: 'Analyst' })).not.toContainText('83%')
   await page.getByTestId('settings-toggle').click()
   await expect(page.getByTestId('settings')).toContainText(/toward 80%/)
   await expect(page.getByTestId('settings')).not.toContainText('83%')
+  for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+    await expect(page.getByTestId(`analyst-${id}`)).not.toContainText('83% goal')
+  }
 })
 
 test('header: HUB Predictions centered, no keys chrome, readable labels — 390', async ({ page }) => {

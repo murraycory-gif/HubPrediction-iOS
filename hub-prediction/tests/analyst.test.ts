@@ -17,13 +17,15 @@ import {
   paperRehabStats,
   pathWindowFromPoints,
   profitImpact,
+  rehabCopy,
   REHAB_PAPER_RUNS,
   runAutoAnalyst,
   savePaperDrafts,
   scoreBetsVsRecipe,
   summarizeTapePath,
 } from '../src/lib/analyst'
-import { GOLD_RECIPES, SETTINGS_KEY, emptyHits, hydrateSettings, loadSettings, patchTape } from '../src/lib/tapes'
+import { HIT_FLOOR } from '../src/lib/finance'
+import { GOLD_RECIPES, SETTINGS_KEY, TAPE_IDS, emptyHits, hydrateSettings, loadSettings, patchTape } from '../src/lib/tapes'
 import type { DeskBoard, TapeQuote } from '../src/lib/types'
 
 afterEach(() => {
@@ -269,7 +271,7 @@ describe('analyst current rules + profit dollars', () => {
     )
     const trim = hot.tapes.find((t) => t.id === 'btc')!
     expect(trim.changed).toBe(true)
-    expect(profitImpact(trim, 72).headline).toMatch(/extra clean take|\$0\.11/)
+    expect(profitImpact(trim, 72).headline).toMatch(/extra clean take|\$0\.08/)
   })
 })
 
@@ -495,5 +497,51 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
     })
     expect(isRehabPaper(again.rehab, 'cu')).toBe(true)
     expect(again.settings.tapes.cu.liveOn).toBe(true)
+  })
+
+  it('HIT_FLOOR 80 is the same sit/rehab goal on BTC NG CU GLD', () => {
+    expect(HIT_FLOOR).toBe(80)
+    expect(TAPE_IDS).toEqual(['btc', 'ng', 'cu', 'gld'])
+    for (const id of TAPE_IDS) {
+      const restored = rehabCopy(
+        {
+          ...emptyAutoState(),
+          tapes: {
+            [id]: {
+              id,
+              status: 'restored',
+              haltedAt: 1,
+              liveWasOn: true,
+              paperTarget: REHAB_PAPER_RUNS,
+              fromMs: 1,
+              appliedToken: '',
+              restoredAt: 2,
+            },
+          },
+        },
+        id,
+      )
+      expect(restored).toMatch(/80%/)
+      expect(restored).not.toMatch(/83%/)
+      const halted = rehabCopy(
+        {
+          ...emptyAutoState(),
+          tapes: {
+            [id]: {
+              id,
+              status: 'paper',
+              haltedAt: 1,
+              liveWasOn: true,
+              paperTarget: REHAB_PAPER_RUNS,
+              fromMs: 1,
+              appliedToken: '',
+            },
+          },
+        },
+        id,
+      )
+      expect(halted).toMatch(/Back on at 80%/)
+      expect(halted).not.toMatch(/83%/)
+    }
   })
 })
