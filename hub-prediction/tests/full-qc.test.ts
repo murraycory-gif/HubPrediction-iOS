@@ -243,7 +243,8 @@ describe('QC2 wires', () => {
     expect(dash).toMatch(/tapeHitCell/)
     expect(dash).toMatch(/setAnalystOpen\] = useState\(true\)/)
     expect(dash).toMatch(/if \(!tabIsOpen\(\)\)/)
-    expect(dash).toMatch(/if \(!hostReady \|\| !board \|\| !tabIsOpen\(\) \|\| book\.killed\) return/)
+    expect(dash).toMatch(/if \(!hostReady \|\| !tabIsOpen\(\) \|\| book\.killed\) return/)
+    expect(dash).toMatch(/readTestLiveQuote\(id\) \?\? board\?\.tapes\[id\]/)
     expect(tabIsOpen()).toBe(true)
 
     Object.defineProperty(globalThis, 'document', {
