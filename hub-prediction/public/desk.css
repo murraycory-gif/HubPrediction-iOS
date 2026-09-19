@@ -821,6 +821,11 @@ body {
   font-weight: 700;
 }
 
+.mode-hist {
+  color: var(--mute);
+  font-weight: 700;
+}
+
 .bets-log-head {
   color: var(--mute);
   font-size: 11px;

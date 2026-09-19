@@ -312,6 +312,23 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
               settledAt: ts,
               kind: 'paper',
             },
+            {
+              betId: 'kalshi:KXBTC15M-HISTQA',
+              tape: 'btc',
+              ticker: 'KXBTC15M-HISTQA',
+              clock: '15m',
+              closeAt: ts - 86_400_000,
+              side: 'down',
+              count: 1,
+              ask: 50,
+              spent: 19.06,
+              orderId: 'settled-KXBTC15M-HISTQA',
+              status: 'settled',
+              pnl: -19.06,
+              filledAt: ts - 86_400_000,
+              settledAt: ts - 86_400_000,
+              kind: 'live',
+            },
           ],
         }),
       )
@@ -333,10 +350,14 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.getByTestId('bets-pnl')).toContainText(/\$/)
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-bets-all.png' })
   await expect(page.getByTestId('bets-log')).toContainText('PAPER')
+  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  const modes = await page.getByTestId('bets-mode').allInnerTexts()
+  expect(modes.some((m) => /PAPER/i.test(m))).toBeTruthy()
+  expect(modes.length === 0 || modes.every((m) => /LIVE/i.test(m))).toBe(false)
   await expect(page.getByTestId('bets-mode').first()).toBeVisible()
-  await expect(page.getByTestId('bets-log')).toContainText('Sep 18')
+  await expect(page.getByTestId('bets-log')).toContainText(/Sep 18|HIST/)
   await expect(page.getByTestId('bets-log')).toContainText('CDT')
-  await expect(page.getByTestId('bets-mode').first()).toHaveClass(/mode-live|mode-paper/)
+  await expect(page.getByTestId('bets-mode').first()).toHaveClass(/mode-live|mode-paper|mode-hist/)
   await expect(page.locator('.bets-log-head')).toContainText('WINDOW')
   await expect(page.locator('.bets-log-head')).toContainText('CLOCK')
   await expect(page.locator('.bets-log-head')).toContainText('MODE')
@@ -347,8 +368,10 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   if (await page.locator('[data-kind="live"]').count()) {
     await expect(page.locator('[data-kind="live"] [data-testid="bets-cash"]').first()).toContainText('$')
   }
-  await expect(page.locator('[data-kind="paper"] [data-testid="bets-cash"]').first()).toContainText('$')
-  await expect(page.locator('[data-kind="paper"] [data-testid="bets-cash"]').first()).not.toHaveText('N/A')
+  await expect(page.locator('[data-kind="paper"] [data-testid="bets-cash"]').first()).toHaveText(/N\/A|—/)
+  if (await page.locator('[data-kind="hist"]').count()) {
+    await expect(page.locator('[data-kind="hist"] [data-testid="bets-cash"]').first()).toHaveText(/N\/A|—/)
+  }
   await page.getByTestId('bets-filter-btc').click()
   await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'false')
   await expect(page.getByTestId('bets-filter-btc')).toHaveAttribute('aria-pressed', 'true')
@@ -441,7 +464,9 @@ test('desktop desk: full bets log + auto analyst, no Accept/Deny', async ({ page
   await expect(page.getByTestId('bets-log')).toContainText('Sep 18')
   await expect(page.getByTestId('bets-log')).toContainText('CDT')
   await expect(page.getByTestId('bets-log')).toContainText('15m')
-  await expect(page.getByTestId('bets-mode').first()).toHaveClass(/mode-live|mode-paper/)
+  await expect(page.getByTestId('bets-mode').first()).toHaveClass(/mode-live|mode-paper|mode-hist/)
+  await expect(page.getByTestId('bets-log')).toContainText('PAPER')
+  await expect(page.locator('.bets-log-head')).toContainText('CASH')
   await expect(page.locator('.bets-log-head')).toContainText('CLOCK')
   await expect(page.locator('.result-win, .result-loss').first()).toBeVisible()
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/desktop-bets-all.png' })

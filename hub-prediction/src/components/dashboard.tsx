@@ -1131,7 +1131,7 @@ function Bets24Strip({
     clock?: string
     closeAt?: number
     filledAt?: number
-    kind?: 'live' | 'paper'
+    kind?: 'live' | 'paper' | 'hist'
     orderId?: string
   }>
   cashByBet: Record<string, number | null>
@@ -1142,7 +1142,7 @@ function Bets24Strip({
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
       <p className="hud-label">
-        Bets since first deposit · Kalshi fills are LIVE and walk CASH · deskfill is PAPER and does not
+        Bets since first deposit · this desk LIVE walks CASH · PAPER and HIST do not
         walk CASH · WINDOW · CLOCK · MODE · CASH · {HIT_FLOOR}% win-ratio goal
       </p>
       <div className="bets-filter" data-testid="bets-filter">
@@ -1207,7 +1207,9 @@ function Bets24Strip({
               const windowLabel = formatBetWindow(b.closeAt, betWindowMs(b), b.filledAt)
               const clockLabel = betClockLabel(b)
               const cashAmt = cashByBet[b.betId]
-              const cashText = cashAmt == null ? '—' : formatCash(cashAmt)
+              const cashText = mode === 'live' ? (cashAmt == null ? '—' : formatCash(cashAmt)) : 'N/A'
+              const modeClass = mode === 'live' ? 'mode-live' : mode === 'hist' ? 'mode-hist' : 'mode-paper'
+              const modeLabel = mode === 'hist' ? 'HIST' : mode === 'live' ? 'LIVE' : 'PAPER'
               return (
                 <li key={b.betId} className="bets-log-row" data-kind={mode}>
                   <span>{b.tape.toUpperCase()}</span>
@@ -1223,8 +1225,8 @@ function Bets24Strip({
                   >
                     {result}
                   </span>
-                  <span data-testid="bets-mode" className={mode === 'live' ? 'mode-live' : 'mode-paper'}>
-                    {mode.toUpperCase()}
+                  <span data-testid="bets-mode" className={modeClass}>
+                    {modeLabel}
                   </span>
                   <span>{formatCash(b.spent)}</span>
                   <span
@@ -1240,7 +1242,7 @@ function Bets24Strip({
         </div>
         {rows.length ? null : (
           <p className="settings-note" data-testid="bets-empty">
-            No fills since first deposit. Paper deskfill and Kalshi LIVE both show here. Soft FAIL Live POST.
+            No fills since first deposit. Paper deskfill and Kalshi HIST show here. Soft FAIL Live POST.
           </p>
         )}
       </div>

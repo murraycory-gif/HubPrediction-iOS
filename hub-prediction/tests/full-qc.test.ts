@@ -93,7 +93,7 @@ describe('QC2 wires', () => {
     expect(panel).toMatch(/Profit dollars/)
     expect(panel).not.toMatch(/liveBets:\s*true/)
     expect(dash).toMatch(/WINDOW · CLOCK · MODE · CASH/)
-    expect(dash).toMatch(/Kalshi fills are LIVE and walk CASH/)
+    expect(dash).toMatch(/this desk LIVE walks CASH/)
     expect(dash).toMatch(/liveBotCall/)
     expect(dash).toMatch(/disabled=\{rehabPaper\}/)
     expect(dash).toMatch(/Hit percent/)

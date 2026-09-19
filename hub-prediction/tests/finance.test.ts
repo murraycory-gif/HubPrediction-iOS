@@ -378,9 +378,9 @@ describe('finance Soft KEEP', () => {
     expect(cu?.status).toBe('open')
     expect(cu?.side).toBe('up')
     expect(hydrateSettings(null).liveBets).toBe(false)
-    expect(btc?.kind).toBe('live')
-    expect(ng?.kind).toBe('live')
-    expect(cu?.kind).toBe('live')
+    expect(btc?.kind).toBe('hist')
+    expect(ng?.kind).toBe('hist')
+    expect(cu?.kind).toBe('hist')
   })
 
   it('counts paper in hit W–L only — live-only P&L and placed', () => {
@@ -475,10 +475,10 @@ describe('finance Soft KEEP', () => {
       499.48,
     )
     expect(run['live-win']).toBeCloseTo(500.48)
-    expect(run['paper-win']).toBeCloseTo(500.48)
+    expect(run['paper-win']).toBeNull()
     expect(run['live-loss']).toBeCloseTo(499.48)
     expect(run['live-open']).toBeCloseTo(499.48)
-    expect(betKind({ betId: 'kalshi:KXBTC15M-A', orderId: 'ord-kalshi-btc-hist-01', kind: 'live' })).toBe('live')
+    expect(betKind({ betId: 'kalshi:KXBTC15M-A', orderId: 'ord-kalshi-btc-hist-01', kind: 'live' })).toBe('hist')
     expect(betKind({ betId: 'paper:local', orderId: 'deskfill-btc-aaaaaaaa' })).toBe('paper')
     const keptOld = mergeKalshiHistoryToBook(
       {
@@ -567,7 +567,7 @@ describe('finance Soft KEEP', () => {
       ],
       293.37,
     )
-    expect(importedCash['kalshi:KXBTC15M-A']).toBeCloseTo(292.89)
+    expect(importedCash['kalshi:KXBTC15M-A']).toBeNull()
     expect(importedCash['bet_ord-live-1']).toBeCloseTo(293.37)
     const walk = cashAfterEachBet(
       [
@@ -579,7 +579,7 @@ describe('finance Soft KEEP', () => {
     )
     expect(walk['win-50']).toBeCloseTo(550)
     expect(walk['lose-10']).toBeCloseTo(540)
-    expect(walk['paper-skip']).toBeCloseTo(540)
+    expect(walk['paper-skip']).toBeNull()
   })
 })
 
@@ -606,5 +606,87 @@ describe('liveBotCall instant Kalshi post', () => {
     expect(liveBotCall({ ...ready, lean: 'sit' })).toBe('sit')
     expect(liveBotCall({ ...ready, hitOk: false })).toBe('sit')
     expect(liveBotCall({ ...ready, tradingActive: false })).toBe('sit')
+  })
+})
+
+describe('MODE LIVE is this-desk V2 only — Soft FAIL kalshi:* as LIVE', () => {
+  const emptyHits = { tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } } }
+
+  it('Live OFF hydrate settlements → HIST, not LIVE, and do not walk cash P&L', () => {
+    expect(hydrateSettings(null).liveBets).toBe(false)
+    const raw = hydrateFinance({
+      killed: false,
+      paperStartedAt: 1,
+      bets: [
+        {
+          betId: 'kalshi:KXBTC15M-A',
+          tape: 'btc',
+          ticker: 'KXBTC15M-A',
+          clock: '15m',
+          closeAt: 1,
+          side: 'up',
+          count: 1,
+          ask: 50,
+          spent: 19.06,
+          orderId: 'settled-KXBTC15M-A',
+          status: 'settled',
+          pnl: -19.06,
+          filledAt: 1,
+          settledAt: 1,
+          kind: 'live',
+        },
+      ],
+    })
+    expect(raw.bets[0]?.kind).toBe('hist')
+    expect(betKind(raw.bets[0]!)).toBe('hist')
+    expect(last24hBets(raw, emptyHits, Date.now()).placed).toBe(0)
+    expect(last24hBets(raw, emptyHits, Date.now()).pnl).toBe(0)
+    expect(cashAfterEachBet(raw.bets, 293.37)['kalshi:KXBTC15M-A']).toBeNull()
+    expect(cashUpdateForBet(raw.bets[0]!)).toEqual({ kind: 'hist', amount: null })
+    expect(pnlVsDeposits(293.37, 760)).toBeCloseTo(-466.63)
+  })
+
+  it('sendPaper deskfill → MODE PAPER, cash N/A, scoreboard cash unchanged', () => {
+    const booked = bookFill(emptyFinance(), {
+      tape: 'cu',
+      ticker: 'KXCOPPER15M-TODAY',
+      clock: '15m',
+      closeAt: Date.now() + 60_000,
+      side: 'up',
+      count: 1,
+      ask: 40,
+      orderId: 'deskfill-cu-paperqa1',
+    })
+    expect(booked.ok).toBe(true)
+    if (!booked.ok) return
+    expect(booked.bet.kind).toBe('paper')
+    expect(betKind(booked.bet)).toBe('paper')
+    const settled = { ...booked.bet, status: 'settled' as const, pnl: -8, settledAt: Date.now() }
+    const run = cashAfterEachBet([settled], 505)
+    expect(run[booked.bet.betId]).toBeNull()
+    expect(last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits).placed).toBe(0)
+    expect(last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits).pnl).toBe(0)
+  })
+
+  it('mocked placeContract order_id → MODE LIVE and cash walks', () => {
+    const booked = bookFill(emptyFinance(), {
+      tape: 'btc',
+      ticker: 'KXBTC15M-LIVE',
+      clock: '15m',
+      closeAt: Date.now() + 60_000,
+      side: 'up',
+      count: 1,
+      ask: 70,
+      orderId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+    })
+    expect(booked.ok).toBe(true)
+    if (!booked.ok) return
+    expect(booked.bet.kind).toBe('live')
+    expect(betKind(booked.bet)).toBe('live')
+    const settled = { ...booked.bet, status: 'settled' as const, pnl: 0.48, settledAt: Date.now() }
+    const run = cashAfterEachBet([settled], 500.48)
+    expect(run[booked.bet.betId]).toBeCloseTo(500.48)
+    expect(last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits).placed).toBeCloseTo(booked.bet.spent)
+    expect(last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits).pnl).toBeCloseTo(0.48)
   })
 })

@@ -68,7 +68,7 @@ export const PAPER_HOURS = 48
 export const DAILY_PNL_FLOOR_PAPER = -50
 export const HIT_FLOOR = 83
 
-export type BetKind = 'live' | 'paper'
+export type BetKind = 'live' | 'paper' | 'hist'
 
 export type BookedBet = {
   betId: string
@@ -100,20 +100,18 @@ export function isImportedKalshiRow(b: { betId?: unknown; orderId?: unknown }) {
   return false
 }
 
-/** Placed on Kalshi = LIVE. deskfill / paper: never hit Kalshi. */
+/** This desk V2 placeContract = LIVE. deskfill = PAPER. Imported kalshi:* = HIST. Soft FAIL kind live on hydrate. */
 export function betKind(b: { kind?: unknown; orderId?: unknown; betId?: unknown }): BetKind {
   if (isPaperOrderId(b.orderId) || (typeof b.betId === 'string' && /^paper:/i.test(b.betId))) return 'paper'
-  if (isImportedKalshiRow(b)) return 'live'
+  if (isImportedKalshiRow(b) || b.kind === 'hist') return 'hist'
   if (b.kind === 'paper') return 'paper'
   if (b.kind === 'live') return 'live'
   if (typeof b.betId === 'string' && b.betId.startsWith('bet_') && isRealOrderId(b.orderId)) return 'live'
-  if (isRealOrderId(b.orderId)) return 'live'
   return 'paper'
 }
 
-/** This desk POSTed the order. Imported Kalshi history is live on Kalshi but not a desk-live streak. */
+/** This desk POSTed the order. Imported Kalshi history is HIST — Soft FAIL MODE LIVE. */
 export function isDeskLiveBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
-  if (isPaperBet(b) || isImportedKalshiRow(b)) return false
   return betKind(b) === 'live'
 }
 
@@ -121,20 +119,30 @@ export function isPaperBet(b: { kind?: unknown; orderId?: unknown; betId?: unkno
   return betKind(b) === 'paper'
 }
 
-export function isLiveBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
-  return !isPaperBet(b)
+export function isHistBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  return betKind(b) === 'hist'
 }
 
-/** Live settled W/L move Kalshi cash. Paper and open rows do not. */
+export function isLiveBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  return betKind(b) === 'live'
+}
+
+export function isKalshiRecordedBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  const kind = betKind(b)
+  return kind === 'live' || kind === 'hist'
+}
+
+/** Only this-desk LIVE settled W/L move Kalshi cash. PAPER / HIST do not. */
 export function cashUpdateForBet(b: {
   kind?: unknown
   orderId?: unknown
   betId?: unknown
   status: 'open' | 'settled'
   pnl: number | null
-}): { kind: 'paper' | 'open' | 'live'; amount: number | null } {
+}): { kind: 'paper' | 'hist' | 'open' | 'live'; amount: number | null } {
+  if (isHistBet(b)) return { kind: 'hist', amount: null }
   if (isPaperBet(b)) return { kind: 'paper', amount: null }
-  if (b.status !== 'settled' || b.pnl == null) return { kind: 'open', amount: null }
+  if (!isLiveBet(b) || b.status !== 'settled' || b.pnl == null) return { kind: 'open', amount: null }
   return { kind: 'live', amount: b.pnl }
 }
 
@@ -147,8 +155,8 @@ export function betStamp(b: { settledAt?: number | null; closeAt?: number; fille
 }
 
 /**
- * Actual Kalshi cash after each row. Live settled W/L add P&L.
- * Paper and open rows carry the same cash. Soft FAIL paper P&L into cash.
+ * Running Kalshi cash after this-desk LIVE settles only.
+ * PAPER / HIST rows are N/A. Soft FAIL a fake cash walk on imported or paper.
  */
 export function cashAfterEachBet(
   bets: Array<{
@@ -177,7 +185,11 @@ export function cashAfterEachBet(
   else if (Number.isFinite(deposits ?? NaN)) cursor = money(Number(deposits))
   const out: Record<string, number | null> = {}
   for (const b of ordered) {
-    if (cursor != null && isLiveBet(b) && b.status === 'settled' && b.pnl != null) {
+    if (!isLiveBet(b)) {
+      out[b.betId] = null
+      continue
+    }
+    if (cursor != null && b.status === 'settled' && b.pnl != null) {
       cursor = money(cursor + b.pnl)
     }
     out[b.betId] = cursor
@@ -345,6 +357,9 @@ export function tapeHitCell(
     settledAt?: number | null
     closeAt?: number
     filledAt?: number
+    kind?: unknown
+    orderId?: unknown
+    betId?: unknown
   }>,
   now = Date.now(),
   fromMs?: number,
@@ -357,6 +372,7 @@ export function tapeHitCell(
     else if (e.pnl != null && e.pnl !== 0) byTicker.set(e.ticker, e.pnl > 0)
   }
   for (const b of bets) {
+    if (isHistBet(b)) continue
     if (b.tape !== id || b.status !== 'settled' || betStamp(b) < from) continue
     const ticker = typeof b.ticker === 'string' && b.ticker ? b.ticker : ''
     if (!ticker || byTicker.has(ticker)) continue
@@ -658,7 +674,7 @@ export function mergeSettlementEventsToBook(
       pnl: e.pnl ?? (e.win ? 0.01 : -0.01),
       filledAt: e.at,
       settledAt: e.at,
-      kind: 'live',
+      kind: 'hist',
     })
   }
   if (!extra.length) return state
@@ -779,7 +795,7 @@ export function betsFromKalshiFills(raw: unknown, fromMs = 0): BookedBet[] {
       pnl: null,
       filledAt: g.filledAt,
       settledAt: null,
-      kind: 'live',
+      kind: 'hist',
     })
   }
   return out
@@ -801,7 +817,7 @@ export function betsFromKalshiSettlements(raw: unknown, fromMs = 0, now = Date.n
     pnl: e.pnl ?? (e.win ? 0.01 : -0.01),
     filledAt: e.at,
     settledAt: e.at,
-    kind: 'live' as const,
+    kind: 'hist' as const,
   }))
 }
 
@@ -833,7 +849,7 @@ export function betsFromKalshiPositions(raw: unknown, fromMs = 0): BookedBet[] {
       pnl: null,
       filledAt: at,
       settledAt: null,
-      kind: 'live',
+      kind: 'hist',
     })
   }
   return out
