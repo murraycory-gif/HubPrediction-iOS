@@ -10,6 +10,7 @@ import {
   financeSendsOrders,
   liveArmGate,
   liveBotCall,
+  paperFillAllowed,
   openDeskFillOnTicker,
   syncTicketsIntoBook,
   tapeBotNote,
@@ -605,13 +606,18 @@ describe('liveBotCall instant Kalshi post', () => {
     expect(liveBotCall(ready)).toBe('live')
     expect(liveBotCall({ ...ready, liveCash: false })).toBe('paper')
     expect(liveBotCall({ ...ready, rehabPaper: true })).toBe('paper')
-    expect(liveBotCall({ ...ready, fresh: false })).toBe('live')
+    expect(liveBotCall({ ...ready, fresh: false })).toBe('paper')
+    expect(liveBotCall({ ...ready, stale: true })).toBe('paper')
     expect(liveBotCall({ ...ready, fresh: undefined })).toBe('live')
     expect(liveBotCall({ ...ready, lean: 'sit' })).toBe('sit')
     expect(liveBotCall({ ...ready, hitOk: false })).toBe('sit')
     expect(liveBotCall({ ...ready, tradingActive: false })).toBe('sit')
     expect(liveBotCall({ ...ready, botOn: false })).toBe('sit')
     expect(liveBotCall({ ...ready, liveCash: true } as typeof ready & { liveBets: boolean })).toBe('live')
+    expect(paperFillAllowed({ liveCash: true, rehabPaper: false, stale: false }).ok).toBe(false)
+    expect(paperFillAllowed({ liveCash: true, rehabPaper: true, stale: false }).ok).toBe(true)
+    expect(paperFillAllowed({ liveCash: true, rehabPaper: false, stale: true }).ok).toBe(true)
+    expect(paperFillAllowed({ liveCash: false, rehabPaper: false, stale: false }).ok).toBe(true)
   })
 
   it('tapeBotNote names Live cash paper vs live — Soft FAIL master Live copy', () => {

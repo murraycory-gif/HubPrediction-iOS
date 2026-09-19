@@ -125,8 +125,24 @@ export const RaceChart = memo(function RaceChart({
   }, [id, ticker])
 
   useEffect(() => {
-    const next = holdChartTrail(trailRef.current, points, live, resetRef.current, Date.now())
+    const t = Date.now()
+    let next = holdChartTrail(trailRef.current, points, live, resetRef.current, t)
     if (resetRef.current && points?.length) resetRef.current = false
+    if (!next.length) {
+      const px =
+        live != null && Number.isFinite(live) && live > 0
+          ? live
+          : Number.isFinite(beat) && beat > 0
+            ? beat
+            : null
+      if (px != null) {
+        next = [
+          { t: t - 8000, px },
+          { t: t - 4000, px },
+          { t, px },
+        ]
+      }
+    }
     const prev = trailRef.current
     const same =
       prev.length === next.length &&
@@ -134,7 +150,7 @@ export const RaceChart = memo(function RaceChart({
       prev[prev.length - 1]?.px === next[next.length - 1]?.px
     trailRef.current = next
     if (!same && next.length) setTrail(next)
-  }, [points, live])
+  }, [points, live, beat])
 
   const shown =
     displayLive != null && Number.isFinite(displayLive) && (displayLive as number) > 0 ? displayLive : live

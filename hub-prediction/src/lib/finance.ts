@@ -471,7 +471,15 @@ export function liveArmGate(
   return { ok: true }
 }
 
-/** Instant bot call. Bot ON + Live cash ON → live POST. Soft FAIL liveBets. Soft FAIL paper when Live cash ON. */
+/** Paper only when Live cash OFF, HALT, or STALE. Soft FAIL silent deskfill when Live cash ON. */
+export function paperFillAllowed(opts: { liveCash: boolean; rehabPaper: boolean; stale: boolean }) {
+  if (opts.rehabPaper) return { ok: true as const, reason: 'Live cash HALT — paper rehab, not sent to Kalshi' }
+  if (opts.stale) return { ok: true as const, reason: 'STALE — paper only' }
+  if (opts.liveCash === true) return { ok: false as const, reason: 'Live cash ON — next through posts to Kalshi' }
+  return { ok: true as const, reason: 'Live cash OFF — paper only, not sent to Kalshi' }
+}
+
+/** Instant bot call. Bot ON + Live cash ON → live POST. Soft FAIL liveBets. Soft FAIL paper when Live cash ON unless HALT / STALE. */
 export function liveBotCall(opts: {
   tabOpen: boolean
   killed: boolean
@@ -484,6 +492,7 @@ export function liveBotCall(opts: {
   lean: 'up' | 'down' | 'sit'
   hitOk: boolean
   fresh?: boolean
+  stale?: boolean
 }): 'live' | 'paper' | 'sit' {
   if (
     !opts.tabOpen ||
@@ -496,7 +505,9 @@ export function liveBotCall(opts: {
   ) {
     return 'sit'
   }
+  const stale = opts.stale === true || opts.fresh === false
   if (opts.rehabPaper) return 'paper'
+  if (stale) return 'paper'
   if (opts.liveCash === true) {
     if (!opts.hitOk) return 'sit'
     return 'live'

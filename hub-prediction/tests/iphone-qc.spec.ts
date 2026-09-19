@@ -915,7 +915,27 @@ test('all four tapes stay Kalshi-smooth — multi-Hz NOW, continuous path, no em
     expect(s).not.toMatch(/NOW\s*$|TO BEAT\s*$/)
     expect(s.split('|').filter((_, i) => i % 3 === 0).some((v) => /\$|\d/.test(v))).toBeTruthy()
   }
+  const hz = await page.evaluate(async () => {
+    const tapeIds = ['btc', 'ng', 'cu', 'gld'] as const
+    const bags = Object.fromEntries(
+      tapeIds.map((id) => [id, { paths: new Set<string>(), empty: 0 }]),
+    ) as Record<(typeof tapeIds)[number], { paths: Set<string>; empty: number }>
+    const start = performance.now()
+    while (performance.now() - start < 1200) {
+      for (const id of tapeIds) {
+        const d = document.querySelector(`[data-testid="race-${id}"] .race-path`)?.getAttribute('d') || ''
+        if (!d || d.length < 20) bags[id].empty += 1
+        else bags[id].paths.add(d)
+      }
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    return Object.fromEntries(
+      tapeIds.map((id) => [id, { pathChanges: bags[id].paths.size, empty: bags[id].empty }]),
+    ) as Record<(typeof tapeIds)[number], { pathChanges: number; empty: number }>
+  })
   for (const id of ids) {
+    expect(hz[id].empty, `${id} empty path frames`).toBe(0)
+    expect(hz[id].pathChanges, `${id} path Hz`).toBeGreaterThanOrEqual(4)
     const d = await page.locator(`[data-testid="race-${id}"] .race-path`).getAttribute('d')
     const commands = (d || '').match(/[CLc]/g) ?? []
     expect((d || '').length).toBeGreaterThan(40)

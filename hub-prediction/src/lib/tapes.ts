@@ -761,7 +761,7 @@ export function livePlaceGate(opts: { botOn?: boolean; liveOn?: boolean; hasKeys
   return { ok: true as const }
 }
 
-/** Host desk state is source of truth. Soft FAIL a client-only Live POST. Soft FAIL master liveBets. */
+/** Client Bot + Live cash ON posts even if host recipe is still factory OFF. Soft FAIL host-lag swallow. Soft FAIL master liveBets. */
 export function hostLivePlaceGate(opts: {
   settings?: unknown
   tape?: string
@@ -772,8 +772,8 @@ export function hostLivePlaceGate(opts: {
   if (!opts.tape || !isTapeId(opts.tape)) return { ok: false as const, reason: 'Kalshi POST needs a tape' }
   const recipe = hydrateSettings(opts.settings).tapes[opts.tape]
   return livePlaceGate({
-    botOn: opts.clientBotOn === true && recipe.botOn === true,
-    liveOn: opts.clientLiveOn === true && recipe.liveOn === true,
+    botOn: opts.clientBotOn === true || recipe.botOn === true,
+    liveOn: opts.clientLiveOn === true || recipe.liveOn === true,
     hasKeys: opts.hasKeys,
   })
 }

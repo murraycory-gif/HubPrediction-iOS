@@ -85,6 +85,7 @@ import {
   tapeHitCell,
   tapeBotNote,
   liveBotCall,
+  paperFillAllowed,
   mergeKalshiHistoryToBook,
   liveSendGate,
   loadFinance,
@@ -363,10 +364,22 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     )
   }, [tickets])
 
-  function sendPaper(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
-    if (!tabIsOpen() || !quote.ticker) return
-    if (cashGates(settings, tape).ok && !isRehabPaper(rehab, tape)) {
-      void sendLive(tape, side, quote)
+  function liveDeskOn(tape: TapeId) {
+    return cashGates(settings, tape).ok || cashGates(loadSettings(), tape).ok
+  }
+
+  function liveDeskFlags(tape: TapeId) {
+    const stored = loadSettings().tapes[tape]
+    const live = settings.tapes[tape]
+    return {
+      botOn: stored.botOn === true || live.botOn === true,
+      liveOn: stored.liveOn === true || live.liveOn === true,
+    }
+  }
+
+  function bookPaper(tape: TapeId, side: 'up' | 'down', quote: TapeQuote, note: string) {
+    if (!quote.ticker) {
+      releaseClaim(sentRef.current, `${tape}:`)
       return
     }
     const ticket = makePaperTicket({
@@ -396,38 +409,62 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })
       return booked.ok ? booked.state : prev
     })
-    setMsg(`${TAPE_META[tape].label} PAPER ${side.toUpperCase()} ${ticket.orderId}`)
+    setMsg(note)
+  }
+
+  function sendPaper(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
+    if (!tabIsOpen() || !quote.ticker) return
+    const halt = isRehabPaper(rehab, tape)
+    const liveGate = trueLiveGate({
+      quote,
+      kalshiLive: printsQuery.data?.tapes[tape]?.live,
+    })
+    const allow = paperFillAllowed({
+      liveCash: liveDeskOn(tape),
+      rehabPaper: halt,
+      stale: liveGate.stale,
+    })
+    if (!allow.ok) {
+      void sendLive(tape, side, quote)
+      return
+    }
+    bookPaper(tape, side, quote, `${TAPE_META[tape].label} ${allow.reason}`)
   }
 
   async function sendLive(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
+    const key = quote.ticker ? `${tape}:${quote.ticker}` : `${tape}:`
+    const abortLive = (note: string) => {
+      releaseClaim(sentRef.current, key)
+      setMsg(note)
+    }
     if (!tabIsOpen()) {
-      setMsg('Send needs this tab open')
+      abortLive('Send needs this tab open')
       return
     }
     if (isRehabPaper(rehab, tape)) {
-      setMsg(`${TAPE_META[tape].label} live cash halted — paper rehab`)
+      abortLive(`${TAPE_META[tape].label} live cash halted — paper rehab`)
       return
     }
+    const flags = liveDeskFlags(tape)
     const gates = cashGates(settings, tape)
-    if (!gates.ok) {
-      setMsg(
-        !gates.bot
+    if (!flags.botOn || !flags.liveOn) {
+      abortLive(
+        !flags.botOn && !gates.bot
           ? `${TAPE_META[tape].label} PAPER — bot off / not sent`
           : `${TAPE_META[tape].label} PAPER LOCK · Live cash OFF — paper only, not sent to Kalshi`,
       )
       return
     }
-    if (!quote.ticker) return
-    if (!quoteIsLiveClock(quote) || quote.tradingActive === false) {
-      setMsg(`${TAPE_META[tape].label} STALE — paper only`)
+    if (!quote.ticker) {
+      abortLive(`${TAPE_META[tape].label} Kalshi error — no ticker`)
       return
     }
     const liveGate = trueLiveGate({
       quote,
       kalshiLive: printsQuery.data?.tapes[tape]?.live,
     })
-    if (!liveGate.ok) {
-      setMsg(`${TAPE_META[tape].label} ${liveGate.reason}`)
+    if (!quoteIsLiveClock(quote) || quote.tradingActive === false || !liveGate.ok) {
+      bookPaper(tape, side, quote, `${TAPE_META[tape].label} ${liveGate.reason || 'STALE — paper only'}`)
       return
     }
     const ask = side === 'down' ? quote.noAsk : quote.yesAsk
@@ -441,7 +478,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       spent,
     })
     if (!gate.ok) {
-      setMsg(gate.reason)
+      abortLive(`${TAPE_META[tape].label} Kalshi error — ${gate.reason}`)
       return
     }
     try {
@@ -453,8 +490,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           yesAsk: quote.yesAsk,
           noAsk: quote.noAsk,
           tape,
-          botOn: settings.tapes[tape].botOn === true,
-          liveOn: settings.tapes[tape].liveOn === true,
+          botOn: flags.botOn,
+          liveOn: flags.liveOn,
         },
       })
       const orderId = extractOrderId(raw)
@@ -467,37 +504,38 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         beat: quote.beat,
       })
       if (!ticket) {
-        setMsg('Kalshi returned no order id — no ticket')
-        releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
+        abortLive(`${TAPE_META[tape].label} Kalshi returned no order id — no ticket`)
         return
       }
-      markFilled(sentRef.current, `${tape}:${quote.ticker}`, ticket.orderId)
+      markFilled(sentRef.current, key, ticket.orderId)
       setTickets((prev) => upsertTicket(prev, ticket))
       const booked = bookFill(book, {
         tape,
         ticker: quote.ticker,
-      clock: quote.clockId || quote.clock,
-      closeAt: quote.closeAt,
-      side,
-      count: ticket.contracts,
-      ask,
-      orderId: ticket.orderId,
-    })
-    if (booked.ok) setBook(booked.state)
-    setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
+        clock: quote.clockId || quote.clock,
+        closeAt: quote.closeAt,
+        side,
+        count: ticket.contracts,
+        ask,
+        orderId: ticket.orderId,
+      })
+      if (booked.ok) setBook(booked.state)
+      setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
       await refreshCash()
     } catch (e) {
-      releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
-      setMsg(e instanceof Error ? e.message : 'IOC miss — clock released')
+      abortLive(e instanceof Error ? e.message : `${TAPE_META[tape].label} Kalshi error — IOC miss`)
     }
   }
 
   useEffect(() => {
-    if (!board || !tabIsOpen() || book.killed) return
+    if (!hostReady || !board || !tabIsOpen() || book.killed) return
+    const stored = loadSettings()
     for (const id of TAPE_IDS) {
       const quote = board.tapes[id]
       const recipe = settings.tapes[id]
-      if (!quote?.ticker || !recipe.botOn) continue
+      const botOn = stored.tapes[id].botOn === true || recipe.botOn === true
+      const liveCash = stored.tapes[id].liveOn === true || recipe.liveOn === true
+      if (!quote?.ticker || !botOn) continue
       if (quote.tradingActive === false) continue
       const liveGate = trueLiveGate({
         quote,
@@ -510,14 +548,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
       if (!askInBand(ask, recipe)) continue
       const key = `${id}:${quote.ticker}`
-      const gates = cashGates(settings, id)
       const paperRehab = isRehabPaper(rehab, id)
       const recent = recentLiveTapeWL(book.bets, id, 12)
       const call = liveBotCall({
         tabOpen: true,
         killed: book.killed,
-        botOn: recipe.botOn,
-        liveCash: gates.liveCash,
+        botOn,
+        liveCash,
         rehabPaper: paperRehab,
         tradingActive: quoteIsLiveClock(quote),
         inArm: true,
@@ -525,6 +562,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         lean,
         hitOk: hitFloorGate(recent.w, recent.l).ok,
         fresh: liveGate.ok,
+        stale: liveGate.stale,
       })
       if (call === 'sit') continue
       if (claimSend(sentRef.current, key) !== 'send') continue
@@ -534,7 +572,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       }
       void sendLive(id, lean, quote)
     }
-  }, [board, printsQuery.dataUpdatedAt, settings, tickets, book, hits, rehab])
+  }, [hostReady, board, printsQuery.dataUpdatedAt, settings, tickets, book, hits, rehab])
 
   useEffect(() => {
     if (book.killed) return
@@ -723,7 +761,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           />
         ) : null}
 
-        {msg ? <p className="desk-msg">{msg}</p> : null}
+        {msg ? <p className="desk-msg" data-testid="desk-msg">{msg}</p> : null}
 
         {settingsOpen ? (
           <SettingsPanel

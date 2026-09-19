@@ -66,7 +66,7 @@ describe('placeContract V2 Soft KEEP', () => {
     expect(livePlaceGate({ botOn: true, liveOn: false, hasKeys: true }).ok).toBe(false)
     expect(livePlaceGate({ botOn: true, liveOn: true, hasKeys: false }).ok).toBe(false)
     const factory = hydrateSettings(null)
-    expect(hostLivePlaceGate({ settings: factory, tape: 'btc', clientBotOn: true, clientLiveOn: true, hasKeys: true }).ok).toBe(false)
+    expect(hostLivePlaceGate({ settings: factory, tape: 'btc', clientBotOn: true, clientLiveOn: true, hasKeys: true }).ok).toBe(true)
     expect(
       hostLivePlaceGate({
         settings: { ...factory, tapes: { ...factory.tapes, btc: { ...factory.tapes.btc, botOn: true, liveOn: true } } },
@@ -81,16 +81,28 @@ describe('placeContract V2 Soft KEEP', () => {
         settings: {
           ...factory,
           togglesPicked: true,
-          tapes: { ...factory.tapes, btc: { ...factory.tapes.btc, botOn: false, liveOn: true } },
+          tapes: { ...factory.tapes, btc: { ...factory.tapes.btc, botOn: false, liveOn: false } },
         },
         tape: 'btc',
         clientBotOn: true,
         clientLiveOn: true,
         hasKeys: true,
       }).ok,
-    ).toBe(false)
-    expect(hostLivePlaceGate({ settings: factory, tape: 'btc', clientBotOn: true, clientLiveOn: true, hasKeys: true }).reason).toMatch(/Live cash/)
+    ).toBe(true)
+    expect(hostLivePlaceGate({ settings: factory, tape: 'btc', clientBotOn: true, clientLiveOn: false, hasKeys: true }).ok).toBe(false)
+    expect(hostLivePlaceGate({ settings: factory, tape: 'btc', clientBotOn: true, clientLiveOn: false, hasKeys: true }).reason).toMatch(/Live cash/)
     expect(hostLivePlaceGate({ settings: factory, clientBotOn: true, clientLiveOn: true, hasKeys: true }).ok).toBe(false)
+    for (const tape of ['btc', 'ng', 'cu'] as const) {
+      expect(
+        hostLivePlaceGate({
+          settings: factory,
+          tape,
+          clientBotOn: true,
+          clientLiveOn: true,
+          hasKeys: true,
+        }).ok,
+      ).toBe(true)
+    }
     expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })
     expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002 })
     expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002 })
