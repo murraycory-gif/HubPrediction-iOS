@@ -1086,6 +1086,8 @@ function TapeRow({
             tape={id}
             closeAt={shownQuote?.closeAt}
             live={tradingLive}
+            stale={stale}
+            tradingActive={shownQuote?.tradingActive}
             nextOpenLabel={nextOpenLabel}
           />
           <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>

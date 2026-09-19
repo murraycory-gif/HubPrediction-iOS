@@ -5,11 +5,15 @@ import { holdCloseAt, useDeskTick } from '../lib/desk-tick'
 export function CloseClock({
   closeAt,
   live,
+  stale,
+  tradingActive,
   nextOpenLabel,
   tape,
 }: {
   closeAt?: number
   live?: boolean
+  stale?: boolean
+  tradingActive?: boolean
   nextOpenLabel?: string
   tape?: string
 }) {
@@ -19,7 +23,9 @@ export function CloseClock({
   const now = useDeskTick()
   const view = closeClockView({
     closeAt: at,
-    live: live === true,
+    live,
+    stale,
+    tradingActive,
     now,
     nextOpenLabel,
   })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { LIVE_COUNTDOWN_MAX_MS, closeClockView } from '../src/lib/close-clock'
+import { LIVE_COUNTDOWN_MAX_MS, closeClockLive, closeClockView } from '../src/lib/close-clock'
+import { tapeSessionHours } from '../src/lib/tape-hours'
 
 describe('closeClockView — countdown only while LIVE', () => {
   it('live clock inside 2h is mm:ss', () => {
@@ -34,18 +35,40 @@ describe('closeClockView — countdown only while LIVE', () => {
     expect(view.text).not.toMatch(/CLOSED/)
   })
 
-  it('Friday night CU LIVE 15m is mm:ss, not CLOSED · Sunday', () => {
+  it('Friday night BTC/NG/CU LIVE 15m is mm:ss even when CME hours are closed', () => {
     const now = Date.parse('2026-09-18T21:25:00-05:00')
+    const closeAt = Date.parse('2026-09-18T21:30:00-05:00')
+    expect(tapeSessionHours('ng', now).open).toBe(false)
+    expect(tapeSessionHours('cu', now).open).toBe(false)
+    expect(tapeSessionHours('btc', now).open).toBe(true)
+    for (const tape of ['btc', 'ng', 'cu'] as const) {
+      expect(closeClockLive({ stale: false, tradingActive: true, closeAt, now })).toBe(true)
+      const view = closeClockView({
+        closeAt,
+        tradingActive: true,
+        stale: false,
+        now,
+        nextOpenLabel: 'Sun Sep 20 5:00 PM',
+      })
+      expect(view.kind).toBe('live')
+      expect(view.text).toBe('05:00')
+      expect(view.text).not.toMatch(/CLOSED/)
+      void tape
+    }
+  })
+
+  it('tradingActive LIVE wins even if a caller passes live=false (CME hours)', () => {
+    const now = Date.parse('2026-09-18T21:27:00-05:00')
     const closeAt = Date.parse('2026-09-18T21:30:00-05:00')
     const view = closeClockView({
       closeAt,
-      live: true,
+      live: false,
+      tradingActive: true,
+      stale: false,
       now,
       nextOpenLabel: 'Sun Sep 20 5:00 PM',
     })
-    expect(view.kind).toBe('live')
-    expect(view.text).toBe('05:00')
-    expect(view.text).not.toMatch(/CLOSED/)
+    expect(view).toEqual({ kind: 'live', text: '03:00' })
   })
 
   it('not live always CLOSED even with a near closeAt', () => {
