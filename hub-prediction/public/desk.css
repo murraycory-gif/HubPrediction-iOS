@@ -1230,11 +1230,6 @@ button {
 }
 
 @media (max-width: 520px) {
-  html,
-  body {
-    overflow-x: hidden;
-    max-width: 100%;
-  }
   .desk,
   .desk-head,
   .tape {
