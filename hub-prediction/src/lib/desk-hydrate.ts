@@ -1,5 +1,6 @@
 import { deskStorage } from './desk-storage'
 import { pickNewerSettings, settingsHasUserLive, settingsSavedAt, unionFinance, unionTickets, type HostDeskState } from './desk-persist'
+import { CHIEF_KEY, hydrateChief, mergeChiefState, saveChief } from './desk-chief'
 import { FINANCE_KEY, hydrateFinance } from './finance'
 import { GOLD_RECIPES, SETTINGS_KEY, TAPE_IDS, TICKETS_KEY, hydrateSettings, loadSettings, loadTickets } from './tapes'
 
@@ -74,6 +75,17 @@ export function applyHostDeskState(host: HostDeskState | null | undefined) {
     try {
       const merged = unionFinance(hydrateFinance(host.finance), hydrateFinance(JSON.parse(ls.getItem(FINANCE_KEY) || 'null')))
       ls.setItem(FINANCE_KEY, JSON.stringify(hydrateFinance(merged)))
+      any = true
+    } catch {
+      /* quota */
+    }
+  }
+  if (host.chief) {
+    try {
+      const localRaw = ls.getItem(CHIEF_KEY)
+      const merged = mergeChiefState(localRaw ? JSON.parse(localRaw) : null, host.chief)
+      ls.setItem(CHIEF_KEY, JSON.stringify(hydrateChief(merged)))
+      saveChief(hydrateChief(merged), { host: false })
       any = true
     } catch {
       /* quota */

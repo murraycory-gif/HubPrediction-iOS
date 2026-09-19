@@ -6,6 +6,7 @@ export type HostDeskState = {
   tickets?: unknown
   finance?: unknown
   hits?: unknown
+  chief?: unknown
 }
 
 type Writer = (patch: HostDeskState) => void
@@ -158,7 +159,19 @@ export function mergeHostDeskState(prev: HostDeskState, patch: Partial<HostDeskS
   if (patch.tickets != null) next.tickets = unionTickets(prev.tickets, patch.tickets)
   if (patch.finance != null) next.finance = unionFinance(prev.finance, patch.finance)
   if (patch.hits != null) next.hits = patch.hits
+  if (patch.chief != null) next.chief = mergeChiefBlob(prev.chief, patch.chief)
   return next
+}
+
+function chiefAsOf(raw: unknown) {
+  if (!raw || typeof raw !== 'object') return 0
+  return Number((raw as { asOf?: unknown }).asOf) || 0
+}
+
+function mergeChiefBlob(prev: unknown, incoming: unknown) {
+  if (incoming == null) return prev
+  if (prev == null) return incoming
+  return chiefAsOf(incoming) >= chiefAsOf(prev) ? incoming : prev
 }
 
 export function setHostDeskWriter(fn: Writer | null) {

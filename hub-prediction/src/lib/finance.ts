@@ -69,6 +69,37 @@ export const PAPER_HOURS = 48
 export const DAILY_PNL_FLOOR_PAPER = -50
 export const CLOCK_MAX_SPEND = 25
 export const HIT_FLOOR = 80
+export const DAILY_PROFIT_LOCK = 40
+export const MAX_LIVE_CLOCKS = 2
+
+export function kalshiTakerFeeDollars(askCents: number, contracts: number) {
+  const ask = Math.max(1, Math.min(99, askCents)) / 100
+  const n = Math.max(1, Math.round(contracts))
+  return Math.round(0.07 * ask * (1 - ask) * n * 100) / 100
+}
+
+/** After-fee EV at the 80% hit goal. Sit when this is not > 0. */
+export function feeAwareEv(askCents: number, contracts: number, winPct = HIT_FLOOR) {
+  const ask = Math.max(1, Math.min(99, askCents)) / 100
+  const n = Math.max(1, Math.round(contracts))
+  const p = Math.max(0, Math.min(100, winPct)) / 100
+  const raw = n * (p * (1 - ask) - (1 - p) * ask)
+  return Math.round((raw - kalshiTakerFeeDollars(askCents, n)) * 100) / 100
+}
+
+export function feeAwareEvGate(askCents: number, contracts = 1, winPct = HIT_FLOOR): Gate {
+  const ev = feeAwareEv(askCents, contracts, winPct)
+  if (ev > 0) return { ok: true }
+  return { ok: false, reason: `After-fee EV ${ev} ≤ 0 at ${winPct}% — sit` }
+}
+
+export function openLiveClockTapes(state: FinanceState) {
+  const tapes = new Set<TapeId>()
+  for (const b of state.bets) {
+    if (b.status === 'open' && isLiveBet(b)) tapes.add(b.tape)
+  }
+  return [...tapes]
+}
 
 export type BetKind = 'live' | 'paper' | 'hist'
 
@@ -646,6 +677,16 @@ export function liveSendGate(
   if (opts.spent > CLOCK_MAX_SPEND) {
     return { ok: false, reason: `Clock spend $${opts.spent} over $${CLOCK_MAX_SPEND} cap` }
   }
+  if (dailyProfitLockHit(state, now)) {
+    return { ok: false, reason: `Daily lock-in +$${DAILY_PROFIT_LOCK} — sit` }
+  }
+  const count = Math.max(1, Math.round(opts.spent / Math.max(0.01, opts.ask / 100)))
+  const ev = feeAwareEvGate(opts.ask, count)
+  if (!ev.ok) return ev
+  const heat = openLiveClockTapes(state)
+  if (!heat.includes(opts.tape) && heat.length >= MAX_LIVE_CLOCKS) {
+    return { ok: false, reason: `Max ${MAX_LIVE_CLOCKS} Live clocks` }
+  }
   const floor = liveCashFloor(opts.deposits)
   if (Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) - opts.spent < floor) {
     return { ok: false, reason: `Cash floor ${floor} blocks Place` }
@@ -1045,6 +1086,10 @@ export function settleBook(
 
 export function dailyPnlFloorHit(state: FinanceState, now = Date.now()) {
   return deskDailyRealizedPnl(state, now) <= DAILY_PNL_FLOOR_PAPER
+}
+
+export function dailyProfitLockHit(state: FinanceState, now = Date.now()) {
+  return deskDailyRealizedPnl(state, now) >= DAILY_PROFIT_LOCK
 }
 
 export function engageKill(state: FinanceState) {

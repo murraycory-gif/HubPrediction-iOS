@@ -23,7 +23,7 @@ describe('placeContract V2 Soft KEEP', () => {
     expect(body).not.toHaveProperty('no_price')
   })
 
-  it('BUY DOWN is ask at (1 − no_ask), not no_ask and not bid', () => {
+  it('BUY DOWN is V2 ask at (1 − no_ask) — BUY NO, not bid YES', () => {
     const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
     const body = v2EventsOrderBody({
       ticker: 'KXCOPPER15M-1',

@@ -1,0 +1,585 @@
+/** Desk Chief — paper-first allocator. Soft FAIL Live ON / recipe rewrite / chatter. */
+
+import { deskStorage } from './desk-storage'
+import { pushHostDesk } from './desk-persist'
+import {
+  ASK_CAP,
+  DAILY_PROFIT_LOCK,
+  HIT_FLOOR,
+  MAX_LIVE_CLOCKS,
+  dailyProfitLockHit,
+  deskDailyRealizedPnl,
+  feeAwareEv,
+  isDeskLiveBet,
+  isLiveBet,
+  isPaperBet,
+  liveCashFloor,
+  openLiveClockTapes,
+  paper48hPassed,
+  type BookedBet,
+  type FinanceState,
+  type Gate,
+} from './finance'
+import {
+  GOLD_RECIPES,
+  TAPE_IDS,
+  TAPE_META,
+  clampContracts,
+  type DeskSettings,
+  type TapeClock,
+  type TapeId,
+  type TapeRecipe,
+} from './tapes'
+
+export const CHIEF_KEY = 'hub.desk.chief.v1'
+export const RESERVE_CASH = 0.6
+export const RESERVE_RISK = 0.4
+export { MAX_LIVE_CLOCKS, DAILY_PROFIT_LOCK, feeAwareEv, dailyProfitLockHit } from './finance'
+export const STEP_UP_WINS = 3
+export const STEP_UP_ADD = 1
+export const STEP_UP_ADD_MAX = 2
+export const CUT_LOSSES = 2
+export const CUT_FRAC = 0.5
+export const CHIEF_PAPER_KEEP_MS = 48 * 60 * 60 * 1000
+
+export type ChiefKind = 'paper-size' | 'live-size' | 'clock' | 'live-arm' | 'block'
+
+export type ChiefProposal = {
+  id: string
+  tape: TapeId
+  kind: ChiefKind
+  fromContracts: number
+  toContracts: number
+  clock?: TapeClock
+  apply: 'auto' | 'draft' | 'block'
+  reason: string
+  createdAt: number
+  status: 'pending' | 'accepted' | 'rejected' | 'applied' | 'blocked'
+}
+
+export type ChiefAction = {
+  id: string
+  at: number
+  tape?: TapeId
+  text: string
+}
+
+export type ChiefTapeProgress = {
+  tape: TapeId
+  botOn: boolean
+  liveOn: boolean
+  contracts: number
+  sleeveUsd: number
+  hitPct: number
+  w: number
+  l: number
+  openRisk: number
+  pnl: number
+  stale: boolean
+  halt: boolean
+  closed: boolean
+  tradingActive: boolean
+}
+
+export type ChiefState = {
+  asOf: number
+  lastRunAt: number
+  sleeves: Record<TapeId, { contracts: number; sleeveUsd: number }>
+  progress: Record<TapeId, ChiefTapeProgress>
+  proposals: ChiefProposal[]
+  actions: ChiefAction[]
+  dailyPnl: number
+  lockIn: boolean
+  cash: number | null
+  cashFloor: number
+}
+
+export type ChiefQuote = {
+  tradingActive?: boolean
+  stale?: boolean
+  yesAsk?: number
+  noAsk?: number
+}
+
+export type ChiefRunInput = {
+  settings: DeskSettings
+  book: FinanceState
+  cash: number | null
+  deposits: number | null
+  quotes?: Partial<Record<TapeId, ChiefQuote | null>>
+  halt?: Partial<Record<TapeId, boolean>>
+  typicalAsk?: Partial<Record<TapeId, number>>
+  now?: number
+  prev?: ChiefState | null
+}
+
+export type ChiefPaperApply = {
+  tape: TapeId
+  contracts: number
+  clock?: TapeClock
+}
+
+export type ChiefResult = {
+  state: ChiefState
+  paperApplies: ChiefPaperApply[]
+  liveOnWrites: Partial<Record<TapeId, boolean>>
+}
+
+function money(n: number) {
+  return Math.round(n * 100) / 100
+}
+
+
+export function liveHeatTapes(
+  settings: DeskSettings,
+  book: FinanceState,
+  quotes?: Partial<Record<TapeId, ChiefQuote | null>>,
+) {
+  const heat = new Set<TapeId>(openLiveClockTapes(book))
+  for (const id of TAPE_IDS) {
+    if (settings.tapes[id].liveOn !== true) continue
+    const q = quotes?.[id]
+    if (q?.tradingActive === true) heat.add(id)
+  }
+  return [...heat]
+}
+
+export function tapeLiveArmGate(id: TapeId, quote?: ChiefQuote | null): Gate {
+  const closed = quote?.tradingActive === false
+  const stale = quote?.stale === true || closed
+  if (id === 'gld' && (stale || closed || quote?.tradingActive !== true)) {
+    return { ok: false, reason: 'GLD STALE — Soft FAIL Live arm' }
+  }
+  if (stale || closed) {
+    return { ok: false, reason: `${TAPE_META[id].label} STALE/CLOSED — Soft FAIL Live arm` }
+  }
+  return { ok: true }
+}
+
+export function readTestTapeQuote(id: TapeId): ChiefQuote | null {
+  if (typeof window === 'undefined') return null
+  const bag = (window as Window & { __HUB_TEST_TAPE_QUOTE?: Partial<Record<TapeId, ChiefQuote>> }).__HUB_TEST_TAPE_QUOTE
+  const q = bag?.[id]
+  return q && typeof q === 'object' ? q : null
+}
+
+function emptyProgress(id: TapeId, recipe: TapeRecipe, ask: number): ChiefTapeProgress {
+  return {
+    tape: id,
+    botOn: recipe.botOn === true,
+    liveOn: recipe.liveOn === true,
+    contracts: recipe.contracts,
+    sleeveUsd: money(recipe.contracts * (ask / 100)),
+    hitPct: 0,
+    w: 0,
+    l: 0,
+    openRisk: 0,
+    pnl: 0,
+    stale: false,
+    halt: false,
+    closed: false,
+    tradingActive: false,
+  }
+}
+
+function emptyChief(now = Date.now()): ChiefState {
+  const sleeves = {} as ChiefState['sleeves']
+  const progress = {} as ChiefState['progress']
+  for (const id of TAPE_IDS) {
+    const recipe = GOLD_RECIPES[id]
+    progress[id] = emptyProgress(id, recipe, 70)
+    sleeves[id] = { contracts: recipe.contracts, sleeveUsd: money(recipe.contracts * 0.7) }
+  }
+  return {
+    asOf: now,
+    lastRunAt: 0,
+    sleeves,
+    progress,
+    proposals: [],
+    actions: [],
+    dailyPnl: 0,
+    lockIn: false,
+    cash: null,
+    cashFloor: liveCashFloor(null),
+  }
+}
+
+function asProposal(raw: unknown): ChiefProposal | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Partial<ChiefProposal>
+  if (!o.tape || !TAPE_IDS.includes(o.tape)) return null
+  const kind = o.kind
+  if (kind !== 'paper-size' && kind !== 'live-size' && kind !== 'clock' && kind !== 'live-arm' && kind !== 'block') {
+    return null
+  }
+  const status = o.status
+  if (status !== 'pending' && status !== 'accepted' && status !== 'rejected' && status !== 'applied' && status !== 'blocked') {
+    return null
+  }
+  return {
+    id: String(o.id || '').trim() || `chief-${o.tape}-${kind}`,
+    tape: o.tape,
+    kind,
+    fromContracts: clampContracts(Number(o.fromContracts) || 1),
+    toContracts: clampContracts(Number(o.toContracts) || 1),
+    clock: o.clock,
+    apply: o.apply === 'auto' || o.apply === 'block' ? o.apply : 'draft',
+    reason: String(o.reason || ''),
+    createdAt: Number(o.createdAt) || Date.now(),
+    status,
+  }
+}
+
+export function hydrateChief(raw: unknown, now = Date.now()): ChiefState {
+  const base = emptyChief(now)
+  if (!raw || typeof raw !== 'object') return base
+  const o = raw as Partial<ChiefState>
+  const proposals = Array.isArray(o.proposals) ? o.proposals.map(asProposal).filter((p): p is ChiefProposal => !!p) : []
+  const actions = Array.isArray(o.actions)
+    ? o.actions
+        .filter((a): a is ChiefAction => !!a && typeof a === 'object' && typeof a.text === 'string')
+        .map((a) => ({
+          id: String(a.id || `act-${a.at}`),
+          at: Number(a.at) || now,
+          tape: a.tape,
+          text: a.text,
+        }))
+    : []
+  const sleeves = { ...base.sleeves }
+  const progress = { ...base.progress }
+  for (const id of TAPE_IDS) {
+    const s = o.sleeves?.[id]
+    if (s) sleeves[id] = { contracts: clampContracts(Number(s.contracts) || 1), sleeveUsd: money(Number(s.sleeveUsd) || 0) }
+    const p = o.progress?.[id]
+    if (p) progress[id] = { ...progress[id], ...p, tape: id }
+  }
+  return {
+    asOf: Number(o.asOf) || now,
+    lastRunAt: Number(o.lastRunAt) || 0,
+    sleeves,
+    progress,
+    proposals: proposals.slice(-24),
+    actions: actions.slice(-24),
+    dailyPnl: money(Number(o.dailyPnl) || 0),
+    lockIn: o.lockIn === true,
+    cash: Number.isFinite(o.cash ?? NaN) ? Number(o.cash) : null,
+    cashFloor: money(Number(o.cashFloor) || liveCashFloor(null)),
+  }
+}
+
+export function mergeChiefState(prev: unknown, incoming: unknown): ChiefState {
+  if (incoming == null) return hydrateChief(prev)
+  if (prev == null) return hydrateChief(incoming)
+  const a = hydrateChief(prev)
+  const b = hydrateChief(incoming)
+  const winner = (Number(b.asOf) || 0) >= (Number(a.asOf) || 0) ? b : a
+  const other = winner === b ? a : b
+  const byId = new Map<string, ChiefProposal>()
+  for (const p of [...other.proposals, ...winner.proposals]) byId.set(p.id, p)
+  const actions = [...other.actions, ...winner.actions]
+    .sort((x, y) => x.at - y.at)
+    .slice(-24)
+  return {
+    ...winner,
+    proposals: [...byId.values()].sort((x, y) => x.createdAt - y.createdAt).slice(-24),
+    actions,
+  }
+}
+
+export function loadChief(): ChiefState {
+  const ls = deskStorage()
+  if (!ls) return emptyChief()
+  try {
+    const raw = ls.getItem(CHIEF_KEY)
+    return hydrateChief(raw ? JSON.parse(raw) : null)
+  } catch {
+    return emptyChief()
+  }
+}
+
+export function saveChief(state: ChiefState, opts?: { host?: boolean }): ChiefState {
+  const next = hydrateChief({ ...state, asOf: Date.now() })
+  const ls = deskStorage()
+  if (ls) {
+    try {
+      ls.setItem(CHIEF_KEY, JSON.stringify(next))
+    } catch {
+      /* quota */
+    }
+  }
+  if (opts?.host !== false) pushHostDesk({ chief: next })
+  return next
+}
+
+function tapeBets(book: FinanceState, id: TapeId, paper: boolean) {
+  return book.bets.filter((b) => b.tape === id && (paper ? isPaperBet(b) : isDeskLiveBet(b) || isLiveBet(b)))
+}
+
+function settledWl(bets: BookedBet[]) {
+  const settled = bets.filter((b) => b.status === 'settled' && b.pnl != null)
+  const w = settled.filter((b) => (b.pnl ?? 0) > 0).length
+  const l = settled.filter((b) => (b.pnl ?? 0) < 0).length
+  const pnl = money(settled.reduce((s, b) => s + (b.pnl ?? 0), 0))
+  const n = w + l
+  return { w, l, pnl, pct: n ? Math.round((w / n) * 100) : 0 }
+}
+
+function streak(bets: BookedBet[]) {
+  const settled = bets
+    .filter((b) => b.status === 'settled' && b.pnl != null)
+    .sort((a, b) => (Number(b.settledAt) || Number(b.filledAt) || 0) - (Number(a.settledAt) || Number(a.filledAt) || 0))
+  let wins = 0
+  let losses = 0
+  for (const b of settled) {
+    const win = (b.pnl ?? 0) > 0
+    if (wins === 0 && losses === 0) {
+      if (win) wins = 1
+      else losses = 1
+      continue
+    }
+    if (wins > 0) {
+      if (win) wins += 1
+      else break
+    } else if (losses > 0) {
+      if (!win) losses += 1
+      else break
+    }
+  }
+  return { wins, losses }
+}
+
+function typicalAskFor(id: TapeId, input: ChiefRunInput) {
+  const override = input.typicalAsk?.[id]
+  if (Number.isFinite(override ?? NaN)) return Number(override)
+  const q = input.quotes?.[id]
+  const ask = Number(q?.yesAsk)
+  if (Number.isFinite(ask) && ask > 0) return ask
+  return Math.min(GOLD_RECIPES[id].centLo + 3, ASK_CAP - 1)
+}
+
+function targetContracts(cur: number, snap: ChiefTapeProgress, winStreak: number, lossStreak: number) {
+  let next = cur
+  if (lossStreak >= CUT_LOSSES) {
+    next = Math.max(1, Math.floor(cur * CUT_FRAC))
+  } else if (snap.halt || snap.stale || snap.closed || snap.pnl < 0) {
+    next = Math.max(1, cur - 1)
+  } else if (winStreak >= STEP_UP_WINS && (snap.hitPct >= HIT_FLOOR || snap.w + snap.l < 4)) {
+    const add = winStreak >= STEP_UP_WINS + 2 ? STEP_UP_ADD_MAX : STEP_UP_ADD
+    next = cur + add
+  }
+  if (next > cur + STEP_UP_ADD_MAX) next = cur + STEP_UP_ADD_MAX
+  if (cur <= 1 && next >= 20) next = cur + STEP_UP_ADD
+  return clampContracts(next)
+}
+
+function remember(actions: ChiefAction[], text: string, tape?: TapeId, now = Date.now()): ChiefAction[] {
+  const next = [...actions, { id: `act-${now}-${tape || 'desk'}`, at: now, tape, text }]
+  return next.slice(-24)
+}
+
+function alreadyDid(actions: ChiefAction[], text: string, now: number) {
+  return actions.some((a) => a.text === text && now - a.at < 60 * 60_000)
+}
+
+export function runDeskChief(input: ChiefRunInput): ChiefResult {
+  const now = input.now ?? Date.now()
+  const prev = hydrateChief(input.prev ?? loadChief(), now)
+  const daily = deskDailyRealizedPnl(input.book, now)
+  const lockIn = dailyProfitLockHit(input.book, now)
+  const floor = liveCashFloor(input.deposits)
+  const heat = liveHeatTapes(input.settings, input.book, input.quotes)
+  const paperReady = paper48hPassed(input.book, now)
+  const progress = {} as Record<TapeId, ChiefTapeProgress>
+  const sleeves = {} as ChiefState['sleeves']
+  const paperApplies: ChiefPaperApply[] = []
+  let proposals = prev.proposals.filter((p) => p.status === 'pending' || now - p.createdAt < CHIEF_PAPER_KEEP_MS)
+  let actions = prev.actions.slice(-24)
+  const liveOnWrites: Partial<Record<TapeId, boolean>> = {}
+
+  const riskBudget = money(Math.max(0, daily) * RESERVE_RISK)
+  let spentRisk = 0
+
+  for (const id of TAPE_IDS) {
+    const recipe = input.settings.tapes[id]
+    const ask = typicalAskFor(id, input)
+    const q = input.quotes?.[id]
+    const closed = q?.tradingActive === false
+    const stale = q?.stale === true || closed
+    const halt = input.halt?.[id] === true
+    const liveOn = recipe.liveOn === true
+    const bets = tapeBets(input.book, id, !liveOn)
+    const wl = settledWl(bets)
+    const { wins, losses } = streak(bets)
+    const openRisk = money(bets.filter((b) => b.status === 'open').reduce((s, b) => s + (Number(b.spent) || 0), 0))
+    const snap: ChiefTapeProgress = {
+      tape: id,
+      botOn: recipe.botOn === true,
+      liveOn,
+      contracts: recipe.contracts,
+      sleeveUsd: money(recipe.contracts * (ask / 100)),
+      hitPct: wl.pct,
+      w: wl.w,
+      l: wl.l,
+      openRisk,
+      pnl: wl.pnl,
+      stale,
+      halt,
+      closed,
+      tradingActive: q?.tradingActive === true,
+    }
+    progress[id] = snap
+    const want = targetContracts(recipe.contracts, snap, wins, losses)
+    sleeves[id] = { contracts: want, sleeveUsd: money(want * (ask / 100)) }
+
+    if (want === recipe.contracts) continue
+
+    const ev = feeAwareEv(ask, want)
+    const sizeUp = want > recipe.contracts
+    const stepCost = money((want - recipe.contracts) * (ask / 100))
+
+    if (!liveOn) {
+      const idKey = `paper-${id}-${recipe.contracts}-${want}`
+      if (proposals.some((p) => p.id === idKey && (p.status === 'applied' || p.status === 'rejected'))) continue
+      const reason = sizeUp
+        ? `${TAPE_META[id].label} paper +${want - recipe.contracts} after ${wins}W · ${HIT_FLOOR}%`
+        : `${TAPE_META[id].label} paper cut ${recipe.contracts}→${want}`
+      if (alreadyDid(actions, `applied ${reason}`, now)) continue
+      const proposal: ChiefProposal = {
+        id: idKey,
+        tape: id,
+        kind: 'paper-size',
+        fromContracts: recipe.contracts,
+        toContracts: want,
+        apply: 'auto',
+        reason,
+        createdAt: now,
+        status: 'applied',
+      }
+      proposals = proposals.filter((p) => p.id !== idKey).concat(proposal)
+      paperApplies.push({ tape: id, contracts: want })
+      actions = remember(actions, `applied ${reason}`, id, now)
+      continue
+    }
+
+    const arm = tapeLiveArmGate(id, q)
+    const blockLiveUp = !sizeUp
+      ? ''
+      : Number.isFinite(input.cash ?? NaN) && (input.cash as number) < floor
+        ? `Cash ${input.cash} under live floor ${floor} — Soft FAIL Live size-up`
+        : lockIn
+          ? `Daily lock-in +$${DAILY_PROFIT_LOCK} — sit`
+          : ev <= 0
+            ? `After-fee EV ${ev} ≤ 0 — sit`
+            : daily > 0 && spentRisk + stepCost > riskBudget
+              ? `Reserve ${Math.round(RESERVE_CASH * 100)}/${Math.round(RESERVE_RISK * 100)} — Soft FAIL 100% into risk`
+              : !arm.ok
+                ? arm.reason
+                : heat.length >= MAX_LIVE_CLOCKS && !heat.includes(id)
+                  ? `Max ${MAX_LIVE_CLOCKS} Live clocks`
+                  : ''
+
+    if (blockLiveUp) {
+      const idKey = `block-live-${id}-${recipe.contracts}-${want}`
+      if (!alreadyDid(actions, blockLiveUp, now)) {
+        proposals = proposals
+          .filter((p) => p.id !== idKey)
+          .concat({
+            id: idKey,
+            tape: id,
+            kind: 'block',
+            fromContracts: recipe.contracts,
+            toContracts: recipe.contracts,
+            apply: 'block',
+            reason: blockLiveUp,
+            createdAt: now,
+            status: 'blocked',
+          })
+        actions = remember(actions, blockLiveUp, id, now)
+      }
+      sleeves[id] = { contracts: recipe.contracts, sleeveUsd: snap.sleeveUsd }
+      continue
+    }
+
+    const idKey = `live-${id}-${recipe.contracts}-${want}`
+    if (proposals.some((p) => p.id === idKey && p.status !== 'rejected')) continue
+    const reason = `${TAPE_META[id].label} Live size ${recipe.contracts}→${want} — draft until ${paperReady ? 'Accept' : '48h paper / Accept'}`
+    proposals = proposals.filter((p) => p.id !== idKey).concat({
+      id: idKey,
+      tape: id,
+      kind: 'live-size',
+      fromContracts: recipe.contracts,
+      toContracts: want,
+      apply: 'draft',
+      reason,
+      createdAt: now,
+      status: 'pending',
+    })
+    actions = remember(actions, `draft ${reason}`, id, now)
+    if (sizeUp && daily > 0) spentRisk = money(spentRisk + stepCost)
+  }
+
+  const gldQ = input.quotes?.gld
+  if (input.settings.tapes.gld.liveOn !== true) {
+    const gldArm = tapeLiveArmGate('gld', gldQ)
+    if (!gldArm.ok) {
+      const text = gldArm.reason
+      if (!alreadyDid(actions, text, now)) actions = remember(actions, text, 'gld', now)
+    }
+  }
+
+  const state: ChiefState = {
+    asOf: now,
+    lastRunAt: now,
+    sleeves,
+    progress,
+    proposals: proposals.slice(-24),
+    actions: actions.slice(-24),
+    dailyPnl: daily,
+    lockIn,
+    cash: Number.isFinite(input.cash ?? NaN) ? Number(input.cash) : null,
+    cashFloor: floor,
+  }
+
+  return { state, paperApplies, liveOnWrites }
+}
+
+export function decideChiefProposal(state: ChiefState, id: string, accept: boolean): {
+  state: ChiefState
+  apply: ChiefPaperApply | null
+  liveOn: boolean
+} {
+  const now = Date.now()
+  const next = hydrateChief(state, now)
+  const i = next.proposals.findIndex((p) => p.id === id)
+  if (i < 0) return { state: next, apply: null, liveOn: false }
+  const p = next.proposals[i]
+  if (p.kind === 'live-arm') {
+    next.proposals[i] = { ...p, status: accept ? 'rejected' : 'rejected' }
+    next.actions = remember(next.actions, `${TAPE_META[p.tape].label} Live arm stays a toggle — Chief Soft FAIL Live ON`, p.tape, now)
+    return { state: { ...next, asOf: now }, apply: null, liveOn: false }
+  }
+  if (p.kind === 'block') {
+    next.proposals[i] = { ...p, status: 'blocked' }
+    return { state: { ...next, asOf: now }, apply: null, liveOn: false }
+  }
+  if (!accept) {
+    next.proposals[i] = { ...p, status: 'rejected' }
+    next.actions = remember(next.actions, `rejected ${p.reason}`, p.tape, now)
+    return { state: { ...next, asOf: now }, apply: null, liveOn: false }
+  }
+  if (p.kind === 'live-size') {
+    next.proposals[i] = { ...p, status: 'accepted' }
+    next.actions = remember(next.actions, `accepted ${p.reason}`, p.tape, now)
+    return { state: { ...next, asOf: now }, apply: { tape: p.tape, contracts: p.toContracts, clock: p.clock }, liveOn: false }
+  }
+  if (p.kind === 'paper-size' || p.kind === 'clock') {
+    next.proposals[i] = { ...p, status: 'accepted' }
+    next.actions = remember(next.actions, `accepted ${p.reason}`, p.tape, now)
+    return { state: { ...next, asOf: now }, apply: { tape: p.tape, contracts: p.toContracts, clock: p.clock }, liveOn: false }
+  }
+  return { state: { ...next, asOf: now }, apply: null, liveOn: false }
+}
+
+export function chiefNeverWritesLiveOn(result: ChiefResult) {
+  return Object.keys(result.liveOnWrites).length === 0
+}

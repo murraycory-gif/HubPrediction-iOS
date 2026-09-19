@@ -353,6 +353,22 @@ body {
   margin-top: 10px;
 }
 
+.chief {
+  margin-top: 12px;
+}
+
+.chief-actions,
+.chief-proposals {
+  margin-top: 10px;
+}
+
+.chief-propose {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 .analyst-grid {
   display: flex;
   flex-direction: column;

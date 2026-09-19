@@ -966,7 +966,9 @@ test('Live send skips ask ≥80 unlocked', async ({ page }) => {
   expect(gate?.gld80).toBe(false)
   expect(gate?.send82.ok).toBe(false)
   if (gate && !gate.send82.ok) expect(gate.send82.reason).toMatch(/skip/)
-  expect(gate?.send79.ok).toBe(true)
+  expect(gate?.unlocked79).toBe(true)
+  expect(gate?.send79.ok).toBe(false)
+  if (gate && !gate.send79.ok) expect(gate.send79.reason).toMatch(/EV/)
 })
 
 test('Live cash ON survives reload; no master Live switch', async ({ page }) => {
@@ -1740,4 +1742,200 @@ test('Live ON place fail Soft FAIL deskfill LIVE — success needs real Kalshi o
     'LIVE',
   )
   await expect(page.getByTestId('status-btc')).toHaveText('UP')
+})
+
+test('Desk Chief paper size shift Soft FAIL Live flip', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await resetGoldDesk(page)
+  await page.getByTestId('finance-toggle').click()
+  await expect(page.getByTestId('desk-chief')).toBeVisible()
+  await expect(page.getByTestId('chief-lock')).toContainText(/Soft FAIL Live ON/)
+  await expect(page.locator('body')).not.toContainText(/Live ALL|master Live/)
+  const result = await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_TEST_CHIEF?: {
+        run: (over: Record<string, unknown>) => {
+          paperApplies: Array<{ tape: string; contracts: number }>
+          liveOnWrites: Record<string, boolean>
+        }
+      }
+    }
+    const now = Date.now()
+    const settings = JSON.parse(localStorage.getItem('hub.desk.settings.v1') || 'null') as {
+      tapes?: { btc?: { liveOn?: boolean; contracts?: number } }
+    }
+    if (settings?.tapes?.btc) {
+      settings.tapes.btc.liveOn = false
+      settings.tapes.btc.contracts = 1
+    }
+    return w.__HUB_TEST_CHIEF?.run({
+      settings,
+      book: {
+        killed: false,
+        paperStartedAt: now,
+        bets: [1, 2, 3].map((i) => ({
+          betId: `paper:btc-${i}`,
+          tape: 'btc',
+          ticker: `KXBTC15M-P${i}`,
+          clock: '15m',
+          closeAt: now,
+          side: 'up',
+          count: 1,
+          ask: 70,
+          spent: 0.7,
+          orderId: `deskfill-btc-w${i}`,
+          status: 'settled',
+          pnl: 0.3,
+          filledAt: now,
+          settledAt: now,
+          kind: 'paper',
+        })),
+      },
+      cash: 293.93,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      now,
+    })
+  })
+  expect(result?.paperApplies.some((a) => a.tape === 'btc' && a.contracts >= 2)).toBe(true)
+  expect(result?.liveOnWrites ?? {}).toEqual({})
+  await expect(page.getByTestId('live-cash-btc')).not.toBeChecked()
+  await expect(page.getByTestId('chief-alloc-btc')).toContainText(/BTC/)
+})
+
+test('cash floor Soft FAIL Live size-up', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await resetGoldDesk(page)
+  const result = await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_TEST_CHIEF?: {
+        run: (over: Record<string, unknown>) => {
+          paperApplies: unknown[]
+          liveOnWrites: Record<string, boolean>
+          state: { proposals: Array<{ kind: string; reason: string }> }
+        }
+      }
+    }
+    const now = Date.now()
+    const settings = JSON.parse(localStorage.getItem('hub.desk.settings.v1') || 'null') as {
+      tapes?: { btc?: { liveOn?: boolean; contracts?: number } }
+    }
+    if (settings?.tapes?.btc) {
+      settings.tapes.btc.liveOn = true
+      settings.tapes.btc.contracts = 2
+    }
+    return w.__HUB_TEST_CHIEF?.run({
+      settings,
+      book: {
+        killed: false,
+        paperStartedAt: now - 49 * 3600_000,
+        bets: [1, 2, 3].map((i) => ({
+          betId: `bet_ord-live-btc-${i}`,
+          tape: 'btc',
+          ticker: `KXBTC15M-L${i}`,
+          clock: '15m',
+          closeAt: now,
+          side: 'up',
+          count: 1,
+          ask: 70,
+          spent: 0.7,
+          orderId: `ord-live-btc-aaaa${i}`,
+          status: 'settled',
+          pnl: 0.3,
+          filledAt: now,
+          settledAt: now,
+          kind: 'live',
+        })),
+      },
+      cash: 50,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      now,
+    })
+  })
+  expect(result?.paperApplies).toEqual([])
+  expect(result?.liveOnWrites ?? {}).toEqual({})
+  expect(result?.state.proposals.some((p) => p.kind === 'block' && /floor/i.test(p.reason))).toBe(true)
+  await expect(page.getByTestId('live-cash-btc')).not.toBeChecked()
+})
+
+test('GLD STALE Soft FAIL Live arm', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await resetGoldDesk(page)
+  await page.evaluate(() => {
+    ;(window as Window & { __HUB_TEST_TAPE_QUOTE?: { gld: { tradingActive: boolean; stale: boolean } } }).__HUB_TEST_TAPE_QUOTE =
+      { gld: { tradingActive: false, stale: true } }
+  })
+  await page.locator('label').filter({ has: page.getByTestId('live-cash-gld') }).click({ force: true })
+  await expect(page.getByTestId('live-cash-gld')).not.toBeChecked()
+  await expect(page.getByTestId('desk-msg')).toContainText(/GLD STALE/)
+})
+
+test('canceled IOC Soft FAIL LIVE / BOT BOUGHT without fill', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await allowLiveArm(page)
+  await setToggle(page, 'live-cash-btc', true)
+  const quote = {
+    ticker: 'KXBTC15M-CXLQA',
+    clock: '15m',
+    clockId: '15m',
+    closeAt: Date.now() + 8 * 60_000,
+    tradingActive: true,
+    live: 80040,
+    beat: 80000,
+    yesAsk: 70,
+    noAsk: 30,
+    fetchedAt: Date.now(),
+    points: [
+      { t: Date.now() - 8000, px: 80020 },
+      { t: Date.now() - 4000, px: 80030 },
+      { t: Date.now(), px: 80040 },
+    ],
+  }
+  await page.evaluate(async (q) => {
+    const w = window as Window & {
+      __HUB_PLACE?: (p: unknown) => Promise<unknown>
+      __HUB_TEST_SEND?: (tape: string, side: string, quote: unknown) => Promise<void>
+      __HUB_APPLY_BOOK?: (payload: unknown) => void
+    }
+    w.__HUB_PLACE = async () => ({
+      order: {
+        order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad',
+        status: 'canceled',
+        fill_count: 0,
+        action: 'sell',
+        side: 'yes',
+      },
+    })
+    await w.__HUB_TEST_SEND?.('btc', 'up', q)
+    w.__HUB_APPLY_BOOK?.({
+      cash: 293.93,
+      fills: { fills: [] },
+      settlements: { settlements: [] },
+      orders: {
+        orders: [
+          {
+            order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad',
+            status: 'canceled',
+            fill_count: 0,
+            action: 'sell',
+            side: 'yes',
+          },
+        ],
+      },
+      fetchedAt: Date.now(),
+      hostCreds: true,
+    })
+  }, quote)
+  await expect(page.getByTestId('desk-msg')).toContainText(/no order id|not sent|canceled/i)
+  await expect(page.getByTestId('ticket-btc')).toContainText('No ticket this clock')
+  await expect(page.getByTestId('banner-btc')).toHaveCount(0)
+  await expect(page.locator('[data-order-id="01a0b7af-7b30-701f-8eb6-fa1303b858ad"] [data-testid="bets-mode"]', { hasText: 'LIVE' })).toHaveCount(0)
+  await expect(page.getByTestId('status-btc')).not.toHaveText('UP')
+  await expect(page.locator('body')).not.toContainText('BOT BOUGHT')
 })

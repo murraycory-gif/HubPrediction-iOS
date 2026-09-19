@@ -177,4 +177,22 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     expect(loadSettings().tapes.cu.contracts).toBe(12)
     await rm(dir, { recursive: true, force: true })
   })
+
+  it('Desk Chief state persists on host Soft FAIL wipe on refresh', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hub-desk-chief-'))
+    process.env.HUB_DESK_STATE_FILE = join(dir, 'desk-state.json')
+    const { saveChief, loadChief, hydrateChief } = await import('../src/lib/desk-chief')
+    const kept = saveChief(
+      hydrateChief({
+        asOf: Date.now(),
+        actions: [{ id: 'act-keep', at: Date.now(), text: 'BTC paper +1 after 3W · 80%' }],
+      }),
+    )
+    writeDeskState({ chief: kept })
+    localStorage.clear()
+    expect(loadChief().actions.some((a) => a.text.includes('BTC paper'))).toBe(false)
+    applyHostDeskState(readDeskState())
+    expect(loadChief().actions.some((a) => a.text.includes('BTC paper'))).toBe(true)
+    await rm(dir, { recursive: true, force: true })
+  })
 })

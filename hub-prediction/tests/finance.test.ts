@@ -121,7 +121,8 @@ describe('finance Soft KEEP', () => {
     const locked = liveSendGate(emptyFinance(), {
       tape: 'btc', ticker: 'KXBTC15M-1', ask: 82, cash: 400, deposits: 760, spent: 0.82, locked: true,
     })
-    expect(locked.ok).toBe(true)
+    expect(locked.ok).toBe(false)
+    if (!locked.ok) expect(locked.reason).toMatch(/EV/)
     const over = liveSendGate(emptyFinance(), {
       tape: 'btc', ticker: 'KXBTC15M-1', ask: 72, cash: 400, deposits: 760, spent: CLOCK_MAX_SPEND + 1,
     })

@@ -27,8 +27,30 @@ export type KalshiBookPayload = {
 export type KalshiBookIndex = {
   orderIds: Set<string>
   tickers: Set<string>
+  canceledUnfilled: Set<string>
   fetchedAt: number
   hostCreds: boolean
+}
+
+function rowFillCount(row: Record<string, unknown>) {
+  const n = Number(row.fill_count ?? row.fillCount ?? row.filled_count)
+  if (Number.isFinite(n) && n > 0) return n
+  const fills = row.fills
+  return Array.isArray(fills) ? fills.length : 0
+}
+
+function orderRowFilled(row: Record<string, unknown>) {
+  const status = String(row.status ?? '').toLowerCase()
+  const fills = rowFillCount(row)
+  if (status === 'canceled' || status === 'cancelled' || status === 'not_filled') return fills > 0
+  if (fills > 0) return true
+  return status === 'executed' || status === 'filled'
+}
+
+function orderRowCanceledUnfilled(row: Record<string, unknown>) {
+  const status = String(row.status ?? '').toLowerCase()
+  if (status !== 'canceled' && status !== 'cancelled' && status !== 'not_filled') return false
+  return rowFillCount(row) <= 0
 }
 
 function listRows(raw: unknown, keys: string[]) {
@@ -57,22 +79,37 @@ function pushTicker(set: Set<string>, raw: unknown) {
 export function indexKalshiBook(raw: KalshiBookPayload | null | undefined): KalshiBookIndex {
   const orderIds = new Set<string>()
   const tickers = new Set<string>()
-  const bags: Array<{ rows: Record<string, unknown>[]; orderKeys: string[] }> = [
-    { rows: listRows(raw?.fills, ['fills']), orderKeys: ['order_id', 'orderId'] },
-    { rows: listRows(raw?.orders, ['orders', 'event_orders']), orderKeys: ['order_id', 'orderId', 'client_order_id'] },
-    { rows: listRows(raw?.settlements, ['settlements']), orderKeys: ['order_id', 'orderId'] },
-    { rows: listRows(raw?.positions, ['market_positions', 'positions']), orderKeys: ['order_id', 'orderId'] },
-  ]
-  for (const bag of bags) {
-    for (const row of bag.rows) {
-      if (!row || typeof row !== 'object') continue
-      pushTicker(tickers, row.ticker ?? row.market_ticker)
-      for (const key of bag.orderKeys) pushId(orderIds, row[key])
+  const canceledUnfilled = new Set<string>()
+  for (const row of listRows(raw?.fills, ['fills'])) {
+    if (!row || typeof row !== 'object') continue
+    pushTicker(tickers, row.ticker ?? row.market_ticker)
+    pushId(orderIds, row.order_id ?? row.orderId)
+  }
+  for (const row of listRows(raw?.settlements, ['settlements'])) {
+    if (!row || typeof row !== 'object') continue
+    pushTicker(tickers, row.ticker ?? row.market_ticker)
+    pushId(orderIds, row.order_id ?? row.orderId)
+  }
+  for (const row of listRows(raw?.positions, ['market_positions', 'positions'])) {
+    if (!row || typeof row !== 'object') continue
+    pushTicker(tickers, row.ticker ?? row.market_ticker)
+    pushId(orderIds, row.order_id ?? row.orderId)
+  }
+  for (const row of listRows(raw?.orders, ['orders', 'event_orders'])) {
+    if (!row || typeof row !== 'object') continue
+    pushTicker(tickers, row.ticker ?? row.market_ticker)
+    const id = String(row.order_id ?? row.orderId ?? row.client_order_id ?? '').trim()
+    if (!id) continue
+    if (orderRowCanceledUnfilled(row)) {
+      if (!orderIds.has(id)) canceledUnfilled.add(id)
+      continue
     }
+    if (orderRowFilled(row)) pushId(orderIds, id)
   }
   return {
     orderIds,
     tickers,
+    canceledUnfilled,
     fetchedAt: Number(raw?.fetchedAt) || Date.now(),
     hostCreds: raw?.hostCreds === true,
   }
@@ -84,6 +121,7 @@ export function onKalshiBook(
 ) {
   if (isPaperOrderId(b.orderId)) return false
   const orderId = String(b.orderId ?? '').trim()
+  if (orderId && book.canceledUnfilled.has(orderId) && !book.orderIds.has(orderId)) return false
   if (orderId && book.orderIds.has(orderId)) return true
   const ticker = String(b.ticker ?? '').trim()
   if (ticker && book.tickers.has(ticker) && isImportedKalshiRow(b)) return true

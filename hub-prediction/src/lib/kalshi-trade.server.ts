@@ -335,7 +335,7 @@ function centsToPrice(cents: number) {
   return (n / 100).toFixed(4)
 }
 
-/** V2 events/orders body. DOWN is side ask at (1 − no_ask), never bid + no_ask. */
+/** V2 events/orders body. bid = BUY YES. ask = BUY NO (legacy sell-yes at 1 − no_ask). */
 export function v2EventsOrderBody(args: {
   ticker: string
   side: 'up' | 'down'

@@ -116,7 +116,17 @@ import { CloseClock } from './close-clock'
 import { readTestCloseClock } from '../lib/close-clock'
 import { FinancePanel } from './finance-panel'
 import { formatBetWindow, formatWindowRange } from '../lib/chicago-time'
-import { applyKalshiBook, BOOK_LATCH_MS } from '../lib/kalshi-book'
+import { applyKalshiBook, BOOK_LATCH_MS, type KalshiBookPayload } from '../lib/kalshi-book'
+import {
+  decideChiefProposal,
+  loadChief,
+  readTestTapeQuote,
+  runDeskChief,
+  saveChief,
+  tapeLiveArmGate,
+  type ChiefRunInput,
+  type ChiefState,
+} from '../lib/desk-chief'
 import { applyClockSettle, balanceLatchMs, clocksNeedingSettle, readTestClockSettle } from '../lib/settle-latch'
 import { RaceChart, useSmoothedLive } from './race-chart'
 import { SettingsPanel } from './settings-panel'
@@ -134,6 +144,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [book, setBook] = useState<FinanceState>(() => loadFinance())
   const [analystOpen, setAnalystOpen] = useState(true)
   const [financeOpen, setFinanceOpen] = useState(false)
+  const [chief, setChief] = useState<ChiefState>(() => loadChief())
   const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
   const sentRef = useRef<Record<string, SendClaim>>({})
   const clientOrderRef = useRef<Record<string, string>>({})
@@ -199,7 +210,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     )
     setRehab(loadAutoState())
     let writeChain = Promise.resolve()
-    const writeHost = (patch: { settings?: unknown; tickets?: unknown; finance?: unknown; hits?: unknown }) => {
+    const writeHost = (patch: { settings?: unknown; tickets?: unknown; finance?: unknown; hits?: unknown; chief?: unknown }) => {
       if (patch.settings) lastLocalWrite.current = Date.now()
       writeChain = writeChain.catch(() => undefined).then(() => saveDeskState({ data: patch }).then(() => undefined))
       return writeChain
@@ -209,6 +220,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       .then(async (host) => {
         if (host && applyHostDeskState(host)) {
           setSettings(loadSettings())
+          setChief(loadChief())
           const hostTickets = loadTickets()
           setTickets(hostTickets)
           setBook(
@@ -225,6 +237,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           settings: settingsReadyToPush(local) ? local : undefined,
           tickets: loadTickets(),
           finance: loadFinance(),
+          chief: loadChief(),
         })
         setHostReady(true)
       })
@@ -235,6 +248,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           settings: settingsReadyToPush(local) ? local : undefined,
           tickets: loadTickets(),
           finance: loadFinance(),
+          chief: loadChief(),
         })
         setHostReady(true)
       })
@@ -262,6 +276,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         const applied = applyHostDeskState(host)
         if (!applied && !newer) return
         setSettings(loadSettings())
+        setChief(loadChief())
         const hostTickets = loadTickets()
         setTickets(hostTickets)
         setBook(
@@ -693,6 +708,84 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     }
   })
 
+  function chiefQuotes(): NonNullable<ChiefRunInput['quotes']> {
+    const out: NonNullable<ChiefRunInput['quotes']> = {}
+    for (const id of TAPE_IDS) {
+      const test = readTestTapeQuote(id)
+      const q = board?.tapes[id]
+      const liveGate = trueLiveGate({
+        quote: q,
+        kalshiLive: printsQuery.data?.tapes[id]?.live,
+      })
+      out[id] = test ?? (q
+        ? { tradingActive: q.tradingActive, stale: liveGate.stale, yesAsk: q.yesAsk, noAsk: q.noAsk }
+        : null)
+    }
+    return out
+  }
+
+  function tickChief(over?: Partial<ChiefRunInput>, opts?: { force?: boolean }) {
+    const stored = loadSettings()
+    const result = runDeskChief({
+      settings: over?.settings ?? stored,
+      book: over?.book ?? loadFinance(),
+      cash: over?.cash ?? cash.cash,
+      deposits: over?.deposits ?? cash.deposits,
+      quotes: over?.quotes ?? chiefQuotes(),
+      halt: over?.halt ?? {
+        btc: isRehabPaper(rehab, 'btc'),
+        ng: isRehabPaper(rehab, 'ng'),
+        cu: isRehabPaper(rehab, 'cu'),
+        gld: isRehabPaper(rehab, 'gld'),
+      },
+      typicalAsk: over?.typicalAsk,
+      now: over?.now,
+      prev: over?.prev ?? loadChief(),
+    })
+    setChief(saveChief(result.state))
+    const toggledAt = Number(stored.togglesAt) || 0
+    if (!opts?.force && (Date.now() - toggledAt < 2000 || Date.now() - lastLocalWrite.current < 2000)) {
+      return result
+    }
+    for (const a of result.paperApplies) {
+      const cur = loadSettings()
+      if (cur.tapes[a.tape].liveOn === true) continue
+      if (cur.tapes[a.tape].contracts === a.contracts) continue
+      setSettings(patchTape(cur, a.tape, { contracts: a.contracts }))
+    }
+    return result
+  }
+
+  useEffect(() => {
+    if (!hostReady) return
+    tickChief()
+    const id = window.setInterval(() => {
+      tickChief()
+    }, 4000)
+    return () => window.clearInterval(id)
+  }, [hostReady, book, cash.cash, cash.deposits, board, rehab])
+
+  useEffect(() => {
+    const w = window as Window & {
+      __HUB_TEST_CHIEF?: {
+        run: (over?: Partial<ChiefRunInput>) => ReturnType<typeof runDeskChief>
+        snapshot: () => ChiefState
+      }
+      __HUB_APPLY_BOOK?: (payload: KalshiBookPayload) => void
+    }
+    w.__HUB_TEST_CHIEF = {
+      run: (over) => tickChief(over, { force: true }),
+      snapshot: () => loadChief(),
+    }
+    w.__HUB_APPLY_BOOK = (payload) => {
+      setBook((prev) => applyKalshiBook(prev, payload))
+    }
+    return () => {
+      delete w.__HUB_TEST_CHIEF
+      delete w.__HUB_APPLY_BOOK
+    }
+  })
+
   useEffect(() => {
     if (!hostReady || !board || !tabIsOpen() || book.killed) return
     const stored = loadSettings()
@@ -858,6 +951,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                   return
                 }
                 if (patch.liveOn === true) {
+                  const quote = readTestTapeQuote(id) ?? board?.tapes[id]
+                  const tapeGate = tapeLiveArmGate(id, quote)
+                  if (!tapeGate.ok) {
+                    setMsg(tapeGate.reason)
+                    return
+                  }
                   const arm = liveArmGateForDesk(book, {
                     cash: cash.cash,
                     deposits: cash.deposits,
@@ -943,6 +1042,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             book={book}
             cash={cash}
             board={board ?? null}
+            chief={chief}
             onKill={() => {
               setBook(engageKill(book))
               setSettings(disarmAllBots(settings))
@@ -951,6 +1051,19 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             onClearKill={() => {
               setBook(clearKill(book))
               setMsg('KILL cleared')
+            }}
+            onChiefAccept={(id) => {
+              const decided = decideChiefProposal(loadChief(), id, true)
+              setChief(saveChief(decided.state))
+              if (decided.apply && loadSettings().tapes[decided.apply.tape].liveOn !== true) {
+                setSettings(patchTape(loadSettings(), decided.apply.tape, { contracts: decided.apply.contracts }))
+              } else if (decided.apply) {
+                setSettings(patchTape(loadSettings(), decided.apply.tape, { contracts: decided.apply.contracts }))
+              }
+            }}
+            onChiefReject={(id) => {
+              const decided = decideChiefProposal(loadChief(), id, false)
+              setChief(saveChief(decided.state))
             }}
           />
         ) : null}
@@ -974,6 +1087,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                 return
               }
               if (patch.liveOn === true) {
+                const quote = readTestTapeQuote(id) ?? board?.tapes[id]
+                const tapeGate = tapeLiveArmGate(id, quote)
+                if (!tapeGate.ok) {
+                  setMsg(tapeGate.reason)
+                  return
+                }
                 const arm = liveArmGateForDesk(book, {
                   cash: cash.cash,
                   deposits: cash.deposits,

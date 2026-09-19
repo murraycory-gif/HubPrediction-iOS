@@ -205,4 +205,37 @@ describe('Kalshi book MODE — missing PAPER, present LIVE, cash = balance', () 
     expect(next.bets[0]?.kind).toBe('paper')
     expect(classifyBookMode(ghost, indexKalshiBook(payload))).toBe('paper')
   })
+
+  it('canceled IOC with fill_count 0 is not LIVE', () => {
+    const canceled = deskLive({
+      orderId: '01a0b7af-7b30-701f-8eb6-fa1303b858ad',
+      ticker: 'KXBTC15M-CXL',
+      kind: 'live',
+    })
+    const payload = {
+      cash: 293.93,
+      fills: { fills: [] },
+      settlements: { settlements: [] },
+      orders: {
+        orders: [
+          {
+            order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad',
+            status: 'canceled',
+            fill_count: 0,
+            action: 'sell',
+            side: 'yes',
+          },
+        ],
+      },
+      fetchedAt: now,
+      hostCreds: true,
+    }
+    const index = indexKalshiBook(payload)
+    expect(index.canceledUnfilled.has(canceled.orderId)).toBe(true)
+    expect(index.orderIds.has(canceled.orderId)).toBe(false)
+    expect(onKalshiBook(canceled, index)).toBe(false)
+    const next = applyKalshiBook({ ...emptyFinance(), bets: [canceled] }, payload, now)
+    expect(next.bets[0]?.kind).toBe('paper')
+    expect(classifyBookMode(canceled, index)).toBe('paper')
+  })
 })

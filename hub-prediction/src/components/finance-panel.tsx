@@ -13,6 +13,14 @@ import {
   recipeLine,
   type FinanceState,
 } from '../lib/finance'
+import {
+  DAILY_PROFIT_LOCK,
+  MAX_LIVE_CLOCKS,
+  RESERVE_CASH,
+  RESERVE_RISK,
+  type ChiefProposal,
+  type ChiefState,
+} from '../lib/desk-chief'
 import { TAPE_IDS, TAPE_META, formatCash, formatPnl } from '../lib/tapes'
 import type { CashLatch } from '../lib/tapes'
 import type { DeskBoard } from '../lib/types'
@@ -21,15 +29,19 @@ export function FinancePanel(props: {
   book: FinanceState
   cash: CashLatch
   board: DeskBoard | null
+  chief: ChiefState
   onKill: () => void
   onClearKill: () => void
+  onChiefAccept: (id: string) => void
+  onChiefReject: (id: string) => void
 }) {
   const pnl = pnlVsDeposits(props.cash.cash, props.cash.deposits)
   const liveFloor = liveCashFloor(props.cash.deposits)
   const paperLeft = paperHoursLeft(props.book)
+  const pending = props.chief.proposals.filter((p) => p.status === 'pending')
   return (
     <section className="finance" data-testid="finance">
-      <p className="hud-label">Finance · desk-local</p>
+      <p className="hud-label">Finance / Desk Chief</p>
       <p className="settings-note" data-testid="finance-lock">
         Books real Kalshi fills only. Does not send orders. Does not flip Live. Does not retune gold recipes.
         Paper floor {formatCash(paperCashFloor())}. Live floor max($150, 20% deposits) = {formatCash(liveFloor)}.
@@ -69,6 +81,71 @@ export function FinancePanel(props: {
               : 'KILL off'}
         </span>
       </div>
+      <section className="chief" data-testid="desk-chief">
+        <p className="hud-label">Desk Chief · profit + Kalshi cash</p>
+        <p className="settings-note" data-testid="chief-lock">
+          Paper size auto. Live size is a draft. Soft FAIL Live ON. Soft FAIL recipe rewrite. Reserve{' '}
+          {Math.round(RESERVE_CASH * 100)}/{Math.round(RESERVE_RISK * 100)} · max {MAX_LIVE_CLOCKS} Live clocks · lock-in +$
+          {DAILY_PROFIT_LOCK}
+          {props.chief.lockIn ? ' · lock-in sit' : ''}.
+        </p>
+        <p className="tape-line" data-testid="chief-cash">
+          Cash {formatCash(props.chief.cash ?? props.cash.cash)} vs floor {formatCash(props.chief.cashFloor)} · day{' '}
+          {formatPnl(props.chief.dailyPnl)}
+        </p>
+        <div className="analyst-grid">
+          {TAPE_IDS.map((id) => {
+            const row = props.chief.progress[id]
+            const sleeve = props.chief.sleeves[id]
+            return (
+              <p key={id} className="tape-recipe" data-testid={`chief-alloc-${id}`}>
+                {TAPE_META[id].label} ×{sleeve?.contracts ?? row?.contracts ?? 1} · sleeve{' '}
+                {formatCash(sleeve?.sleeveUsd ?? 0)} · Bot {row?.botOn ? 'ON' : 'OFF'} · Live {row?.liveOn ? 'ON' : 'OFF'} ·{' '}
+                {row?.hitPct ?? 0}% {row?.w ?? 0}W–{row?.l ?? 0}L · risk {formatCash(row?.openRisk ?? 0)} ·{' '}
+                {row?.halt ? 'HALT' : row?.closed ? 'CLOSED' : row?.stale ? 'STALE' : row?.tradingActive ? 'LIVE' : '—'} ·{' '}
+                {formatPnl(row?.pnl ?? 0)}
+              </p>
+            )
+          })}
+        </div>
+        <div className="chief-actions" data-testid="chief-actions">
+          {props.chief.actions.length ? (
+            props.chief.actions
+              .slice()
+              .reverse()
+              .slice(0, 8)
+              .map((a) => (
+                <p key={a.id} className="tape-line" data-testid={`chief-action-${a.id}`}>
+                  {a.text}
+                </p>
+              ))
+          ) : (
+            <p className="pulse-note">No Chief actions yet.</p>
+          )}
+        </div>
+        <div className="chief-proposals" data-testid="chief-proposals">
+          {pending.length ? (
+            pending.map((p: ChiefProposal) => (
+              <div key={p.id} className="chief-propose" data-testid={`chief-proposal-${p.id}`}>
+                <p className="tape-line">{p.reason}</p>
+                <button
+                  type="button"
+                  className="chip-btn toggle-hot"
+                  data-testid={`chief-accept-${p.id}`}
+                  onClick={() => props.onChiefAccept(p.id)}
+                >
+                  Accept
+                </button>
+                <button type="button" className="chip-btn" data-testid={`chief-reject-${p.id}`} onClick={() => props.onChiefReject(p.id)}>
+                  Reject
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="pulse-note">No pending Live drafts.</p>
+          )}
+        </div>
+      </section>
       <div className="analyst-grid">
         {TAPE_IDS.map((id) => {
           const q = props.board?.tapes[id]

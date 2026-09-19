@@ -1,0 +1,151 @@
+import { describe, expect, it } from 'vitest'
+import {
+  CUT_FRAC,
+  MAX_LIVE_CLOCKS,
+  RESERVE_CASH,
+  RESERVE_RISK,
+  STEP_UP_WINS,
+  chiefNeverWritesLiveOn,
+  hydrateChief,
+  mergeChiefState,
+  runDeskChief,
+  tapeLiveArmGate,
+} from '../src/lib/desk-chief'
+import { DAILY_PROFIT_LOCK, HIT_FLOOR, emptyFinance, feeAwareEv, liveCashFloor } from '../src/lib/finance'
+import { GOLD_RECIPES, hydrateSettings } from '../src/lib/tapes'
+
+const now = 1_800_000_000_000
+
+function paperSettled(tape: 'btc' | 'ng' | 'cu' | 'gld', i: number, pnl: number) {
+  return {
+    betId: `paper:${tape}-${i}`,
+    tape,
+    ticker: `KXBTC15M-P${i}`,
+    clock: '15m',
+    closeAt: now - i * 60_000,
+    side: 'up' as const,
+    count: 1,
+    ask: 70,
+    spent: 0.7,
+    orderId: `deskfill-${tape}-w${i}`,
+    status: 'settled' as const,
+    pnl,
+    filledAt: now - i * 60_000,
+    settledAt: now - i * 60_000,
+    kind: 'paper' as const,
+  }
+}
+
+function liveSettled(tape: 'btc' | 'ng' | 'cu' | 'gld', i: number, pnl: number) {
+  return {
+    betId: `bet_ord-live-${tape}-${i}`,
+    tape,
+    ticker: `KXBTC15M-L${i}`,
+    clock: '15m',
+    closeAt: now - i * 60_000,
+    side: 'up' as const,
+    count: 1,
+    ask: 70,
+    spent: 0.7,
+    orderId: `ord-live-${tape}-aaaa${i}`,
+    status: 'settled' as const,
+    pnl,
+    filledAt: now - i * 60_000,
+    settledAt: now - i * 60_000,
+    kind: 'live' as const,
+  }
+}
+
+describe('Desk Chief paper allocator', () => {
+  it('defaults are 60/40 reserve, max 2 Live clocks, +$40 lock-in, 80% goal', () => {
+    expect(RESERVE_CASH).toBe(0.6)
+    expect(RESERVE_RISK).toBe(0.4)
+    expect(MAX_LIVE_CLOCKS).toBe(2)
+    expect(DAILY_PROFIT_LOCK).toBe(40)
+    expect(HIT_FLOOR).toBe(80)
+    expect(STEP_UP_WINS).toBe(3)
+    expect(CUT_FRAC).toBe(0.5)
+    expect(feeAwareEv(72, 1, 80)).toBeGreaterThan(0)
+    expect(feeAwareEv(82, 1, 80)).toBeLessThanOrEqual(0)
+  })
+
+  it('paper 3W sizes up and Soft FAIL flipping Live', () => {
+    const settings = hydrateSettings({
+      tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, botOn: true, contracts: 1 } },
+    })
+    const book = {
+      ...emptyFinance(),
+      bets: [1, 2, 3].map((i) => paperSettled('btc', i, 0.3)),
+    }
+    const result = runDeskChief({
+      settings,
+      book,
+      cash: 293.93,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(result.paperApplies.some((a) => a.tape === 'btc' && a.contracts === 2)).toBe(true)
+    expect(result.liveOnWrites).toEqual({})
+    expect(chiefNeverWritesLiveOn(result)).toBe(true)
+    expect(settings.tapes.btc.liveOn).toBe(false)
+    expect(result.state.progress.btc.liveOn).toBe(false)
+  })
+
+  it('cash floor Soft FAIL Live size-up and Soft FAIL Live ON write', () => {
+    const settings = hydrateSettings({
+      tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: true, botOn: true, contracts: 2 } },
+    })
+    const book = {
+      ...emptyFinance(),
+      paperStartedAt: now - 49 * 3600_000,
+      bets: [1, 2, 3].map((i) => liveSettled('btc', i, 0.3)),
+    }
+    const cash = 50
+    expect(cash).toBeLessThan(liveCashFloor(760))
+    const result = runDeskChief({
+      settings,
+      book,
+      cash,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(result.paperApplies).toEqual([])
+    expect(result.liveOnWrites).toEqual({})
+    expect(result.state.proposals.some((p) => p.kind === 'block' && /cash floor|under live floor/i.test(p.reason))).toBe(
+      true,
+    )
+    expect(settings.tapes.btc.liveOn).toBe(true)
+    expect(settings.tapes.btc.contracts).toBe(2)
+  })
+
+  it('GLD STALE Soft FAIL Live arm', () => {
+    expect(tapeLiveArmGate('gld', { tradingActive: false, stale: true }).ok).toBe(false)
+    expect(tapeLiveArmGate('gld', { tradingActive: true, stale: false }).ok).toBe(true)
+    const settings = hydrateSettings({
+      tapes: { gld: { ...GOLD_RECIPES.gld, liveOn: false, contracts: 1 } },
+    })
+    const result = runDeskChief({
+      settings,
+      book: emptyFinance(),
+      cash: 400,
+      deposits: 760,
+      quotes: { gld: { tradingActive: false, stale: true, yesAsk: 40 } },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(result.liveOnWrites.gld).toBeUndefined()
+    expect(result.state.actions.some((a) => /GLD STALE/i.test(a.text))).toBe(true)
+  })
+
+  it('chief state merge keeps the newer blob Soft FAIL wipe', () => {
+    const older = hydrateChief({ asOf: 1, actions: [{ id: 'a', at: 1, text: 'old' }] }, 1)
+    const newer = hydrateChief({ asOf: 9, actions: [{ id: 'b', at: 9, text: 'new' }] }, 9)
+    const merged = mergeChiefState(older, newer)
+    expect(merged.asOf).toBe(9)
+    expect(merged.actions.some((a) => a.text === 'new')).toBe(true)
+  })
+})
