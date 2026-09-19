@@ -246,6 +246,14 @@ test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ pag
   await page.getByTestId('contracts-btc').blur()
   await setToggle(page, 'bot-btc', false)
   await setToggle(page, 'bot-btc', true)
+  await page.evaluate(async () => {
+    const w = window as Window & {
+      __HUB_TEST_SEND?: (tape: string, side: string, quote: unknown) => Promise<void>
+      __HUB_TEST_LIVE_QUOTE?: Record<string, unknown>
+    }
+    const quote = w.__HUB_TEST_LIVE_QUOTE?.btc
+    if (quote && w.__HUB_TEST_SEND) await w.__HUB_TEST_SEND('btc', 'up', quote)
+  })
   await expect
     .poll(async () => {
       return page.evaluate(() => {
