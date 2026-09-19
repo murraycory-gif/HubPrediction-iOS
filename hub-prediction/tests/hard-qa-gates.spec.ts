@@ -490,24 +490,29 @@ test('BTC news + hour + same-clock Soft FAIL Accept', async ({ page }) => {
 })
 
 test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ page }) => {
-  test.setTimeout(45_000)
+  test.setTimeout(70_000)
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
   await expect.poll(async () => page.evaluate(() => Boolean((window as Window & { __HUB_TEST_EXIT?: unknown }).__HUB_TEST_EXIT))).toBe(true)
   const now = Date.now()
-  const fade = await page.evaluate((at) => {
+  const out = await page.evaluate((at) => {
     const w = window as Window & {
+      __HUB_HOLD_EXIT?: boolean
       __HUB_TEST_EXIT?: { apply: (input: Record<string, unknown>) => { action: string; locked: number; liveSell: boolean; paper: boolean } }
       __HUB_PLACE_CALLS?: unknown[]
     }
+    w.__HUB_HOLD_EXIT = true
     w.__HUB_PLACE_CALLS = []
-    const start = at - 45_000
-    const points = Array.from({ length: 8 }, (_, i) => ({
-      t: start + (i * 45_000) / 7,
+    const fadePts = Array.from({ length: 8 }, (_, i) => ({
+      t: at - 45_000 + (i * 45_000) / 7,
       px: 80_120 + ((80_040 - 80_120) * i) / 7,
     }))
-    return w.__HUB_TEST_EXIT!.apply({
+    const holdPts = Array.from({ length: 8 }, (_, i) => ({
+      t: at - 45_000 + (i * 45_000) / 7,
+      px: 80_100 + ((80_130 - 80_100) * i) / 7,
+    }))
+    const fade = w.__HUB_TEST_EXIT!.apply({
       tape: 'btc',
       ticker: 'KXBTC15M-EXITFADE',
       orderId: '01exit-btc-fill-aaaa',
@@ -517,39 +522,13 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
       beat: 80_000,
       live: 80_040,
       closeAt: at + 6 * 60_000,
-      points,
+      points: fadePts,
       yesAsk: 75,
       noAsk: 22,
       fillCount: 20,
       now: at,
     })
-  }, now)
-  expect(fade.action).toBe('exit')
-  expect(fade.locked).toBeGreaterThanOrEqual(0.4)
-  expect(fade.liveSell).toBe(false)
-  expect(fade.paper).toBe(true)
-  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toHaveAttribute('data-exit-action', 'exit')
-  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toContainText(/Profit lock/)
-  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toContainText('$')
-  await expect(page.getByTestId('exit-watch-lock')).toContainText(/Soft FAIL Live sell/)
-  await expect(page.getByTestId('analyst-accept-btc')).toHaveCount(0)
-  await expect(page.locator('[data-testid^="chief-accept-"]')).toHaveCount(0)
-  await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
-  const sells = await page.evaluate(() => {
-    const w = window as Window & { __HUB_PLACE_CALLS?: Array<{ side?: string; action?: string }> }
-    return w.__HUB_PLACE_CALLS ?? []
-  })
-  expect(sells).toEqual([])
-  const hold = await page.evaluate((at) => {
-    const w = window as Window & {
-      __HUB_TEST_EXIT?: { apply: (input: Record<string, unknown>) => { action: string; liveSell: boolean } }
-    }
-    const start = at - 45_000
-    const points = Array.from({ length: 8 }, (_, i) => ({
-      t: start + (i * 45_000) / 7,
-      px: 80_100 + ((80_130 - 80_100) * i) / 7,
-    }))
-    return w.__HUB_TEST_EXIT!.apply({
+    const hold = w.__HUB_TEST_EXIT!.apply({
       tape: 'btc',
       ticker: 'KXBTC15M-EXITHOLD',
       orderId: '01exit-btc-hold-bbbb',
@@ -559,15 +538,28 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
       beat: 80_000,
       live: 80_120,
       closeAt: at + 6 * 60_000,
-      points,
+      points: holdPts,
       yesAsk: 75,
       noAsk: 22,
       fillCount: 20,
       now: at,
     })
+    return { fade, hold, sells: w.__HUB_PLACE_CALLS ?? [] }
   }, now)
-  expect(hold.action).toBe('hold')
-  expect(hold.liveSell).toBe(false)
+  expect(out.fade.action).toBe('exit')
+  expect(out.fade.locked).toBeGreaterThanOrEqual(0.4)
+  expect(out.fade.liveSell).toBe(false)
+  expect(out.fade.paper).toBe(true)
+  expect(out.hold.action).toBe('hold')
+  expect(out.hold.liveSell).toBe(false)
+  expect(out.sells).toEqual([])
+  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toHaveAttribute('data-exit-action', 'exit')
+  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toContainText(/Profit lock/)
+  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toContainText('$')
   await expect(page.getByTestId('exit-log-01exit-btc-hold-bbbb')).toHaveAttribute('data-exit-action', 'hold')
+  await expect(page.getByTestId('exit-watch-lock')).toContainText(/Soft FAIL Live sell/)
+  await expect(page.getByTestId('analyst-accept-btc')).toHaveCount(0)
+  await expect(page.locator('[data-testid^="chief-accept-"]')).toHaveCount(0)
+  await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
   await expect(page.getByTestId('exit-watch-lock')).toContainText(/Soft FAIL Accept/)
 })

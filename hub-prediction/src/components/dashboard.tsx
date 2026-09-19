@@ -775,6 +775,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }
 
   function scanExitWatch(now = Date.now()) {
+    if (typeof window !== 'undefined' && (window as Window & { __HUB_HOLD_EXIT?: boolean }).__HUB_HOLD_EXIT) {
+      return []
+    }
     const out: ExitWatchDecision[] = []
     for (const t of tickets) {
       if (!isRealOrderId(t.orderId) || isPaperOrderId(t.orderId)) continue

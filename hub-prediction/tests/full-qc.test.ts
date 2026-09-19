@@ -248,6 +248,7 @@ describe('QC2 wires', () => {
     expect(dash).toMatch(/if \(!tabIsOpen\(\)\)/)
     expect(dash).toMatch(/if \(!hostReady \|\| !tabIsOpen\(\) \|\| book\.killed\) return/)
     expect(dash).toMatch(/scanExitWatch/)
+    expect(dash).toMatch(/__HUB_HOLD_EXIT/)
     expect(dash).toMatch(/__HUB_TEST_EXIT/)
     expect(dash).toMatch(/EXIT WATCH/)
     expect(dash).toMatch(/Soft FAIL Live sell/)
