@@ -101,11 +101,12 @@ describe('HARD QA gates', () => {
       ],
     }
     const strip = last24hBets(state, hits, now)
-    expect(strip.placed).toBeCloseTo(1.1)
+    expect(strip.placed).toBeCloseTo(0.7)
     expect(strip.placed).not.toBeCloseTo(11784)
-    expect(strip.rows).toHaveLength(2)
+    expect(strip.rows).toHaveLength(1)
     expect(stripDeskRows(state.bets, TAPE_IDS, now).every((b) => b.kind !== 'hist')).toBe(true)
-    expect(stripDeskRows(state.bets, TAPE_IDS, now).map((b) => b.orderId).sort()).toEqual(['deskfill-cu-today', 'ord-live-aaaa'])
+    expect(stripDeskRows(state.bets, TAPE_IDS, now).every((b) => !/^deskfill-/i.test(String(b.orderId)))).toBe(true)
+    expect(stripDeskRows(state.bets, TAPE_IDS, now).map((b) => b.orderId)).toEqual(['ord-live-aaaa'])
   })
 
   it('3 BOT BOUGHT / MODE LIVE needs fill_count > 0', () => {

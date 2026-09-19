@@ -344,9 +344,17 @@ export function hitFromMs(now = Date.now(), fromMs?: number) {
   return now - 24 * 60 * 60 * 1000
 }
 
-/** This desk booked it. Soft FAIL imported Kalshi hist in the 24H table. */
+function isDeskfillGhost(b: { orderId?: unknown; betId?: unknown }) {
+  const ord = String(b.orderId ?? '').trim()
+  const bet = String(b.betId ?? '').trim()
+  return /^deskfill-/i.test(ord) || /^deskfill-/i.test(bet)
+}
+
+/** This desk booked it. Soft FAIL imported Kalshi hist and deskfill ghosts in the 24H table. */
 export function isDeskBookedBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  if (isDeskfillGhost(b) || isPaperOrderId(b.orderId)) return false
   if (isImportedKalshiRow(b) || isHistBet(b)) return false
+  if (isLiveBet(b) && isDeskfillGhost(b)) return false
   return isPaperBet(b) || isLiveBet(b)
 }
 

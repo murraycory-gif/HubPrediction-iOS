@@ -1227,9 +1227,9 @@ test('phone desk: paper deskfill shows in BETS as MODE PAPER / CASH N/A — no m
   if ((await page.getByTestId('bets-filter-all').getAttribute('aria-pressed')) !== 'true') {
     await page.getByTestId('bets-filter-all').click()
   }
-  await expect(page.locator('[data-order-id="deskfill-cu-f8bmwqhq"]')).toHaveCount(1)
-  await expect(page.locator('[data-order-id="deskfill-cu-f8bmwqhq"] [data-testid="bets-mode"]')).toHaveText('PAPER')
-  await expect(page.locator('[data-order-id="deskfill-cu-f8bmwqhq"] [data-testid="bets-cash"]')).toHaveText(/N\/A/)
+  await expect(page.locator('[data-order-id="deskfill-cu-f8bmwqhq"]')).toHaveCount(0)
+  await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
+  await expect(page.locator('[data-order-id^="deskfill-"] [data-testid="bets-mode"]', { hasText: 'LIVE' })).toHaveCount(0)
   await assertNoMasterLive(page)
   await assertCashColumnClear(page)
 })
@@ -1695,7 +1695,8 @@ test('Last 24H strip stays on LIVE + today paper — Soft FAIL hist dump flicker
   expect(later.wl.match(/(\d+)W–(\d+)L/)?.slice(1)).toEqual(first.wl.match(/(\d+)W–(\d+)L/)?.slice(1))
   expect(later.wl).not.toMatch(/255W/)
   await expect(page.locator('[data-testid="bets-mode"]', { hasText: 'HIST' })).toHaveCount(0)
-  await expect(page.locator('[data-order-id="deskfill-btc-today01"] [data-testid="bets-mode"]')).toHaveText('PAPER')
+  await expect(page.locator('[data-order-id="deskfill-btc-today01"]')).toHaveCount(0)
+  await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
 })
 
 test('Live ON place fail Soft FAIL deskfill LIVE — success needs real Kalshi order id', async ({ page }) => {

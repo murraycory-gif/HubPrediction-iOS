@@ -298,7 +298,7 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
         kind: 'live',
       },
       {
-        betId: 'bet_deskfill-freeze-a',
+        betId: 'paper:freeze-a',
         tape: 'btc',
         ticker: 'KXBTC15M-FREEZEP',
         clock: '15m',
@@ -307,12 +307,29 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
         count: 1,
         ask: 40,
         spent: 8,
-        orderId: 'deskfill-btc-freezea',
+        orderId: 'paper-btc-freezea',
         status: 'settled',
         pnl: -8,
         filledAt: at - 500,
         settledAt: at,
         kind: 'paper',
+      },
+      {
+        betId: 'bet_deskfill-ghost-a',
+        tape: 'btc',
+        ticker: 'KXBTC15M-GHOSTA',
+        clock: '15m',
+        closeAt: at,
+        side: 'down',
+        count: 1,
+        ask: 40,
+        spent: 99,
+        orderId: 'deskfill-btc-ghosta',
+        status: 'settled',
+        pnl: -99,
+        filledAt: at - 200,
+        settledAt: at,
+        kind: 'live',
       },
     ])
   }, ts)
@@ -323,7 +340,8 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
       rows: document.querySelectorAll('[data-testid="bets-log"] li').length,
     }))
   await expect(page.locator('[data-order-id="ord-live-freeze-aaaa"]')).toBeVisible({ timeout: 8_000 })
-  await expect(page.locator('[data-order-id="deskfill-btc-freezea"]')).toBeVisible()
+  await expect(page.locator('[data-order-id="paper-btc-freezea"]')).toBeVisible()
+  await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
   await expect.poll(async () => (await snapshot()).placed, { timeout: 8_000 }).toMatch(/\$33/)
   const frozen = await snapshot()
   expect(frozen.rows).toBe(2)
@@ -362,9 +380,9 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
   await page.evaluate((ts) => {
     const w = window as Window & { __HUB_TEST_BETS?: { add: (bet: unknown) => void } }
     w.__HUB_TEST_BETS?.add({
-      betId: 'bet_paper-24h-add',
+      betId: 'bet_deskfill-24h-add',
       tape: 'btc',
-      ticker: 'KXBTC15M-PAPERADD',
+      ticker: 'KXBTC15M-GHOSTADD',
       clock: '15m',
       closeAt: ts,
       side: 'down',
@@ -376,7 +394,7 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
       pnl: -4,
       filledAt: ts,
       settledAt: ts,
-      kind: 'paper',
+      kind: 'live',
     })
     w.__HUB_TEST_BETS?.add({
       betId: 'bet_live-24h-add',
@@ -396,10 +414,12 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
       kind: 'live',
     })
   }, now)
-  await expect.poll(async () => (await snapshot()).rows, { timeout: 8_000 }).toBe(frozen.rows + 2)
+  await expect.poll(async () => (await snapshot()).rows, { timeout: 8_000 }).toBe(frozen.rows + 1)
   const after = await snapshot()
   expect(after.placed).not.toBe(frozen.placed)
-  await expect(page.locator('[data-order-id="deskfill-btc-24hadd"] [data-testid="bets-mode"]')).toHaveText('PAPER')
+  await expect(page.locator('[data-order-id="deskfill-btc-24hadd"]')).toHaveCount(0)
+  await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
+  await expect(page.locator('[data-order-id^="deskfill-"] [data-testid="bets-mode"]', { hasText: 'LIVE' })).toHaveCount(0)
   await expect(page.locator('[data-order-id="ord-live-24hadd-aaaa"] [data-testid="bets-mode"]')).toHaveText('LIVE')
   await expect(page.locator('[data-testid="bets-mode"]', { hasText: 'HIST' })).toHaveCount(0)
   await page.waitForTimeout(1200)
