@@ -1112,6 +1112,12 @@ function TapeRow({
   onChart: (chart: ChartRange) => void
   onTape: (patch: Partial<TapeRecipe>) => void
 }) {
+  const liveFill =
+    Boolean(ticket && isRealOrderId(ticket.orderId) && !isPaperOrderId(ticket.orderId) && booked?.kind === 'live')
+  const paperFill = Boolean(
+    ticket && (isPaperOrderId(ticket.orderId) || booked?.kind === 'paper') && !recipe.liveOn,
+  )
+  const shownTicket = liveFill || paperFill ? ticket : undefined
   const status = ticketStatus(liveFill ? ticket : undefined)
   const pct = hitPct(hits)
   const heldQuote = useRef(quote)
@@ -1176,12 +1182,6 @@ function TapeRow({
     saveContracts(n)
   }
 
-  const liveFill =
-    Boolean(ticket && isRealOrderId(ticket.orderId) && !isPaperOrderId(ticket.orderId) && booked?.kind === 'live')
-  const paperFill = Boolean(
-    ticket && (isPaperOrderId(ticket.orderId) || booked?.kind === 'paper') && !recipe.liveOn,
-  )
-  const shownTicket = liveFill || paperFill ? ticket : undefined
   const fillLine = shownTicket ? ticketFillStrip(shownTicket, shownQuote, booked) : ''
   const session = tapeSessionHours(id)
   const tradingLive = liveOn
