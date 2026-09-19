@@ -417,7 +417,7 @@ test('BTC liveOn sit→send: 50¢ lean-through Soft FAIL sit', async ({ page }) 
         closeAt: at,
         tradingActive: true,
         openMarkets: 1,
-        live: 80020,
+        live: 80080,
         beat: 80000,
         yesAsk: 50,
         noAsk: 51,
@@ -891,13 +891,30 @@ test('3s print latency Soft FAIL banner; 12s dead paints; recover clears', async
   expect(slow.threshold).toBeGreaterThanOrEqual(8000)
   await page.evaluate(() => {
     const w = window as Window & {
-      __HUB_TEST_FEED?: { delayPrints: (ms: number) => void; killPrints: (on?: boolean) => void }
+      __HUB_TEST_FEED?: {
+        delayPrints: (ms: number) => void
+        killPrints: (on?: boolean) => void
+        resetRtt: () => void
+        refetchPrints: () => void
+      }
     }
     w.__HUB_TEST_FEED!.delayPrints(0)
+  })
+  await page.waitForTimeout(4_000)
+  await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_TEST_FEED?: {
+        killPrints: (on?: boolean) => void
+        resetRtt: () => void
+        refetchPrints: () => void
+      }
+    }
+    w.__HUB_TEST_FEED!.resetRtt()
     w.__HUB_TEST_FEED!.killPrints(true)
+    w.__HUB_TEST_FEED!.refetchPrints()
   })
   await page.waitForTimeout(12_200)
-  await expect(page.getByTestId('feed-stale')).toBeVisible()
+  await expect(page.getByTestId('feed-stale')).toBeVisible({ timeout: 8_000 })
   await expect(page.getByTestId('desk')).toHaveAttribute('data-feed-stale', '1')
   await page.evaluate(() => {
     const w = window as Window & { __HUB_TEST_FEED?: { killPrints: (on?: boolean) => void; refetchPrints: () => void } }

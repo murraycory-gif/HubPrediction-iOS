@@ -1021,6 +1021,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         delayPrints?: (ms: number) => void
         killPrints?: (on?: boolean) => void
         threshold?: () => number
+        lastRtt?: () => number
+        resetRtt?: () => void
       }
     }
     w.__HUB_TEST_EXIT = {
@@ -1053,6 +1055,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         }
       },
       threshold: () => feedStaleThreshold(lastPrintRttMs.current),
+      lastRtt: () => lastPrintRttMs.current,
+      resetRtt: () => {
+        lastPrintRttMs.current = 0
+      },
     }
     return () => {
       delete w.__HUB_TEST_EXIT
@@ -1205,6 +1211,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         delayPrints: (ms: number) => void
         killPrints: (on?: boolean) => void
         threshold: () => number
+        lastRtt: () => number
+        resetRtt: () => void
       }
     }
     w.__HUB_TEST_FEED = {
@@ -1231,6 +1239,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         }
       },
       threshold: () => feedStaleThreshold(lastPrintRttMs.current),
+      lastRtt: () => lastPrintRttMs.current,
+      resetRtt: () => {
+        lastPrintRttMs.current = 0
+      },
     }
   })
 
