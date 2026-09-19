@@ -1,4 +1,11 @@
-import { formatWindowRange } from './chicago-time'
+import {
+  chicagoHour,
+  chicagoMinute,
+  dayKey,
+  formatWindowRange,
+  isChicagoSaturday,
+  weekdayName,
+} from './chicago-time'
 import { HIT_FLOOR } from './finance'
 import { slopeFromPoints } from './forecast'
 import { GOLD_RECIPES, formatLive, remainingMinutes, TAPE_META, type TapeId, type TapeRecipe } from './tapes'
@@ -72,10 +79,21 @@ export type DeskBrief = {
   focus: string
   upcoming: UpcomingRun[]
   trend: string
+  hourTrend: string
+  sameClock: string
   news: NewsItem[]
   newsFocus: string
   swing: SwingCall
   report: string[]
+}
+
+export type TapeIntel = {
+  hourDir: 'up' | 'down' | 'flat'
+  clockDir: 'up' | 'down' | 'flat'
+  hourLine: string
+  clockLine: string
+  newsLine: string
+  bias: 'print' | 'fade' | 'hold'
 }
 
 function decodeXml(s: string) {
@@ -141,6 +159,116 @@ function trendLine(id: TapeId, path: TapePathStats | undefined) {
   const sign24 = w24.delta > 0 ? '+' : w24.delta < 0 ? '−' : ''
   const sign48 = (w48?.delta ?? 0) > 0 ? '+' : (w48?.delta ?? 0) < 0 ? '−' : ''
   return `Trend vs now: 24h ${sign24}${d24} (${w24.upMin}↑ ${w24.downMin}↓) · 48h ${sign48}${d48}. Tape is ${dir} into this clock.`
+}
+
+function dirFromDelta(delta: number | null): 'up' | 'down' | 'flat' {
+  if (delta == null || !Number.isFinite(delta) || delta === 0) return 'flat'
+  return delta > 0 ? 'up' : 'down'
+}
+
+function signedPx(id: TapeId, delta: number) {
+  const sign = delta > 0 ? '+' : delta < 0 ? '−' : ''
+  return `${sign}${formatLive(id, Math.abs(delta))}`
+}
+
+/** This Chicago hour’s path. Saturday uses Sat-only prints when they exist. */
+export function hourTrendFromPoints(
+  id: TapeId,
+  points: { t: number; px: number }[] | undefined,
+  now = Date.now(),
+) {
+  const hour = chicagoHour(now)
+  const sat = isChicagoSaturday(now)
+  const rows = (points ?? []).filter((p) => Number.isFinite(p.px) && p.px > 0 && chicagoHour(p.t) === hour)
+  const satRows = sat ? rows.filter((p) => isChicagoSaturday(p.t)) : rows
+  const use = satRows.length >= 2 ? satRows : rows
+  const label = sat ? `Sat hour ${hour}` : `Hour ${hour}`
+  if (use.length < 2) {
+    return { dir: 'flat' as const, line: `${label}: waiting on a print path.`, delta: null as number | null }
+  }
+  const first = use[0].px
+  const last = use[use.length - 1].px
+  const delta = Math.round((last - first) * 10000) / 10000
+  const dir = dirFromDelta(delta)
+  return {
+    dir,
+    delta,
+    line: `${label}: ${dir} ${signedPx(id, delta)} on this Chicago hour${sat ? ' (Saturday)' : ''}.`,
+  }
+}
+
+/** Prior same 15m (or clock) slot — previous day same close HH:MM, else last finished clock. */
+export function sameClockPriorFromPoints(
+  id: TapeId,
+  points: { t: number; px: number }[] | undefined,
+  closeAt?: number,
+  clockMs = 15 * 60_000,
+  now = Date.now(),
+) {
+  const end = Number(closeAt) > 0 ? Number(closeAt) : now
+  const slot = clockMs > 0 ? clockMs : 15 * 60_000
+  const wantH = chicagoHour(end)
+  const wantM = Math.floor(chicagoMinute(end) / 15) * 15
+  const rows = (points ?? []).filter((p) => Number.isFinite(p.px) && p.px > 0)
+  const byDay = new Map<string, { t: number; px: number }[]>()
+  for (const p of rows) {
+    if (chicagoHour(p.t) !== wantH || Math.floor(chicagoMinute(p.t) / 15) * 15 !== wantM) continue
+    const key = dayKey(p.t)
+    const list = byDay.get(key) ?? []
+    list.push(p)
+    byDay.set(key, list)
+  }
+  const today = dayKey(end)
+  const priorDays = [...byDay.keys()].filter((k) => k !== today).sort()
+  const pick = priorDays.length ? byDay.get(priorDays[priorDays.length - 1]) : null
+  if (pick && pick.length >= 2) {
+    const delta = Math.round((pick[pick.length - 1].px - pick[0].px) * 10000) / 10000
+    const dir = dirFromDelta(delta)
+    return {
+      dir,
+      delta,
+      line: `Same-clock prior ${weekdayName(pick[0].t)} ${wantH}:${String(wantM).padStart(2, '0')}: ${dir} ${signedPx(id, delta)}.`,
+    }
+  }
+  const prevEnd = end - slot
+  const prev = rows.filter((p) => p.t >= prevEnd - slot && p.t < prevEnd)
+  if (prev.length >= 2) {
+    const delta = Math.round((prev[prev.length - 1].px - prev[0].px) * 10000) / 10000
+    const dir = dirFromDelta(delta)
+    return {
+      dir,
+      delta,
+      line: `Same-clock prior: last ${Math.round(slot / 60_000)}m ${dir} ${signedPx(id, delta)}.`,
+    }
+  }
+  return { dir: 'flat' as const, delta: null as number | null, line: 'Same-clock prior: no prior 15m print yet.' }
+}
+
+export function buildTapeIntel(opts: {
+  id: TapeId
+  points?: { t: number; px: number }[]
+  closeAt?: number
+  clockMs?: number
+  news?: NewsItem[]
+  now?: number
+}): TapeIntel {
+  const now = opts.now ?? Date.now()
+  const hour = hourTrendFromPoints(opts.id, opts.points, now)
+  const clock = sameClockPriorFromPoints(opts.id, opts.points, opts.closeAt, opts.clockMs, now)
+  const newsLine = opts.news?.[0]
+    ? `${TAPE_META[opts.id].label} news: ${opts.news[0].title}`
+    : `${TAPE_META[opts.id].label} news: no fresh headline — tape path only.`
+  let bias: TapeIntel['bias'] = 'hold'
+  if (hour.dir === 'up' && clock.dir === 'up') bias = 'print'
+  else if (hour.dir === 'down' && clock.dir === 'down') bias = 'fade'
+  return {
+    hourDir: hour.dir,
+    clockDir: clock.dir,
+    hourLine: hour.line,
+    clockLine: clock.line,
+    newsLine,
+    bias,
+  }
 }
 
 export function forecastSwing(opts: {
@@ -227,6 +355,13 @@ export function buildDeskBrief(opts: {
     now,
   })
   const trend = trendLine(id, opts.path)
+  const intel = buildTapeIntel({
+    id,
+    points: quote?.points,
+    closeAt: quote?.closeAt,
+    news,
+    now,
+  })
   const newsFocus = news[0]
     ? `${TAPE_META[id].label} news focus: ${news[0].title}${news[0].source ? ` (${news[0].source})` : ''}`
     : `${TAPE_META[id].label} news focus: no fresh headline — this desk is on tape path only.`
@@ -235,6 +370,8 @@ export function buildDeskBrief(opts: {
     `${meta.title} on ${TAPE_META[id].label}. ${meta.focus}`,
     `Upcoming runs: ${upcoming.length ? upcoming.map((r) => `${r.kind === 'live' ? 'LIVE' : 'NEXT'} ${r.label}`).join(' · ') : 'waiting on Kalshi clocks'}. Focus is ${nextLabel}.`,
     trend,
+    intel.hourLine,
+    intel.clockLine,
     newsFocus,
     `Swing: ${swing.good} ${swing.bad}`,
   ]
@@ -244,6 +381,8 @@ export function buildDeskBrief(opts: {
     focus: meta.focus,
     upcoming,
     trend,
+    hourTrend: intel.hourLine,
+    sameClock: intel.clockLine,
     news,
     newsFocus,
     swing,

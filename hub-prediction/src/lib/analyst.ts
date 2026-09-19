@@ -383,7 +383,7 @@ export function analyzeDesk(
   const summary =
     retunes === 0
       ? `Goal ${HIT_FLOOR}% win ratio. All desks match the book. Rules stay. 3-loss HALT papers the tape — Live cash stays as the user left it.`
-      : `Goal ${HIT_FLOOR}% win ratio. ${retunes} desk${retunes === 1 ? '' : 's'} proposed — Accept to apply. Soft FAIL auto-write into Live recipes.`
+      : `Goal ${HIT_FLOOR}% win ratio. ${retunes} desk${retunes === 1 ? '' : 's'} proposed only — Soft FAIL Accept. Soft FAIL auto-write into Live recipes.`
 
   return {
     liveTouched: false,
@@ -838,7 +838,7 @@ export function runAutoAnalyst(opts: {
         ...rehab,
         lastAuto: { ...rehab.lastAuto, [id]: { token: note.token, betSig: sig } },
       }
-      notes.push(`${TAPE_META[id].label} proposed rules — Accept to apply. Live recipe unchanged.`)
+      notes.push(`${TAPE_META[id].label} proposed rules only — Soft FAIL Accept. Live recipe unchanged.`)
     }
   }
 

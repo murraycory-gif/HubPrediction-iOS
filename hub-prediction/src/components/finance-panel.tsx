@@ -32,8 +32,6 @@ export function FinancePanel(props: {
   chief: ChiefState
   onKill: () => void
   onClearKill: () => void
-  onChiefAccept: (id: string) => void
-  onChiefReject: (id: string) => void
 }) {
   const pnl = pnlVsDeposits(props.cash.cash, props.cash.deposits)
   const liveFloor = liveCashFloor(props.cash.deposits)
@@ -84,7 +82,8 @@ export function FinancePanel(props: {
       <section className="chief" data-testid="desk-chief">
         <p className="hud-label">Desk Chief · profit + Kalshi cash</p>
         <p className="settings-note" data-testid="chief-lock">
-          Paper size auto. Live size auto under floors/kill. Soft FAIL Live ON. Soft FAIL recipe rewrite. Reserve{' '}
+          Paper size auto. Live size auto under floors/kill. Soft FAIL Accept. Soft FAIL Live ON. Soft FAIL recipe rewrite.
+        Reserve{' '}
           {Math.round(RESERVE_CASH * 100)}/{Math.round(RESERVE_RISK * 100)} · max {MAX_LIVE_CLOCKS} Live clocks (BTC + NG/CU)
           · lock-in +$
           {DAILY_PROFIT_LOCK}
@@ -128,18 +127,7 @@ export function FinancePanel(props: {
           {pending.length ? (
             pending.map((p: ChiefProposal) => (
               <div key={p.id} className="chief-propose" data-testid={`chief-proposal-${p.id}`}>
-                <p className="tape-line">{p.reason}</p>
-                <button
-                  type="button"
-                  className="chip-btn toggle-hot"
-                  data-testid={`chief-accept-${p.id}`}
-                  onClick={() => props.onChiefAccept(p.id)}
-                >
-                  Accept
-                </button>
-                <button type="button" className="chip-btn" data-testid={`chief-reject-${p.id}`} onClick={() => props.onChiefReject(p.id)}>
-                  Reject
-                </button>
+                <p className="tape-line">{p.reason} · Soft FAIL Accept</p>
               </div>
             ))
           ) : (

@@ -22,6 +22,7 @@ import {
   type Gate,
 } from './finance'
 import { tapeSessionHours } from './tape-hours'
+import type { TapeIntel } from './desk-brief'
 import {
   DEFAULT_CLOCK,
   GOLD_RECIPES,
@@ -115,6 +116,7 @@ export type ChiefRunInput = {
   quotes?: Partial<Record<TapeId, ChiefQuote | null>>
   halt?: Partial<Record<TapeId, boolean>>
   typicalAsk?: Partial<Record<TapeId, number>>
+  intel?: Partial<Record<TapeId, TapeIntel>>
   now?: number
   prev?: ChiefState | null
 }
@@ -466,6 +468,8 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
       const stepUp = wins >= STEP_UP_WINS && (snap.hitPct >= HIT_FLOOR || snap.w + snap.l < 4)
       const cut = losses >= CUT_LOSSES
       if (!stepUp && !cut) want = recipe.contracts
+    } else if (id === 'btc' && input.intel?.btc?.bias === 'fade' && want > recipe.contracts) {
+      want = recipe.contracts
     }
     sleeves[id] = { contracts: want, sleeveUsd: money(want * (ask / 100)) }
     const wantClock = pickChiefClock(currentClock, snap)
@@ -473,6 +477,11 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
     if ((snap.closed || snap.stale) && !liveOn) {
       const sit = `${TAPE_META[id].label} sit dead tape — paper pre-arm ${wantClock || currentClock} next open`
       if (!alreadyDid(actions, sit, now)) actions = remember(actions, sit, id, now)
+    }
+    if (id === 'btc' && input.intel?.btc) {
+      const intel = input.intel.btc
+      const line = `BTC intel ${intel.bias} — ${intel.hourLine} ${intel.clockLine}`
+      if (!alreadyDid(actions, line, now)) actions = remember(actions, line, id, now)
     }
 
     if (wantClock && wantClock !== currentClock) {

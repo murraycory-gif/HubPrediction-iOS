@@ -44,6 +44,18 @@ export function weekdayName(ms: number) {
   return parts(ms).weekday
 }
 
+export function chicagoHour(ms: number) {
+  return parts(ms).hour
+}
+
+export function chicagoMinute(ms: number) {
+  return parts(ms).minute
+}
+
+export function isChicagoSaturday(ms: number) {
+  return parts(ms).weekday === 'Sat'
+}
+
 export function formatClock(ms: number) {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: TZ,

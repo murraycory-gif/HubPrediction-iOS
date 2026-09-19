@@ -286,6 +286,65 @@ describe('Desk Chief paper allocator', () => {
     expect(result.paperApplies.some((a) => a.tape === 'btc' && a.contracts >= 20)).toBe(false)
   })
 
+  it('BTC Sat fade intel holds paper size Soft FAIL Live recipe rewrite', () => {
+    const settings = hydrateSettings({
+      tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, botOn: true, contracts: 4 } },
+    })
+    const book = {
+      ...emptyFinance(),
+      paperStartedAt: now - 49 * 3600_000,
+      bets: [1, 2, 3].map((i) => paperSettled('btc', i, 0.3)),
+    }
+    const fade = runDeskChief({
+      settings,
+      book,
+      cash: 400,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      intel: {
+        btc: {
+          hourDir: 'down',
+          clockDir: 'down',
+          hourLine: 'Sat hour 14: down',
+          clockLine: 'Same-clock prior: down',
+          newsLine: 'BTC news: weekend fade',
+          bias: 'fade',
+        },
+      },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(fade.paperApplies.some((a) => a.tape === 'btc' && a.contracts > 4)).toBe(false)
+    expect(fade.liveOnWrites).toEqual({})
+    expect(fade.state.actions.some((a) => /BTC intel fade/.test(a.text))).toBe(true)
+    expect(settings.tapes.btc.liveOn).toBe(false)
+    expect(settings.tapes.btc.armFromMin).toBe(GOLD_RECIPES.btc.armFromMin)
+
+    const live = runDeskChief({
+      settings: hydrateSettings({
+        tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: true, botOn: true, contracts: 20 } },
+      }),
+      book: { ...emptyFinance(), paperStartedAt: now - 49 * 3600_000 },
+      cash: 294,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      intel: {
+        btc: {
+          hourDir: 'down',
+          clockDir: 'down',
+          hourLine: 'Sat hour 14: down',
+          clockLine: 'Same-clock prior: down',
+          newsLine: 'BTC news: weekend fade',
+          bias: 'fade',
+        },
+      },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(live.paperApplies.some((a) => a.tape === 'btc' && a.contracts !== 20)).toBe(false)
+    expect(live.liveOnWrites).toEqual({})
+  })
+
   it('chief state merge keeps the newer blob Soft FAIL wipe', () => {
     const older = hydrateChief({ asOf: 1, actions: [{ id: 'a', at: 1, text: 'old' }] }, 1)
     const newer = hydrateChief({ asOf: 9, actions: [{ id: 'b', at: 9, text: 'new' }] }, 9)

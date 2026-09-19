@@ -117,7 +117,8 @@ import {
   DAILY_PROFIT_LOCK,
   type FinanceState,
 } from '../lib/finance'
-import { acceptAnalystRecipe, analyzeDesk, isRehabPaper, loadAutoState, runAutoAnalyst, type AnalystAutoState } from '../lib/analyst'
+import { analyzeDesk, isRehabPaper, loadAutoState, runAutoAnalyst, type AnalystAutoState } from '../lib/analyst'
+import { buildTapeIntel } from '../lib/desk-brief'
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { readTestCloseClock } from '../lib/close-clock'
@@ -125,7 +126,6 @@ import { FinancePanel } from './finance-panel'
 import { formatBetWindow, formatWindowRange } from '../lib/chicago-time'
 import { applyKalshiBook, BOOK_LATCH_MS, type KalshiBookPayload } from '../lib/kalshi-book'
 import {
-  decideChiefProposal,
   loadChief,
   readTestTapeQuote,
   runDeskChief,
@@ -771,6 +771,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       quotes: over?.quotes ?? chiefQuotes(),
       halt: over?.halt ?? Object.fromEntries(TAPE_IDS.map((id) => [id, isRehabPaper(rehab, id)])) as Record<TapeId, boolean>,
       typicalAsk: over?.typicalAsk,
+      intel:
+        over?.intel ?? {
+          btc: buildTapeIntel({
+            id: 'btc',
+            points: board?.tapes.btc?.points,
+            closeAt: board?.tapes.btc?.closeAt,
+          }),
+        },
       now: over?.now,
       prev: over?.prev ?? loadChief(),
     })
@@ -1097,15 +1105,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             events={liveEvents}
             killed={book.killed}
             rehab={rehab}
-            onAccept={(id, proposed) => {
-              const next = acceptAnalystRecipe(loadSettings(), id, proposed, book)
-              if (!next.ok) {
-                setMsg(next.reason)
-                return
-              }
-              setSettings(next.settings)
-              setMsg(`${TAPE_META[id].label} recipe accepted`)
-            }}
           />
         ) : null}
         {financeOpen ? (
@@ -1122,22 +1121,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             onClearKill={() => {
               setBook(clearKill(book))
               setMsg('KILL cleared')
-            }}
-            onChiefAccept={(id) => {
-              const decided = decideChiefProposal(loadChief(), id, true)
-              setChief(saveChief(decided.state))
-              if (decided.apply) {
-                if (decided.apply.contracts) {
-                  setSettings(patchTape(loadSettings(), decided.apply.tape, { contracts: decided.apply.contracts }))
-                }
-                if (decided.apply.clock) {
-                  setSettings(setTapeClock(loadSettings(), decided.apply.tape, decided.apply.clock))
-                }
-              }
-            }}
-            onChiefReject={(id) => {
-              const decided = decideChiefProposal(loadChief(), id, false)
-              setChief(saveChief(decided.state))
             }}
           />
         ) : null}
@@ -1210,7 +1193,6 @@ function AnalystDesk({
   events,
   killed,
   rehab,
-  onAccept,
 }: {
   board: DeskBoard | null
   hits: ReturnType<typeof loadHits>
@@ -1219,7 +1201,6 @@ function AnalystDesk({
   events: Partial<Record<TapeId, string>>
   killed: boolean
   rehab: AnalystAutoState
-  onAccept: (id: TapeId, proposed: TapeRecipe) => void
 }) {
   const liveSig = TAPE_IDS.map((id) => {
     const q = board?.tapes[id]
@@ -1249,7 +1230,6 @@ function AnalystDesk({
       briefs={briefQuery.data ?? null}
       killed={killed}
       rehab={rehab}
-      onAccept={onAccept}
     />
   )
 }

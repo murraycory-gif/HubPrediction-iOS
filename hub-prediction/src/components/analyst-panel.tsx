@@ -22,8 +22,6 @@ import {
   TAPE_META,
   type DeskSettings,
   type HitLatch,
-  type TapeId,
-  type TapeRecipe,
 } from '../lib/tapes'
 import type { DeskBoard } from '../lib/types'
 
@@ -36,7 +34,6 @@ export function AnalystPanel({
   briefs,
   rehab,
   killed,
-  onAccept,
 }: {
   board: DeskBoard | null
   hits: HitLatch
@@ -46,7 +43,6 @@ export function AnalystPanel({
   briefs?: DeskBriefsPayload | null
   rehab: AnalystAutoState
   killed?: boolean
-  onAccept?: (id: TapeId, proposed: TapeRecipe) => void
 }) {
   const report = useMemo(
     () => analyzeDesk(board, hits, bets, settings.tapes, paths),
@@ -59,8 +55,8 @@ export function AnalystPanel({
     <section className="analyst" data-testid="analyst">
       <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal · drafts</p>
       <p className="settings-note" data-testid="analyst-lock">
-        Each tape has its own desk chief. Analyst proposes paper drafts only. Accept writes a recipe after
-        the retune gate. Live recipes stay until you Accept. More than two losses halt that desk for
+        Each tape has its own desk chief. Analyst proposes paper drafts only. Soft FAIL Accept. Soft FAIL
+        auto Live recipe rewrite. Chief auto-size under floors/kill. More than two losses halt that desk for
         paper rehab — Live cash stays as you left it. Paper-test {REHAB_PAPER_RUNS} consistent runs.
       </p>
       <div className="analyst-grid">
@@ -101,7 +97,7 @@ export function AnalystPanel({
               <div className="analyst-block" data-testid={`analyst-proposed-${t.id}`}>
                 <p className="analyst-report-label">Proposed</p>
                 <p className="tape-recipe" data-testid={`analyst-next-${t.id}`}>
-                  {t.changed ? 'Proposed — Accept to apply' : proposal.title}
+                  {t.changed ? 'Proposed only — Soft FAIL Accept' : proposal.title}
                 </p>
                 {proposal.lines.map((line) => (
                   <p key={line} className="analyst-plain">
@@ -142,6 +138,14 @@ export function AnalystPanel({
                 <p className="analyst-plain" data-testid={`analyst-trend-${t.id}`}>
                   {brief.trend}
                 </p>
+                <p className="analyst-report-label">Hour</p>
+                <p className="analyst-plain" data-testid={`analyst-hour-${t.id}`}>
+                  {brief.hourTrend}
+                </p>
+                <p className="analyst-report-label">Same-clock prior</p>
+                <p className="analyst-plain" data-testid={`analyst-clock-prior-${t.id}`}>
+                  {brief.sameClock}
+                </p>
                 <p className="analyst-report-label">News focus</p>
                 <p className="analyst-plain" data-testid={`analyst-news-focus-${t.id}`}>
                   {brief.newsFocus}
@@ -180,21 +184,12 @@ export function AnalystPanel({
                 data-testid={`analyst-auto-${t.id}`}
               >
                 {killed
-                  ? 'KILL on — recipe lock. Accept stays off.'
+                  ? 'KILL on — recipe lock. Soft FAIL Accept.'
                   : rehabNote ||
                     (t.changed
-                      ? `Draft ready. Accept to apply toward ${HIT_FLOOR}%.`
+                      ? `Draft only. Soft FAIL Accept. Chief auto-size toward ${HIT_FLOOR}%.`
                       : `Matching the ${HIT_FLOOR}% book. No draft.`)}
               </p>
-              <button
-                type="button"
-                className="chip-btn rec-accept"
-                data-testid={`analyst-accept-${t.id}`}
-                disabled={!t.changed || killed || !onAccept}
-                onClick={() => onAccept?.(t.id, t.nextRecipe)}
-              >
-                Accept
-              </button>
             </article>
           )
         })}

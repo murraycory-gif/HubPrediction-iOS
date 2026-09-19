@@ -322,7 +322,7 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
     expect(first.settings.tapes.btc.through).toBe(40)
     expect(first.settings.tapes.btc.armFromMin).toBe(start.tapes.btc.armFromMin)
     expect(first.settings.tapes.btc.centLo).toBe(start.tapes.btc.centLo)
-    expect(first.msg).toMatch(/proposed rules — Accept to apply/)
+    expect(first.msg).toMatch(/proposed rules only — Soft FAIL Accept/)
     expect(first.settings).not.toHaveProperty('liveBets')
     expect(first.settings.tapes.btc.liveOn).toBe(false)
     const again = runAutoAnalyst({ settings: first.settings, report, bets, rehab: first.rehab })

@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   DESK_EXPERT,
   buildDeskBrief,
+  buildTapeIntel,
   emptyBriefs,
   forecastSwing,
   formatNewsAge,
+  hourTrendFromPoints,
   newsRssUrl,
   parseNewsRss,
+  sameClockPriorFromPoints,
   upcomingFromMarkets,
 } from '../src/lib/desk-brief'
 import { GOLD_RECIPES, TAPE_IDS } from '../src/lib/tapes'
@@ -182,21 +185,27 @@ describe('buildDeskBrief per-desk report', () => {
     expect(brief.trend).toMatch(/24h \+\$180/)
     expect(brief.trend).toMatch(/48h −\$40/)
     expect(brief.newsFocus).toMatch(/Spot ETF/)
+    expect(brief.hourTrend).toMatch(/Hour|Sat hour/)
+    expect(brief.sameClock).toMatch(/Same-clock prior/)
     expect(brief.swing.side).toBe('up')
-    expect(brief.report).toHaveLength(5)
+    expect(brief.report).toHaveLength(7)
     expect(brief.report[0]).toMatch(/BTC desk chief/)
     expect(brief.report[1]).toMatch(/Upcoming runs/)
     expect(brief.report[2]).toMatch(/Trend/)
-    expect(brief.report[3]).toMatch(/news focus/)
-    expect(brief.report[4]).toMatch(/Swing/)
+    expect(brief.report[3]).toMatch(/Hour|Sat hour/)
+    expect(brief.report[4]).toMatch(/Same-clock prior/)
+    expect(brief.report[5]).toMatch(/news focus/)
+    expect(brief.report[6]).toMatch(/Swing/)
   })
 
   it('keeps a report on every desk when the tape is dark', () => {
     const briefs = emptyBriefs()
     for (const id of TAPE_IDS) {
       expect(briefs[id].expert).toBe(DESK_EXPERT[id].title)
-      expect(briefs[id].report).toHaveLength(5)
+      expect(briefs[id].report).toHaveLength(7)
       expect(briefs[id].newsFocus).toMatch(/no fresh headline/)
+      expect(briefs[id].hourTrend).toMatch(/Hour|Sat hour/)
+      expect(briefs[id].sameClock).toMatch(/Same-clock prior/)
       expect(briefs[id].swing.side).toBe('sit')
     }
   })
@@ -205,5 +214,30 @@ describe('buildDeskBrief per-desk report', () => {
     expect(formatNewsAge(NOW - 12 * 60_000, NOW)).toBe('12m')
     expect(formatNewsAge(NOW - 3 * 60 * 60_000, NOW)).toBe('3h')
     expect(formatNewsAge(NOW - 3 * 24 * 60 * 60_000, NOW)).toBe('3d')
+  })
+
+  it('Sat hour trend + same-clock prior feed BTC intel Soft FAIL Live rewrite', () => {
+    const sat = Date.UTC(2026, 8, 19, 19, 10, 0)
+    const points = [
+      { t: Date.UTC(2026, 8, 12, 19, 2, 0), px: 80_000 },
+      { t: Date.UTC(2026, 8, 12, 19, 12, 0), px: 80_400 },
+      { t: Date.UTC(2026, 8, 19, 19, 4, 0), px: 81_000 },
+      { t: Date.UTC(2026, 8, 19, 19, 9, 0), px: 81_200 },
+    ]
+    const hourTrend = hourTrendFromPoints('btc', points, sat)
+    expect(hourTrend.dir).toBe('up')
+    expect(hourTrend.line).toMatch(/Sat hour/)
+    const prior = sameClockPriorFromPoints('btc', points, sat, 15 * 60_000, sat)
+    expect(prior.dir).toBe('up')
+    expect(prior.line).toMatch(/Same-clock prior/)
+    const intel = buildTapeIntel({
+      id: 'btc',
+      points,
+      closeAt: sat,
+      news: [{ title: 'BTC weekend bid', source: 'Reuters', at: sat, href: 'https://n.example' }],
+      now: sat,
+    })
+    expect(intel.bias).toBe('print')
+    expect(intel.newsLine).toMatch(/BTC weekend bid/)
   })
 })
