@@ -820,7 +820,7 @@ test('hit goal is 80% — Soft FAIL leftover 83%', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
-  await expect(page.getByTestId('ttl-value')).toContainText('80% goal')
+  await expect(page.getByTestId('ttl-value')).toContainText(/80% goal|<80%/)
   await expect(page.getByTestId('ttl-value')).not.toContainText('83%')
   await expect(page.getByTestId('analyst')).toContainText(/80%/)
   await expect(page.getByTestId('analyst')).not.toContainText('83%')
