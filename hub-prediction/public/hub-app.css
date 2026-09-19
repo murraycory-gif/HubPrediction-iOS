@@ -1080,16 +1080,29 @@ button {
   border-color: rgba(255, 90, 90, 0.45);
 }
 
-.toggle-halt {
+.toggle.toggle-halt,
+.toggle.toggle-halt.glyph-plate {
   background: #3a1a08;
   border: 2px solid #ff8a3d;
   color: #ff8a3d;
-  box-shadow: 0 0 0 1px rgba(255, 138, 61, 0.4);
+  -webkit-text-fill-color: #ff8a3d;
+  box-shadow: 0 0 0 1px rgba(255, 138, 61, 0.55);
+  opacity: 1;
+  filter: none;
 }
 
-.toggle-halt input:disabled {
+.toggle-halt input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 2px solid #ff8a3d;
+  border-radius: 3px;
+  background: #2a1206;
   accent-color: #ff8a3d;
   opacity: 1;
+  pointer-events: none;
 }
 
 .field {

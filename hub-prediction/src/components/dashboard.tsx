@@ -1033,8 +1033,11 @@ function TapeRow({
             type="checkbox"
             data-testid={`live-cash-${id}`}
             checked={recipe.liveOn}
-            disabled={rehabPaper}
-            onChange={(e) => onTape({ liveOn: e.target.checked })}
+            aria-disabled={rehabPaper ? 'true' : undefined}
+            onChange={(e) => {
+              if (rehabPaper) return
+              onTape({ liveOn: e.target.checked })
+            }}
           />
           Live cash {rehabPaper ? 'HALT' : recipe.liveOn ? 'ON' : 'OFF'}
         </label>

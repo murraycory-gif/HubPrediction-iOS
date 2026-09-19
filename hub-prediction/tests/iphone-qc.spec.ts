@@ -944,3 +944,35 @@ test('phone desk: paper deskfill shows in BETS as MODE PAPER / CASH N/A — no m
   await assertNoMasterLive(page)
   await assertCashColumnClear(page)
 })
+
+test('any tape Live cash HALT is orange, not grey', async ({ page }) => {
+  await page.addInitScript(() => {
+    const now = Date.now()
+    localStorage.setItem(
+      'hub.desk.analyst.rehab.v1',
+      JSON.stringify({
+        tapes: {
+          btc: { id: 'btc', status: 'paper', haltedAt: now, liveWasOn: true, paperTarget: 12, fromMs: now, token: 't' },
+          cu: { id: 'cu', status: 'paper', haltedAt: now, liveWasOn: true, paperTarget: 12, fromMs: now, token: 't' },
+        },
+      }),
+    )
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  for (const id of ['btc', 'cu'] as const) {
+    const box = page.getByTestId(`live-cash-box-${id}`)
+    await expect(box).toHaveAttribute('data-halt', '1')
+    await expect(box).toContainText('HALT')
+    const paint = await box.evaluate((el) => {
+      const s = getComputedStyle(el)
+      return { color: s.color, border: s.borderTopColor, bg: s.backgroundColor, opacity: s.opacity }
+    })
+    expect(paint.opacity).toBe('1')
+    expect(paint.color).toMatch(/rgb\(\s*255,\s*138,\s*61\s*\)/i)
+    expect(paint.border).toMatch(/rgb\(\s*255,\s*138,\s*61\s*\)/i)
+    expect(paint.bg).not.toMatch(/rgb\(\s*(12,\s*17,\s*16|0,\s*0,\s*0)\s*\)/)
+  }
+  await assertNoMasterLive(page)
+})
