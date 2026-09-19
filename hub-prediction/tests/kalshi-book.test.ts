@@ -238,4 +238,35 @@ describe('Kalshi book MODE — missing PAPER, present LIVE, cash = balance', () 
     expect(next.bets[0]?.kind).toBe('paper')
     expect(classifyBookMode(canceled, index)).toBe('paper')
   })
+
+  it('resting and count_fp Soft FAIL LIVE without a fill', () => {
+    const resting = deskLive({
+      orderId: '01a0b742-7b30-701f-8eb6-fa1303b858ad',
+      ticker: 'KXNATGAS15M-REST',
+      kind: 'live',
+    })
+    const payload = {
+      cash: 293.93,
+      fills: { fills: [] },
+      settlements: { settlements: [] },
+      orders: {
+        orders: [
+          {
+            order_id: '01a0b742-7b30-701f-8eb6-fa1303b858ad',
+            status: 'resting',
+            fill_count: 0,
+            count_fp: '20.00',
+            action: 'sell',
+            side: 'yes',
+          },
+        ],
+      },
+      fetchedAt: now,
+      hostCreds: true,
+    }
+    const next = applyKalshiBook({ ...emptyFinance(), bets: [resting] }, payload, now)
+    expect(next.bets[0]?.kind).toBe('paper')
+    expect(classifyBookMode(resting, indexKalshiBook(payload))).toBe('paper')
+    expect(classifyBookMode(resting, null)).toBe('paper')
+  })
 })

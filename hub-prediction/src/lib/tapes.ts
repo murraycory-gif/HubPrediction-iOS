@@ -1621,11 +1621,11 @@ export function formatWeThink(id: TapeId, live: number | null, ahead: number | n
   return `${formatLive(id, live)} / ${formatLive(id, ahead)}`
 }
 
-function placeFillCount(raw: unknown) {
+export function placeFillCount(raw: unknown) {
   const bag = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
   const order = bag?.order && typeof bag.order === 'object' ? (bag.order as Record<string, unknown>) : bag
   if (!order) return 0
-  for (const key of ['fill_count', 'fill_count_fp', 'filled_count', 'count_fp']) {
+  for (const key of ['fill_count', 'fill_count_fp', 'filled_count']) {
     const n = Number(order[key])
     if (Number.isFinite(n) && n > 0) return n
   }
@@ -1649,16 +1649,11 @@ export function extractOrderId(raw: unknown): string | null {
   return null
 }
 
-/** 200 + Kalshi order id. Soft FAIL canceled IOC / deskfill as BOT BOUGHT. */
+/** Real fill only. Soft FAIL canceled / resting / 0-fill order_id as BOT BOUGHT. */
 export function confirmedPlaceOrderId(raw: unknown): string | null {
   const id = extractOrderId(raw)
   if (!id || isPaperOrderId(id)) return null
-  const bag = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
-  const order = bag?.order && typeof bag.order === 'object' ? (bag.order as Record<string, unknown>) : bag
-  const status = String(order?.status ?? bag?.status ?? '').toLowerCase()
-  if (status === 'canceled' || status === 'cancelled' || status === 'not_filled') {
-    if (placeFillCount(raw) <= 0) return null
-  }
+  if (placeFillCount(raw) <= 0) return null
   return id
 }
 

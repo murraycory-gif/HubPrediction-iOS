@@ -55,10 +55,14 @@ describe('placeContract V2 Soft KEEP', () => {
     expect(extractOrderId({ order: { order_id: 'ord-live-fill-01' } })).toBe('ord-live-fill-01')
     expect(extractOrderId({ position: { position_id: 'pos-live-fill-01' } })).toBe('pos-live-fill-01')
     expect(isRealOrderId('deskfill-btc-ghost01')).toBe(false)
-    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'executed' } })).toBe(
-      '01a0b7af-7b30-701f-8eb6-fa1303b858ad',
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b74f-7b30-701f-8eb6-fa1303b858ad', status: 'executed', fill_count: 1 } })).toBe(
+      '01a0b74f-7b30-701f-8eb6-fa1303b858ad',
     )
-    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'canceled', fill_count: 0 } })).toBeNull()
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'executed' } })).toBeNull()
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'canceled', fill_count: 0, action: 'sell', side: 'yes' } })).toBeNull()
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'resting', fill_count: 0 } })).toBeNull()
+    expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'canceled', fill_count: 0, count_fp: '20.00' } })).toBeNull()
+    expect(confirmedPlaceOrderId({ order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', fill_count: '0.00' })).toBeNull()
     expect(confirmedPlaceOrderId({ order: { order_id: 'deskfill-btc-ghost01' } })).toBeNull()
   })
 

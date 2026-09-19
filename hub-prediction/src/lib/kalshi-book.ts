@@ -40,10 +40,12 @@ function rowFillCount(row: Record<string, unknown>) {
 }
 
 function orderRowFilled(row: Record<string, unknown>) {
-  const status = String(row.status ?? '').toLowerCase()
   const fills = rowFillCount(row)
-  if (status === 'canceled' || status === 'cancelled' || status === 'not_filled') return fills > 0
   if (fills > 0) return true
+  const status = String(row.status ?? '').toLowerCase()
+  if (status === 'canceled' || status === 'cancelled' || status === 'not_filled' || status === 'resting' || status === 'open') {
+    return false
+  }
   return status === 'executed' || status === 'filled'
 }
 
@@ -135,11 +137,9 @@ export function classifyBookMode(
 ): BetKind {
   if (isPaperOrderId(b.orderId) || (typeof b.betId === 'string' && /^paper:/i.test(b.betId))) return 'paper'
   if (isImportedKalshiRow(b) || b.kind === 'hist') return 'hist'
-  if (!book || !book.fetchedAt) {
-    if (b.kind === 'paper') return 'paper'
-    if (b.kind === 'live') return 'live'
-    return 'paper'
-  }
+  const orderId = String(b.orderId ?? '').trim()
+  if (book?.canceledUnfilled.has(orderId)) return 'paper'
+  if (!book || !book.fetchedAt) return 'paper'
   if (onKalshiBook(b, book)) return 'live'
   return 'paper'
 }
