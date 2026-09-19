@@ -17,6 +17,7 @@ import {
   liveCashFloor,
   openLiveClockTapes,
   paper48hPassed,
+  readTestLiveArm,
   type BookedBet,
   type FinanceState,
   type Gate,
@@ -153,6 +154,8 @@ export function liveHeatTapes(
 }
 
 export function tapeLiveArmGate(id: TapeId, quote?: ChiefQuote | null, now = Date.now()): Gate {
+  const test = readTestLiveArm()
+  if (test) return test
   if (!tapeAllowsLive(id)) {
     return { ok: false, reason: `${TAPE_META[id].label} paper desk — Soft FAIL Live` }
   }
