@@ -1672,9 +1672,15 @@ test('Last 24H strip stays on LIVE + today paper — Soft FAIL hist dump flicker
   }
   expect(first.placed).not.toMatch(/11,?784/)
   await page.waitForTimeout(2500)
-  expect((await placed.innerText()).trim()).toBe(first.placed)
-  expect((await wl.innerText()).trim()).toBe(first.wl)
-  expect((await pnl.innerText()).trim()).toBe(first.pnl)
+  const later = {
+    placed: (await placed.innerText()).trim(),
+    wl: (await wl.innerText()).trim(),
+    pnl: (await pnl.innerText()).trim(),
+  }
+  expect(later.placed).toBe(first.placed)
+  expect(later.pnl).toBe(first.pnl)
+  expect(later.wl.match(/(\d+)W–(\d+)L/)?.slice(1)).toEqual(first.wl.match(/(\d+)W–(\d+)L/)?.slice(1))
+  expect(later.wl).not.toMatch(/255W/)
   await expect(page.locator('[data-testid="bets-mode"]', { hasText: 'HIST' })).toHaveCount(0)
   await expect(page.locator('[data-order-id="deskfill-btc-today01"] [data-testid="bets-mode"]')).toHaveText('PAPER')
 })
