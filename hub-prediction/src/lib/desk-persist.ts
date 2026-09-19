@@ -35,6 +35,11 @@ export function settingsTogglesAt(settings: unknown): number {
   return Number((settings as { togglesAt?: unknown }).togglesAt) || 0
 }
 
+export function settingsClocksAt(settings: unknown): number {
+  if (!settings || typeof settings !== 'object') return 0
+  return Number((settings as { clocksAt?: unknown }).clocksAt) || 0
+}
+
 function incomingIsUnsavedFactory(settings: unknown) {
   if (!settings || typeof settings !== 'object') return true
   if (settingsHasUserLive(settings)) return false
@@ -77,12 +82,22 @@ export function pickNewerSettings(prev: unknown, incoming: unknown) {
     return prev
   }
   if (nextAt === 0 && prevAt > 0) return prev
-  const winner = nextAt >= prevAt ? incoming : prev
+  let winner = nextAt >= prevAt ? incoming : prev
   const other = winner === incoming ? prev : incoming
   const winT = settingsTogglesAt(winner)
   const otherT = settingsTogglesAt(other)
-  if (otherT > winT) return copyUserToggles(other, winner)
-  if (otherT === winT && otherT > 0) return copyUserToggles(prev, winner)
+  if (otherT > winT) winner = copyUserToggles(other, winner)
+  else if (otherT === winT && otherT > 0) winner = copyUserToggles(prev, winner)
+  const winC = settingsClocksAt(winner)
+  const otherC = settingsClocksAt(other)
+  if (otherC > winC && other && typeof other === 'object') {
+    winner = {
+      ...(winner as object),
+      clocks: (other as { clocks?: unknown }).clocks,
+      charts: (other as { charts?: unknown }).charts,
+      clocksAt: otherC,
+    }
+  }
   return winner
 }
 

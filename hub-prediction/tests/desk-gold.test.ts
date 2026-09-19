@@ -200,6 +200,9 @@ describe('settings persist', () => {
     expect(loadSettings().tapes.ng.liveOn).toBe(true)
     expect(loadSettings().tapes.ng.contracts).toBe(8)
     expect(loadSettings().clocks.btc).toBe('5m')
+    patchTape(loadSettings(), 'btc', { liveOn: false })
+    expect(loadSettings().clocks.btc).toBe('5m')
+    expect(loadSettings().tapes.btc.contracts).toBe(17)
   })
 
   it('persists per-tape 5m / 15m / 1h clocks — 15m gold default', () => {

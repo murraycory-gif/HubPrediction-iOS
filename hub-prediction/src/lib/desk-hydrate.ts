@@ -23,7 +23,8 @@ function hostSettingsPicks(raw: object, savedAt: number) {
   }
   incoming.togglesPicked =
     incoming.togglesPicked === true || TAPE_IDS.some((id) => incoming.tapes[id].liveOn === true || incoming.tapes[id].botOn === false)
-  incoming.togglesAt = Number((raw as { togglesAt?: unknown }).togglesAt) || incoming.savedAt
+  incoming.togglesAt = Number((raw as { togglesAt?: unknown }).togglesAt) || incoming.togglesAt
+  incoming.clocksAt = Number((raw as { clocksAt?: unknown }).clocksAt) || incoming.clocksAt
   return incoming
 }
 

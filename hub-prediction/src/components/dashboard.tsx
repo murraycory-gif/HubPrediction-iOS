@@ -230,7 +230,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     if (!hostReady) return
     let cancelled = false
     const latchHost = async () => {
-      if (Date.now() - lastLocalWrite.current < SETTINGS_DEBOUNCE_MS + 400) return
       try {
         const host = await getDeskState({ data: { t: Date.now() } })
         if (cancelled || !host) return
@@ -1067,7 +1066,7 @@ function TapeRow({
     const n = clampContracts(raw)
     setDraft(n)
     window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(() => saveContracts(n), 80)
+    saveContracts(n)
   }
 
   const fillLine = ticket ? ticketFillStrip(ticket, shownQuote, booked) : ''
