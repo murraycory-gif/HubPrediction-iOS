@@ -160,3 +160,77 @@ test('HARD QA 6 persist Live cash/contracts + WTI/Silver paper only', async ({ b
     await phone.close()
   }
 })
+
+test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ page }) => {
+  test.setTimeout(45_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await allowLiveArm(page)
+  const closeAt = Date.now() + 5 * 60_000
+  await page.evaluate((at) => {
+    const w = window as Window & {
+      __HUB_PLACE_CALLS?: unknown[]
+      __HUB_PLACE?: (p: unknown) => Promise<unknown>
+      __HUB_TEST_LIVE_QUOTE?: Record<string, unknown>
+    }
+    w.__HUB_PLACE_CALLS = []
+    w.__HUB_PLACE = async (p) => {
+      w.__HUB_PLACE_CALLS!.push(p)
+      return {
+        order: {
+          order_id: '01print-btc-70-filled',
+          status: 'executed',
+          fill_count: 20,
+          fill_count_fp: '20.00',
+        },
+      }
+    }
+    w.__HUB_TEST_LIVE_QUOTE = {
+      btc: {
+        ticker: 'KXBTC15M-PRINT70',
+        clock: '15m',
+        clockId: '15m',
+        closeAt: at,
+        tradingActive: true,
+        openMarkets: 1,
+        live: 80080,
+        beat: 80000,
+        yesAsk: 70,
+        noAsk: 31,
+        fetchedAt: Date.now(),
+        points: [
+          { t: Date.now() - 4000, px: 80040 },
+          { t: Date.now(), px: 80080 },
+        ],
+      },
+    }
+  }, closeAt)
+  await setToggle(page, 'bot-btc', true)
+  await setToggle(page, 'live-cash-btc', true)
+  await page.getByTestId('contracts-btc').fill('20')
+  await page.getByTestId('contracts-btc').blur()
+  await setToggle(page, 'bot-btc', false)
+  await setToggle(page, 'bot-btc', true)
+  await expect
+    .poll(async () => {
+      return page.evaluate(() => {
+        const w = window as Window & { __HUB_PLACE_CALLS?: unknown[] }
+        return w.__HUB_PLACE_CALLS?.length ?? 0
+      })
+    }, { timeout: 12_000 })
+    .toBeGreaterThan(0)
+  const placed = await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_PLACE_CALLS?: Array<{ count?: number; side?: string; yesAsk?: number; ticker?: string; liveOn?: boolean }>
+    }
+    return w.__HUB_PLACE_CALLS?.[0] ?? null
+  })
+  expect(placed?.ticker).toBe('KXBTC15M-PRINT70')
+  expect(placed?.yesAsk).toBe(70)
+  expect(placed?.liveOn).toBe(true)
+  expect(placed?.count).toBeGreaterThanOrEqual(1)
+  const msg = (await page.getByTestId('desk-msg').textContent()) ?? ''
+  expect(msg).not.toMatch(/After-fee EV|lock-in|Clock spend|paper 48|Sit —/)
+  await expect(page.getByTestId('desk-msg')).not.toContainText(/Sit —|After-fee EV|lock-in sit/i)
+})

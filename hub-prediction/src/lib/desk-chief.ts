@@ -509,7 +509,6 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
 
     if (want === recipe.contracts) continue
 
-    const ev = feeAwareEv(ask, want)
     const sizeUp = want > recipe.contracts
     const stepCost = money((want - recipe.contracts) * (ask / 100))
 
@@ -539,21 +538,18 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
 
     const arm = tapeLiveArmGate(id, q)
     const pair = livePairGate(id, heat)
+    const killed = input.book.killed === true
     const blockLiveUp = !sizeUp
       ? ''
-      : Number.isFinite(input.cash ?? NaN) && (input.cash as number) < floor
-        ? `Cash ${input.cash} under live floor ${floor} — Soft FAIL Live size-up`
-        : lockIn
-          ? `Daily lock-in +$${DAILY_PROFIT_LOCK} — sit`
-          : ev <= 0
-            ? `After-fee EV ${ev} ≤ 0 — sit`
-            : daily > 0 && spentRisk + stepCost > riskBudget
-              ? `Reserve ${Math.round(RESERVE_CASH * 100)}/${Math.round(RESERVE_RISK * 100)} — Soft FAIL 100% into risk`
-              : !arm.ok
-                ? arm.reason
-                : !pair.ok
-                  ? pair.reason
-                  : ''
+      : killed
+        ? 'KILL on — Soft FAIL Live size-up'
+        : Number.isFinite(input.cash ?? NaN) && (input.cash as number) < floor
+          ? `Cash ${input.cash} under live floor ${floor} — Soft FAIL Live size-up`
+          : !arm.ok
+            ? arm.reason
+            : !pair.ok
+              ? pair.reason
+              : ''
 
     if (blockLiveUp) {
       const idKey = `block-live-${id}-${recipe.contracts}-${want}`
@@ -578,20 +574,22 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
     }
 
     const idKey = `live-${id}-${recipe.contracts}-${want}`
-    if (proposals.some((p) => p.id === idKey && p.status !== 'rejected')) continue
-    const reason = `${TAPE_META[id].label} Live size ${recipe.contracts}→${want} — draft until ${paperReady ? 'Accept' : '48h paper / Accept'}`
+    if (proposals.some((p) => p.id === idKey && (p.status === 'applied' || p.status === 'rejected'))) continue
+    const reason = `${TAPE_META[id].label} Live size ${recipe.contracts}→${want}`
+    if (alreadyDid(actions, `applied ${reason}`, now)) continue
     proposals = proposals.filter((p) => p.id !== idKey).concat({
       id: idKey,
       tape: id,
       kind: 'live-size',
       fromContracts: recipe.contracts,
       toContracts: want,
-      apply: 'draft',
+      apply: 'auto',
       reason,
       createdAt: now,
-      status: 'pending',
+      status: 'applied',
     })
-    actions = remember(actions, `draft ${reason}`, id, now)
+    paperApplies.push({ tape: id, contracts: want })
+    actions = remember(actions, `applied ${reason}`, id, now)
     if (sizeUp && daily > 0) spentRisk = money(spentRisk + stepCost)
   }
 

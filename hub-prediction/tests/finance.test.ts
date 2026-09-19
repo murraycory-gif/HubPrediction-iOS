@@ -136,7 +136,8 @@ describe('finance Soft KEEP', () => {
       { tape: 'btc', ticker: 'KXBTC15M-1', ask: 72, cash: 400, deposits: 760, spent: 8 },
     )
     expect(under.ok).toBe(true)
-    expect(CLOCK_MAX_SPEND).toBe(25)
+    expect(CLOCK_MAX_SPEND).toBe(80)
+    expect(CLOCK_MAX_SPEND).toBeGreaterThanOrEqual(20 * 0.79)
   })
 
   it('daily P/L floor is a visible kill, not a silent Place-block', () => {
@@ -213,6 +214,40 @@ describe('finance Soft KEEP', () => {
     })
     expect(evSit.ok).toBe(false)
     if (!evSit.ok) expect(evSit.reason).toMatch(/EV/)
+    const live79 = liveSendGate(emptyFinance(), {
+      tape: 'btc', ticker: 'KXBTC15M-EV-LIVE', ask: 79, cash: 294, deposits: 760, spent: 15.8, liveOn: true,
+    })
+    expect(live79.ok).toBe(true)
+    const liveLock = liveSendGate(lock, {
+      tape: 'btc', ticker: 'KXBTC15M-LOCK-LIVE', ask: 70, cash: 294, deposits: 760, spent: 14, liveOn: true,
+    }, now)
+    expect(liveLock.ok).toBe(true)
+    const floorBook = {
+      ...emptyFinance(),
+      bets: [
+        {
+          ...lock.bets[0],
+          betId: 'bet_floor_live',
+          ticker: 'KXBTC15M-FL-LIVE',
+          orderId: 'ord-floor-live',
+          pnl: DAILY_PNL_FLOOR_PAPER,
+        },
+      ],
+    }
+    expect(dailyPnlFloorHit(floorBook, now)).toBe(true)
+    const liveFloor = liveSendGate(floorBook, {
+      tape: 'btc', ticker: 'KXBTC15M-FL-LIVE', ask: 70, cash: 294, deposits: 760, spent: 14, liveOn: true,
+    }, now)
+    expect(liveFloor.ok).toBe(true)
+    const live20 = liveSendGate(emptyFinance(), {
+      tape: 'btc', ticker: 'KXBTC15M-20', ask: 70, cash: 294, deposits: 760, spent: 14, liveOn: true,
+    })
+    expect(live20.ok).toBe(true)
+    const skip80 = liveSendGate(emptyFinance(), {
+      tape: 'btc', ticker: 'KXBTC15M-80', ask: 80, cash: 294, deposits: 760, spent: 16, liveOn: true,
+    })
+    expect(skip80.ok).toBe(false)
+    if (!skip80.ok) expect(skip80.reason).toMatch(/skip/)
   })
 
   it('Soft FAIL Live ON before paper 48h and under cash floor', () => {
@@ -809,7 +844,8 @@ describe('liveBotCall instant Kalshi post', () => {
     expect(liveBotCall({ ...ready, stale: true, tradingActive: false })).toBe('sit')
     expect(liveBotCall({ ...ready, fresh: undefined })).toBe('live')
     expect(liveBotCall({ ...ready, lean: 'sit' })).toBe('sit')
-    expect(liveBotCall({ ...ready, hitOk: false })).toBe('sit')
+    expect(liveBotCall({ ...ready, hitOk: false })).toBe('live')
+    expect(liveBotCall({ ...ready, liveCash: false, hitOk: false })).toBe('paper')
     expect(liveBotCall({ ...ready, tradingActive: false })).toBe('sit')
     expect(liveBotCall({ ...ready, botOn: false })).toBe('sit')
     expect(liveBotCall({ ...ready, liveCash: true } as typeof ready & { liveBets: boolean })).toBe('live')

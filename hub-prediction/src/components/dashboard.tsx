@@ -21,6 +21,7 @@ import {
   loadHeldBoard,
   quoteHasClock,
   quoteIsLiveClock,
+  readTestLiveQuote,
   holdTapeQuote,
   trueLiveGate,
   saveHeldBoard,
@@ -101,6 +102,7 @@ import {
   liveArmGateForDesk,
   askAllowedByGold,
   ASK_CAP,
+  CLOCK_MAX_SPEND,
   emptyFinance,
   loadFinance,
   recipeRetuneGate,
@@ -627,7 +629,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       return
     }
     const ask = side === 'down' ? quote.noAsk : quote.yesAsk
-    const spent = ticketCost(settings.tapes[tape].contracts, ask)
+    let count = settings.tapes[tape].contracts
+    let spent = ticketCost(count, ask)
+    if (spent > CLOCK_MAX_SPEND) {
+      count = Math.max(1, Math.floor(CLOCK_MAX_SPEND / Math.max(0.01, ask / 100)))
+      spent = ticketCost(count, ask)
+    }
     const gate = liveSendGate(book, {
       tape,
       ticker: quote.ticker,
@@ -635,6 +642,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       cash: cash.cash,
       deposits: cash.deposits,
       spent,
+      liveOn: true,
     })
     if (!gate.ok) {
       abortLive(`${TAPE_META[tape].label} Kalshi error — ${gate.reason}`)
@@ -650,7 +658,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ? await hook({
             ticker: quote.ticker,
             side,
-            count: settings.tapes[tape].contracts,
+            count,
             yesAsk: quote.yesAsk,
             noAsk: quote.noAsk,
             tape,
@@ -662,7 +670,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             data: {
               ticker: quote.ticker,
               side,
-              count: settings.tapes[tape].contracts,
+              count,
               yesAsk: quote.yesAsk,
               noAsk: quote.noAsk,
               tape,
@@ -690,7 +698,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ticker: quote.ticker,
         side,
         orderId,
-        contracts: settings.tapes[tape].contracts,
+        contracts: count,
         beat: quote.beat,
         ask,
       })
@@ -765,11 +773,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     }
     for (const a of result.paperApplies) {
       const cur = loadSettings()
-      if (cur.tapes[a.tape].liveOn === true) continue
       if (a.contracts && cur.tapes[a.tape].contracts !== a.contracts) {
         setSettings(patchTape(cur, a.tape, { contracts: a.contracts }))
       }
-      if (a.clock && loadSettings().clocks[a.tape] !== a.clock) {
+      if (a.clock && cur.tapes[a.tape].liveOn !== true && loadSettings().clocks[a.tape] !== a.clock) {
         setSettings(setTapeClock(loadSettings(), a.tape, a.clock))
       }
     }
@@ -807,10 +814,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   })
 
   useEffect(() => {
-    if (!hostReady || !board || !tabIsOpen() || book.killed) return
+    if (!hostReady || !tabIsOpen() || book.killed) return
     const stored = loadSettings()
     for (const id of TAPE_IDS) {
-      const quote = board.tapes[id]
+      const quote = readTestLiveQuote(id) ?? board?.tapes[id]
       const recipe = settings.tapes[id]
       const botOn = stored.tapes[id].botOn === true || recipe.botOn === true
       const liveCash = stored.tapes[id].liveOn === true || recipe.liveOn === true

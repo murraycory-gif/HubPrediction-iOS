@@ -227,6 +227,13 @@ export function quoteHasClock(q: TapeQuote | null | undefined) {
   return Boolean(q && q.ticker && (Number(q.beat) > 0 || (q.live != null && q.live > 0) || Number(q.closeAt) > 0))
 }
 
+export function readTestLiveQuote(id: TapeId): TapeQuote | null {
+  if (typeof window === 'undefined') return null
+  const bag = (window as Window & { __HUB_TEST_LIVE_QUOTE?: Partial<Record<TapeId, TapeQuote>> }).__HUB_TEST_LIVE_QUOTE
+  const q = bag?.[id]
+  return q && q.ticker ? q : null
+}
+
 /** Open clock only. Soft FAIL holding a finished run as if it were live. */
 export function quoteIsLiveClock(q: TapeQuote | null | undefined, now = Date.now()) {
   if (!quoteHasClock(q) || !q) return false

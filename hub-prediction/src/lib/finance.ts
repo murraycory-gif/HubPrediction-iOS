@@ -68,7 +68,8 @@ export const LIVE_FLOOR_PCT = 0.2
 export const ASK_CAP = 80
 export const PAPER_HOURS = 48
 export const DAILY_PNL_FLOOR_PAPER = -50
-export const CLOCK_MAX_SPEND = 25
+/** Covers a 20ct BTC ticket at the 79¢ Live band. Soft FAIL silent sit on recipe size. */
+export const CLOCK_MAX_SPEND = 80
 export const HIT_FLOOR = 80
 export const DAILY_PROFIT_LOCK = 40
 export const MAX_LIVE_CLOCKS = 2
@@ -601,7 +602,6 @@ export function liveBotCall(opts: {
   if (opts.rehabPaper) return 'paper'
   if (opts.liveCash === true) {
     if (stale && opts.tradingActive !== true) return 'sit'
-    if (!opts.hitOk) return 'sit'
     return 'live'
   }
   if (stale && opts.tradingActive !== true) return 'paper'
@@ -631,7 +631,7 @@ export function tapeBotNote(opts: {
   if (!opts.inArm) return `Sit — arm ${opts.armFromMin}–${opts.armToMin} min`
   if (opts.lean === 'sit') return 'Sit — no through / hug'
   if (!opts.askOk) return 'Sit — ask out of band'
-  if (!opts.hitOk) return `Sit — under ${HIT_FLOOR}% goal`
+  if (!opts.liveCash && !opts.hitOk) return `Sit — under ${HIT_FLOOR}% goal`
   if (!opts.hostCreds) return 'Kalshi keys missing on this PC — cannot POST'
   return 'Live cash ON — next through posts to Kalshi'
 }
@@ -680,6 +680,8 @@ export function liveSendGate(
     deposits: number | null
     spent: number
     locked?: boolean
+    /** Already-Live tape. Soft FAIL feeEV / paper48h / lock-in / 12-settle sit. */
+    liveOn?: boolean
   },
   now = Date.now(),
 ): Gate {
@@ -689,25 +691,35 @@ export function liveSendGate(
   if (!askAllowedByGold(opts.tape, opts.ask, { locked: opts.locked === true })) {
     return { ok: false, reason: `Ask ${opts.ask}¢ skip (≥${ASK_CAP} unless locked)` }
   }
+  const alreadyLive = opts.liveOn === true
   const daily = deskDailyRealizedPnl(state, now)
-  if (daily <= DAILY_PNL_FLOOR_PAPER) {
+  if (!alreadyLive && daily <= DAILY_PNL_FLOOR_PAPER) {
     return { ok: false, reason: `Daily P/L floor ${DAILY_PNL_FLOOR_PAPER} — floor hit` }
   }
-  if (opts.spent > CLOCK_MAX_SPEND) {
+  const capCount = Math.max(1, Math.floor(CLOCK_MAX_SPEND / Math.max(0.01, opts.ask / 100)))
+  if (opts.spent > CLOCK_MAX_SPEND && !alreadyLive) {
     return { ok: false, reason: `Clock spend $${opts.spent} over $${CLOCK_MAX_SPEND} cap` }
   }
-  if (dailyProfitLockHit(state, now)) {
+  if (opts.spent > CLOCK_MAX_SPEND && alreadyLive && capCount < 1) {
+    return { ok: false, reason: `Clock spend $${opts.spent} over $${CLOCK_MAX_SPEND} cap` }
+  }
+  if (!alreadyLive && dailyProfitLockHit(state, now)) {
     return { ok: false, reason: `Daily lock-in +$${DAILY_PROFIT_LOCK} — sit` }
   }
   const count = Math.max(1, Math.round(opts.spent / Math.max(0.01, opts.ask / 100)))
-  const ev = feeAwareEvGate(opts.ask, count)
-  if (!ev.ok) return ev
+  if (!alreadyLive) {
+    const ev = feeAwareEvGate(opts.ask, count)
+    if (!ev.ok) return ev
+  }
   const heat = openLiveClockTapes(state)
   const pair = livePairGate(opts.tape, heat)
   if (!pair.ok) return pair
   const floor = liveCashFloor(opts.deposits)
-  if (Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) - opts.spent < floor) {
+  if (!alreadyLive && Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) - opts.spent < floor) {
     return { ok: false, reason: `Cash floor ${floor} blocks Place` }
+  }
+  if (alreadyLive && Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) < opts.spent) {
+    return { ok: false, reason: `Cash ${opts.cash} cannot cover $${opts.spent}` }
   }
   return { ok: true }
 }

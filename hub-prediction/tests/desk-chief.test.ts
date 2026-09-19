@@ -239,6 +239,33 @@ describe('Desk Chief paper allocator', () => {
     expect(settings.tapes.gld.liveOn).toBe(true)
   })
 
+  it('Live 3W auto-applies size under floors/kill Soft FAIL Accept babysit', () => {
+    const settings = hydrateSettings({
+      tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: true, botOn: true, contracts: 2 } },
+    })
+    const book = {
+      ...emptyFinance(),
+      paperStartedAt: now - 49 * 3600_000,
+      bets: [1, 2, 3].map((i) => liveSettled('btc', i, 0.3)),
+    }
+    const result = runDeskChief({
+      settings,
+      book,
+      cash: 294,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(result.paperApplies.some((a) => a.tape === 'btc' && a.contracts === 3)).toBe(true)
+    expect(result.state.proposals.some((p) => p.kind === 'live-size' && p.apply === 'auto' && p.status === 'applied')).toBe(
+      true,
+    )
+    expect(result.state.proposals.some((p) => p.kind === 'live-size' && p.apply === 'draft')).toBe(false)
+    expect(result.liveOnWrites).toEqual({})
+    expect(settings.tapes.btc.liveOn).toBe(true)
+  })
+
   it('Soft FAIL jump 1→20 without a streak', () => {
     expect(
       pickChiefClock('15m', { closed: false, stale: false, halt: false, hitPct: 100, w: 1, l: 0 }),
