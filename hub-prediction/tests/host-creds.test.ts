@@ -148,6 +148,7 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
     })
     expect(desk.cash.cash).toBe(293.37)
     expect(desk.cash.pnl).toBeCloseTo(293.37 - 760)
+    expect(hydrateCashFromKalshi({ cash: 293.63, deposits: { deposits: [{ amount_dollars: 760 }] } }).cash.cash).toBe(293.63)
     expect(desk.hits.tapes.btc.w).toBe(1)
     const strip = last24hBets(emptyFinance(), desk.hits, now)
     expect(strip.w).toBe(1)

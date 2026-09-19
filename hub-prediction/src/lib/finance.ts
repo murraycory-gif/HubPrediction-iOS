@@ -155,8 +155,8 @@ export function betStamp(b: { settledAt?: number | null; closeAt?: number; fille
 }
 
 /**
- * Running Kalshi cash after this-desk LIVE settles only.
- * PAPER / HIST rows are N/A. Soft FAIL a fake cash walk on imported or paper.
+ * LIVE CASH cells = GET /portfolio/balance (same $ as the scoreboard).
+ * PAPER / HIST = N/A. Soft FAIL an invented walk that drifts from Kalshi.
  */
 export function cashAfterEachBet(
   bets: Array<{
@@ -172,27 +172,14 @@ export function cashAfterEachBet(
   currentCash: number | null | undefined,
   deposits: number | null | undefined = null,
 ): Record<string, number | null> {
-  const ordered = [...bets].sort((a, b) => {
-    const dt = betStamp(a) - betStamp(b)
-    return dt !== 0 ? dt : String(a.betId).localeCompare(String(b.betId))
-  })
-  const realized = ordered.reduce((s, b) => {
-    if (isLiveBet(b) && b.status === 'settled' && b.pnl != null) return s + b.pnl
-    return s
-  }, 0)
-  let cursor: number | null = null
-  if (Number.isFinite(currentCash ?? NaN)) cursor = money(Number(currentCash) - realized)
-  else if (Number.isFinite(deposits ?? NaN)) cursor = money(Number(deposits))
+  const kalshi = Number.isFinite(currentCash ?? NaN)
+    ? money(Number(currentCash))
+    : Number.isFinite(deposits ?? NaN)
+      ? money(Number(deposits))
+      : null
   const out: Record<string, number | null> = {}
-  for (const b of ordered) {
-    if (!isLiveBet(b)) {
-      out[b.betId] = null
-      continue
-    }
-    if (cursor != null && b.status === 'settled' && b.pnl != null) {
-      cursor = money(cursor + b.pnl)
-    }
-    out[b.betId] = cursor
+  for (const b of bets) {
+    out[b.betId] = isLiveBet(b) ? kalshi : null
   }
   return out
 }

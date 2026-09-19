@@ -103,7 +103,7 @@ import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
 import { formatBetWindow, formatWindowRange } from '../lib/chicago-time'
-import { applyClockSettle, clocksNeedingSettle, readTestClockSettle } from '../lib/settle-latch'
+import { applyClockSettle, balanceLatchMs, clocksNeedingSettle, readTestClockSettle } from '../lib/settle-latch'
 import { RaceChart, useSmoothedLive } from './race-chart'
 import { SettingsPanel } from './settings-panel'
 import { TapeIcon } from './tape-icon'
@@ -313,11 +313,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     }
   }
 
+  const cashLatch = balanceLatchMs(book.bets, board, wall)
   const cashQuery = useQuery({
     queryKey: ['kalshi-balance'],
     queryFn: () => getKalshiBalance(),
-    refetchInterval: 15_000,
-    staleTime: 2_000,
+    refetchInterval: cashLatch || 15_000,
+    staleTime: cashLatch ? 0 : 2_000,
     refetchOnMount: 'always',
   })
 
@@ -631,7 +632,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   )
 
   return (
-    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-settle-latch={settleNeed.latchMs || 0}>
+    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0}>
       <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">

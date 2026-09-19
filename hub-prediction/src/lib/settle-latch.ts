@@ -124,6 +124,43 @@ export function clocksNeedingSettle(
   return { tickers: list, minTs: minClose || now - 10 * 60_000, latchMs }
 }
 
+/** Keep GET /portfolio/balance hot after close — even once the row is WIN/LOSS. Soft FAIL a stale $293.37 latch. */
+export function balanceLatchMs(
+  bets: Array<{
+    status?: unknown
+    kind?: unknown
+    orderId?: unknown
+    betId?: unknown
+    closeAt?: unknown
+    settledAt?: unknown
+  }>,
+  board:
+    | {
+        tapes?: Partial<Record<string, { closeAt?: number; tradingActive?: boolean } | null>>
+      }
+    | null
+    | undefined,
+  now = Date.now(),
+): number | false {
+  let best: number | false = false
+  const note = (closeAt: number) => {
+    const ms = settlePollMs(closeAt, now)
+    if (ms === false) return
+    best = best === false ? ms : Math.min(best, ms)
+  }
+  for (const b of bets) {
+    if (isPaperBet(b) || !isLiveBet(b)) continue
+    const closeAt = Number(b.closeAt) || Number(b.settledAt) || 0
+    if (closeAt > 0) note(closeAt)
+  }
+  for (const q of Object.values(board?.tapes ?? {})) {
+    if (!q) continue
+    const closeAt = Number(q.closeAt) || 0
+    if (q.tradingActive === false || (closeAt > 0 && closeAt <= now)) note(closeAt || now)
+  }
+  return best
+}
+
 export function readTestClockSettle(): ClockSettlePayload | null {
   if (typeof window === 'undefined') return null
   const w = window as Window & { __HUB_CLOCK_SETTLE?: ClockSettlePayload }

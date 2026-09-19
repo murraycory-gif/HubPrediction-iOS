@@ -7,6 +7,7 @@ import {
   SETTLE_LATCH_FOR_MS,
   SETTLE_LATCH_MS,
   applyClockSettle,
+  balanceLatchMs,
   clocksNeedingSettle,
   settlePollMs,
 } from '../src/lib/settle-latch'
@@ -125,10 +126,14 @@ describe('clock-close settle latch Soft FAIL reload drip', () => {
     expect(gold?.status).toBe('open')
     expect(gold?.pnl).toBeNull()
     const walk = cashAfterEachBet(next.bets, 500.84)
-    expect(walk['bet_ord-btc-s1']).toBeCloseTo(500.28)
-    expect(walk['bet_ord-cu-s1']).toBeCloseTo(500.56)
+    expect(walk['bet_ord-btc-s1']).toBeCloseTo(500.84)
+    expect(walk['bet_ord-cu-s1']).toBeCloseTo(500.84)
     expect(walk['bet_ord-ng-s1']).toBeCloseTo(500.84)
     expect(walk['bet_deskfill-gld-s1']).toBeNull()
+    expect(walk['bet_ord-btc-s1']).toBe(walk['bet_ord-ng-s1'])
+    expect(balanceLatchMs(next.bets, { tapes: { btc: { closeAt: now - 1000, tradingActive: false } } }, now)).toBe(
+      SETTLE_LATCH_MS,
+    )
   })
 
   it('collapses four CU LIVE ghosts to one row', () => {

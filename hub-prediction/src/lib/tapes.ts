@@ -1,6 +1,7 @@
 import { deskStorage } from './desk-storage'
 import { pushHostDesk } from './desk-persist'
 import { mergeRaceTrail, pointTime } from './race-path'
+import { cashFromBalancePayload } from './size-cash'
 import type { DeskBoard, LivePrints, TapeQuote } from './types'
 
 export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
@@ -1084,7 +1085,13 @@ export function hydrateCashFromKalshi(
   const meta = depositsMeta(raw.deposits) ?? depositsMeta(raw.raw) ?? null
   const deposits = meta?.total ?? depositsFromPayload(raw.deposits) ?? depositsFromPayload(raw.raw) ?? prev.deposits
   const firstDepositAt = meta?.firstAt ?? prev.firstDepositAt
-  const cashAmt = Number.isFinite(raw.cash as number) ? Number(raw.cash) : prev.cash
+  const fromPayload = raw.raw != null ? cashFromBalancePayload(raw.raw) : null
+  const cashAmt =
+    Number.isFinite(raw.cash as number) && Number(raw.cash) > 0
+      ? Number(raw.cash)
+      : fromPayload != null && fromPayload > 0
+        ? fromPayload
+        : prev.cash
   const cash = saveCash({
     cash: cashAmt,
     deposits,

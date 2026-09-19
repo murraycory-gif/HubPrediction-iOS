@@ -478,7 +478,7 @@ describe('finance Soft KEEP', () => {
       ],
       499.48,
     )
-    expect(run['live-win']).toBeCloseTo(500.48)
+    expect(run['live-win']).toBeCloseTo(499.48)
     expect(run['paper-win']).toBeNull()
     expect(run['live-loss']).toBeCloseTo(499.48)
     expect(run['live-open']).toBeCloseTo(499.48)
@@ -581,9 +581,22 @@ describe('finance Soft KEEP', () => {
       ],
       540,
     )
-    expect(walk['win-50']).toBeCloseTo(550)
+    expect(walk['win-50']).toBeCloseTo(540)
     expect(walk['lose-10']).toBeCloseTo(540)
     expect(walk['paper-skip']).toBeNull()
+    const kalshiNow = cashAfterEachBet(
+      [
+        { betId: 'live-a', kind: 'live', status: 'settled', pnl: 50, filledAt: 1, settledAt: 1 },
+        { betId: 'live-b', kind: 'live', status: 'settled', pnl: -19, filledAt: 2, settledAt: 2 },
+        { betId: 'paper-c', kind: 'paper', orderId: 'deskfill-gld-halt01', status: 'settled', pnl: 12, filledAt: 3, settledAt: 3 },
+      ],
+      293.63,
+    )
+    expect(kalshiNow['live-a']).toBeCloseTo(293.63)
+    expect(kalshiNow['live-b']).toBeCloseTo(293.63)
+    expect(kalshiNow['paper-c']).toBeNull()
+    expect(kalshiNow['live-a']).toBe(kalshiNow['live-b'])
+    expect(Math.min(kalshiNow['live-a'] ?? 0, kalshiNow['live-b'] ?? 0)).toBeGreaterThan(0)
   })
 })
 
