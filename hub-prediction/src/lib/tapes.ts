@@ -132,6 +132,8 @@ export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
 export const LIVE_PRINT_MS = 100
 export const LIVE_TRAIL_MS = 60 * 60_000
 export const LIVE_TRAIL_DOTS = 480
+/** Wire last-N only. Client merge keeps the chart. Soft FAIL 480-dot JSON 10×/sec (Node bloat + FEED STALE). */
+export const PRINT_WIRE_DOTS = 12
 export const BOARD_STRUCTURE_MS = 400
 export const BOARD_ROLLOVER_MS = 350
 export const BOARD_CLOSED_MS = 200
@@ -1548,7 +1550,7 @@ export function pointsFromLiveData(payload: unknown): { t: number; px: number }[
     out.sort((a, b) => a.t - b.t)
     const bag = new Map<number, number>()
     for (const p of out) bag.set(p.t, p.px)
-    return [...bag.entries()].map(([t, px]) => ({ t, px })).sort((a, b) => a.t - b.t).slice(-2400)
+    return [...bag.entries()].map(([t, px]) => ({ t, px })).sort((a, b) => a.t - b.t).slice(-LIVE_TRAIL_DOTS)
   }
   const sticks = details.candlesticks
   const groups = sticks && typeof sticks === 'object' ? (sticks as Record<string, unknown>) : null
@@ -1581,7 +1583,7 @@ export function pointsFromLiveData(payload: unknown): { t: number; px: number }[
   out.sort((a, b) => a.t - b.t)
   const bag = new Map<number, number>()
   for (const p of out) bag.set(p.t, p.px)
-  return [...bag.entries()].map(([t, px]) => ({ t, px })).sort((a, b) => a.t - b.t).slice(-2400)
+  return [...bag.entries()].map(([t, px]) => ({ t, px })).sort((a, b) => a.t - b.t).slice(-LIVE_TRAIL_DOTS)
 }
 
 /** Soft KEEP: Kalshi status=open|active and now < close. `active` is the open-filter field. */

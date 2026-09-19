@@ -4,6 +4,29 @@ import { useEffect, useState } from 'react'
 export const DESK_TICK_MS = 100
 /** Visible FEED STALE if prints or the desk clock stop past this. */
 export const FEED_STALE_MS = 2_500
+/** How often the desk re-checks stale. Soft FAIL a 100ms full-tree render just to paint the banner. */
+export const FEED_STALE_CHECK_MS = 400
+
+/** Soft FAIL false-positive stale while a print fetch is still in flight. Soft FAIL silent freeze. */
+export function feedIsStale(opts: {
+  now: number
+  hostReady: boolean
+  force?: boolean
+  lastPrintOkAt: number
+  fetchStartedAt?: number
+  fetching?: boolean
+}): boolean {
+  if (opts.force) return true
+  if (!opts.hostReady) return false
+  const started = opts.fetchStartedAt ?? 0
+  if (!opts.lastPrintOkAt) {
+    return started > 0 && opts.now - started > FEED_STALE_MS
+  }
+  const printAge = opts.now - opts.lastPrintOkAt
+  if (printAge <= FEED_STALE_MS) return false
+  if (opts.fetching && started > 0 && opts.now - started < FEED_STALE_MS * 2) return false
+  return true
+}
 
 type TickFn = (now: number) => void
 

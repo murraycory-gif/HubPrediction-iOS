@@ -13,6 +13,7 @@ import {
   marketTradingActive,
   pointsFromLiveData,
   slimLivePoints,
+  PRINT_WIRE_DOTS,
   num,
   seriesForTape,
   seriesToTape,
@@ -259,7 +260,7 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
     live = prev.live
     liveSource = prev.liveSource
   }
-  const points = mergeRaceTrail(prev?.ticker === ticker ? prev.points : [], incoming, live, now)
+  const points = slimLivePoints(mergeRaceTrail(prev?.ticker === ticker ? prev.points : [], incoming, live, now), now)
 
   return {
     id,
@@ -334,11 +335,14 @@ export async function loadLivePrints(
         }
         const print = lastPrintFromLiveData(livePayload)
         const prev = lastPrints?.tapes[id]
-        const incoming = slimLivePoints(pointsFromLiveData(livePayload), Date.now(), LIVE_TRAIL_MS)
+        const incoming = slimLivePoints(pointsFromLiveData(livePayload), Date.now(), LIVE_TRAIL_MS, PRINT_WIRE_DOTS)
         const live = print?.px ?? prev?.live ?? incoming[incoming.length - 1]?.px ?? null
         const liveSource = print?.source ?? prev?.liveSource ?? (incoming.length ? 'kalshi-timeseries' : null)
         const points = slimLivePoints(
           mergeRaceTrail(prev?.eventTicker === eventTicker ? prev.points : [], incoming, live, Date.now()),
+          Date.now(),
+          LIVE_TRAIL_MS,
+          PRINT_WIRE_DOTS,
         )
         if (
           prev?.eventTicker === eventTicker &&
@@ -409,6 +413,12 @@ export async function loadDeskBoard(clocks: Record<TapeId, TapeClock> = defaultC
       if (quoteHasClock(again)) tapes[id] = again
     }
     latched = latchDeskBoard({ tapes, fetchedAt: Date.now() }, lastBoard) ?? latched
+    for (const id of TAPE_IDS) {
+      const q = latched.tapes[id]
+      if (!q?.points?.length) continue
+      const slim = slimLivePoints(q.points, Date.now())
+      if (slim.length !== q.points.length) latched = { ...latched, tapes: { ...latched.tapes, [id]: { ...q, points: slim } } }
+    }
     lastBoard = latched
     lastBoardAt = boardNeedsRollover(latched, Date.now()) ? 0 : Date.now()
     lastClocksKey = key

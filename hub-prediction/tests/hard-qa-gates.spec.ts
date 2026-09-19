@@ -765,3 +765,34 @@ test('live tick + prints keep moving; stale banner then recover', async ({ page 
   })
   await expect(page.getByTestId('feed-stale')).toHaveCount(0)
 })
+
+test('prints soak ≥10s Soft FAIL FEED STALE under normal poll', async ({ page }) => {
+  test.setTimeout(45_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await expect
+    .poll(async () => page.evaluate(() => Boolean((window as Window & { __HUB_TEST_FEED?: unknown }).__HUB_TEST_FEED)), {
+      timeout: 20_000,
+    })
+    .toBe(true)
+  const start = await page.evaluate(() => {
+    const w = window as Window & { __HUB_TEST_FEED?: { printFetches: () => number; stale: () => boolean } }
+    return { fetches: w.__HUB_TEST_FEED!.printFetches(), stale: w.__HUB_TEST_FEED!.stale() }
+  })
+  expect(start.stale).toBe(false)
+  await page.waitForTimeout(10_200)
+  const end = await page.evaluate(() => {
+    const w = window as Window & { __HUB_TEST_FEED?: { printFetches: () => number; stale: () => boolean } }
+    return {
+      fetches: w.__HUB_TEST_FEED!.printFetches(),
+      stale: w.__HUB_TEST_FEED!.stale(),
+      banner: Boolean(document.querySelector('[data-testid="feed-stale"]')),
+      flag: document.querySelector('[data-testid="desk"]')?.getAttribute('data-feed-stale'),
+    }
+  })
+  expect(end.fetches).toBeGreaterThan(start.fetches)
+  expect(end.stale).toBe(false)
+  expect(end.banner).toBe(false)
+  expect(end.flag).toBe('0')
+})
