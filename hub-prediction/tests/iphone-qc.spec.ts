@@ -888,6 +888,67 @@ test('Live cash ON toggle runs liveArmGate — Soft FAIL enable if !ok', async (
   await setToggle(page, 'live-cash-btc', false)
 })
 
+test('Live send skips ask ≥80 unlocked', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  const gate = await page.evaluate(() => {
+    const api = (
+      window as Window & {
+        __HUB_LIVE_ASK?: {
+          askAllowedByGold: (tape: string, ask: number, opts?: { locked?: boolean }) => boolean
+          liveSendGate: (
+            state: { killed: boolean; paperStartedAt: number; bets: unknown[] },
+            opts: { tape: string; ticker: string; ask: number; cash: number; deposits: number; spent: number; locked?: boolean },
+          ) => { ok: true } | { ok: false; reason: string }
+          emptyFinance: () => { killed: boolean; paperStartedAt: number; bets: unknown[] }
+          ASK_CAP: number
+        }
+      }
+    ).__HUB_LIVE_ASK
+    if (!api) return null
+    const book = api.emptyFinance()
+    return {
+      cap: api.ASK_CAP,
+      unlocked79: api.askAllowedByGold('btc', 79),
+      unlocked80: api.askAllowedByGold('btc', 80),
+      unlocked82: api.askAllowedByGold('btc', 82),
+      locked82: api.askAllowedByGold('btc', 82, { locked: true }),
+      ng80: api.askAllowedByGold('ng', 80),
+      cu80: api.askAllowedByGold('cu', 80),
+      gld80: api.askAllowedByGold('gld', 80),
+      send82: api.liveSendGate(book, {
+        tape: 'btc',
+        ticker: 'KXBTC15M-ASK80',
+        ask: 82,
+        cash: 400,
+        deposits: 760,
+        spent: 0.82,
+      }),
+      send79: api.liveSendGate(book, {
+        tape: 'btc',
+        ticker: 'KXBTC15M-ASK79',
+        ask: 79,
+        cash: 400,
+        deposits: 760,
+        spent: 0.79,
+      }),
+    }
+  })
+  expect(gate).toBeTruthy()
+  expect(gate?.cap).toBe(80)
+  expect(gate?.unlocked79).toBe(true)
+  expect(gate?.unlocked80).toBe(false)
+  expect(gate?.unlocked82).toBe(false)
+  expect(gate?.locked82).toBe(true)
+  expect(gate?.ng80).toBe(false)
+  expect(gate?.cu80).toBe(false)
+  expect(gate?.gld80).toBe(false)
+  expect(gate?.send82.ok).toBe(false)
+  if (gate && !gate.send82.ok) expect(gate.send82.reason).toMatch(/skip/)
+  expect(gate?.send79.ok).toBe(true)
+})
+
 test('Live cash ON survives reload; no master Live switch', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })

@@ -369,7 +369,7 @@ export function tapeHitCell(
     else if (e.pnl != null && e.pnl !== 0) byTicker.set(e.ticker, e.pnl > 0)
   }
   for (const b of bets) {
-    if (isHistBet(b)) continue
+    if (isHistBet(b) || isPaperBet(b)) continue
     if (b.tape !== id || b.status !== 'settled' || betStamp(b) < from) continue
     const ticker = typeof b.ticker === 'string' && b.ticker ? b.ticker : ''
     if (!ticker || byTicker.has(ticker)) continue
@@ -425,12 +425,18 @@ export function paper48hPassed(state: FinanceState, now = Date.now()) {
   return paperHoursLeft(state, now) <= 0
 }
 
-/** Soft FAIL asks ≥80¢ unless the gold lock band includes that ask. */
-export function askAllowedByGold(tape: TapeId, ask: number) {
+/** Live effective ask cap. Factory centHi 89 does not unlock ≥80. */
+export const LIVE_ASK_HI = ASK_CAP - 1
+
+/** Soft FAIL Live ask ≥80¢ unless the book is explicitly locked. Soft FAIL treating factory centHi 89 as that lock. */
+export function askAllowedByGold(tape: TapeId, ask: number, opts?: { locked?: boolean }) {
   if (!Number.isFinite(ask)) return false
   const gold = GOLD_RECIPES[tape]
-  if (ask >= ASK_CAP && (ask < gold.centLo || ask > gold.centHi)) return false
-  return ask >= gold.centLo && ask <= gold.centHi
+  if (ask >= ASK_CAP) {
+    if (opts?.locked !== true) return false
+    return ask >= gold.centLo && ask <= gold.centHi
+  }
+  return ask >= gold.centLo && ask <= Math.min(gold.centHi, LIVE_ASK_HI)
 }
 
 export function recommendSize(tape: TapeId) {
@@ -625,13 +631,14 @@ export function liveSendGate(
     cash: number | null
     deposits: number | null
     spent: number
+    locked?: boolean
   },
   now = Date.now(),
 ): Gate {
   if (state.killed) return { ok: false, reason: 'KILL on — Place blocked until cleared' }
   if (!opts.ticker) return { ok: false, reason: 'No ticker' }
-  if (!askAllowedByGold(opts.tape, opts.ask)) {
-    return { ok: false, reason: `Ask ${opts.ask}¢ blocked (≥${ASK_CAP} unless gold lock)` }
+  if (!askAllowedByGold(opts.tape, opts.ask, { locked: opts.locked === true })) {
+    return { ok: false, reason: `Ask ${opts.ask}¢ skip (≥${ASK_CAP} unless locked)` }
   }
   const daily = deskDailyRealizedPnl(state, now)
   if (daily <= DAILY_PNL_FLOOR_PAPER) {

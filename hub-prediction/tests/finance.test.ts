@@ -90,15 +90,26 @@ describe('finance Soft KEEP', () => {
     }
   })
 
-  it('Soft FAIL asks ≥80¢ unless gold lock includes them', () => {
-    expect(askAllowedByGold('btc', 82)).toBe(true)
-    expect(askAllowedByGold('btc', 92)).toBe(false)
+  it('Soft FAIL asks ≥80¢ unless the book is locked — factory 89 is not a lock', () => {
+    expect(askAllowedByGold('btc', 79)).toBe(true)
+    expect(askAllowedByGold('btc', 80)).toBe(false)
+    expect(askAllowedByGold('btc', 82)).toBe(false)
+    expect(askAllowedByGold('btc', 82, { locked: true })).toBe(true)
+    expect(askAllowedByGold('btc', 92, { locked: true })).toBe(false)
     expect(askAllowedByGold('ng', 30)).toBe(false)
+    expect(askAllowedByGold('ng', 80)).toBe(false)
+    expect(askAllowedByGold('cu', 80)).toBe(false)
+    expect(askAllowedByGold('gld', 80)).toBe(false)
     const blocked = liveSendGate(emptyFinance(), {
-      tape: 'btc', ticker: 'KXBTC15M-1', ask: 92, cash: 400, deposits: 760, spent: 0.92,
+      tape: 'btc', ticker: 'KXBTC15M-1', ask: 82, cash: 400, deposits: 760, spent: 0.82,
     })
     expect(blocked.ok).toBe(false)
+    if (!blocked.ok) expect(blocked.reason).toMatch(/skip/)
     if (!blocked.ok) expect(blocked.reason).toMatch(new RegExp(String(ASK_CAP)))
+    const locked = liveSendGate(emptyFinance(), {
+      tape: 'btc', ticker: 'KXBTC15M-1', ask: 82, cash: 400, deposits: 760, spent: 0.82, locked: true,
+    })
+    expect(locked.ok).toBe(true)
     const over = liveSendGate(emptyFinance(), {
       tape: 'btc', ticker: 'KXBTC15M-1', ask: 72, cash: 400, deposits: 760, spent: CLOCK_MAX_SPEND + 1,
     })
@@ -439,7 +450,7 @@ describe('finance Soft KEEP', () => {
     expect(cu?.kind).toBe('hist')
   })
 
-  it('counts paper in hit W–L only — live-only P&L and placed', () => {
+  it('splits paper TTL from Kalshi settle W–L — live-only P&L and placed', () => {
     const now = Date.now()
     const hits = { tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } } }
     const paper = bookFill(emptyFinance(), {
@@ -484,14 +495,14 @@ describe('finance Soft KEEP', () => {
     }
     const all = last24hBets(live, hits, now)
     expect(all.w).toBe(1)
-    expect(all.l).toBe(1)
+    expect(all.l).toBe(0)
     expect(all.placed).toBeCloseTo(10)
     expect(all.pnl).toBeCloseTo(5)
     expect(bookRealizedPnl(live)).toBeCloseTo(5)
     expect(chasingLosses(withPaper, now)).toBe(false)
     const cu = last24hBets(live, hits, now, ['cu'])
     expect(cu.w).toBe(0)
-    expect(cu.l).toBe(1)
+    expect(cu.l).toBe(0)
     expect(cu.placed).toBe(0)
     expect(cu.pnl).toBe(0)
     const hydrated = hydrateFinance(live)
@@ -615,6 +626,9 @@ describe('finance Soft KEEP', () => {
         settledAt: now,
         closeAt: now,
         filledAt: now,
+        kind: 'live' as const,
+        orderId: 'ord-gld-a',
+        betId: 'bet_ord-gld-a',
       },
       {
         tape: 'gld' as const,
@@ -624,6 +638,9 @@ describe('finance Soft KEEP', () => {
         settledAt: now,
         closeAt: now,
         filledAt: now,
+        kind: 'live' as const,
+        orderId: 'ord-gld-b',
+        betId: 'bet_ord-gld-b',
       },
       {
         tape: 'gld' as const,
@@ -633,9 +650,30 @@ describe('finance Soft KEEP', () => {
         settledAt: now,
         closeAt: now,
         filledAt: now,
+        kind: 'live' as const,
+        orderId: 'ord-gld-c',
+        betId: 'bet_ord-gld-c',
       },
     ]
     expect(tapeHitCell('gld', staleGld, gldBook, now)).toEqual({ w: 2, l: 1 })
+    expect(
+      tapeHitCell(
+        'gld',
+        staleGld,
+        [
+          {
+            tape: 'gld' as const,
+            ticker: 'KXGOLD15M-PAPER',
+            status: 'settled' as const,
+            pnl: -8,
+            settledAt: now,
+            kind: 'paper' as const,
+            orderId: 'deskfill-gld-ttl',
+          },
+        ],
+        now,
+      ),
+    ).toEqual({ w: 0, l: 2 })
     expect(betKind({ betId: 'bet_ord-real-12345', orderId: 'ord-real-12345', kind: 'live' })).toBe('live')
     const importedCash = cashAfterEachBet(
       [

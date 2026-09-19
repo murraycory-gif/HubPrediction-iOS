@@ -51,7 +51,7 @@ export function FinancePanel(props: {
         </div>
       </div>
       <p className="tape-line" data-testid="finance-stack">
-        Return stack · tab-open fill · real order id · one ticket/clock · ≥{ASK_CAP}¢ needs gold lock · KILL{' '}
+        Return stack · tab-open fill · real order id · one ticket/clock · skip ≥{ASK_CAP}¢ unless locked · KILL{' '}
         {props.book.killed ? 'ON' : 'off'} · paper {paper48hPassed(props.book) ? '48h PASS' : `${paperLeft.toFixed(1)}h / ${PAPER_HOURS}h`}
       </p>
       <div className="settings-toggles">

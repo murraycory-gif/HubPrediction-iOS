@@ -185,6 +185,11 @@ export const placeKalshi = createServerFn({ method: 'POST' })
       hasKeys: Boolean(creds),
     })
     if (!gate.ok) throw new Error(gate.reason)
+    const { askAllowedByGold } = await import('./finance')
+    const ask = data.side === 'down' ? data.noAsk : data.yesAsk
+    if (data.tape && !askAllowedByGold(data.tape, ask)) {
+      throw new Error(`Ask ${ask}¢ skip (≥80 unless locked)`)
+    }
     return placeContract({
       ticker: data.ticker,
       side: data.side,

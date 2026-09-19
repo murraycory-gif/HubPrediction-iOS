@@ -94,6 +94,9 @@ import {
   paperFillAllowed,
   liveSendGate,
   liveArmGateForDesk,
+  askAllowedByGold,
+  ASK_CAP,
+  emptyFinance,
   loadFinance,
   recipeRetuneGate,
   hitFloorGate,
@@ -132,6 +135,21 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const sentRef = useRef<Record<string, SendClaim>>({})
   const lastLocalWrite = useRef(0)
   const wall = useDeskTick()
+
+  useEffect(() => {
+    const w = window as Window & {
+      __HUB_LIVE_ASK?: {
+        askAllowedByGold: typeof askAllowedByGold
+        liveSendGate: typeof liveSendGate
+        emptyFinance: typeof emptyFinance
+        ASK_CAP: number
+      }
+    }
+    w.__HUB_LIVE_ASK = { askAllowedByGold, liveSendGate, emptyFinance, ASK_CAP }
+    return () => {
+      delete w.__HUB_LIVE_ASK
+    }
+  }, [])
 
   function applyCashAndSettlements(r: {
     cash?: number | null
@@ -654,7 +672,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe })
       if (lean === 'sit') continue
       const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
-      if (!askInBand(ask, recipe)) continue
+      if (liveCash) {
+        if (!askAllowedByGold(id, ask)) continue
+      } else if (!askInBand(ask, recipe)) {
+        continue
+      }
       const key = `${id}:${quote.ticker}`
       const paperRehab = isRehabPaper(rehab, id)
       const recent = recentLiveTapeWL(book.bets, id, 12)
@@ -778,7 +800,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                   hostCreds,
                   tradingActive: quoteIsLiveClock(quote),
                   inArm: quote?.closeAt ? inArmWindow(recipe, quote.closeAt) : false,
-                  askOk: ask != null && askInBand(ask, recipe),
+                  askOk:
+                    ask != null &&
+                    (recipe.liveOn ? askAllowedByGold(id, ask) : askInBand(ask, recipe)),
                   lean,
                   hitOk: hitFloorGate(cell.w, cell.l).ok,
                   armFromMin: recipe.armFromMin,
