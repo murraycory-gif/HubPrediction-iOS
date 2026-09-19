@@ -1,7 +1,9 @@
 import {
   ASK_CAP,
+  DAILY_PNL_FLOOR_PAPER,
   PAPER_HOURS,
   bookRealizedPnl,
+  dailyPnlFloorHit,
   liveCashFloor,
   paper48hPassed,
   paperCashFloor,
@@ -60,7 +62,11 @@ export function FinancePanel(props: {
           Clear KILL
         </button>
         <span className="settings-cash" data-testid="finance-kill-state">
-          {props.book.killed ? 'KILL on — bots disarmed, Place blocked' : 'KILL off'}
+          {dailyPnlFloorHit(props.book)
+            ? `floor hit — daily P/L ≤ ${DAILY_PNL_FLOOR_PAPER}. KILL on. Place blocked.`
+            : props.book.killed
+              ? 'KILL on — bots disarmed, Place blocked'
+              : 'KILL off'}
         </span>
       </div>
       <div className="analyst-grid">

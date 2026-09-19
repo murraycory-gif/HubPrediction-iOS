@@ -93,15 +93,18 @@ import {
   liveBotCall,
   paperFillAllowed,
   liveSendGate,
+  liveArmGateForDesk,
   loadFinance,
   recipeRetuneGate,
   hitFloorGate,
   recentLiveTapeWL,
   settleBook,
   syncTicketsIntoBook,
+  dailyPnlFloorHit,
+  DAILY_PNL_FLOOR_PAPER,
   type FinanceState,
 } from '../lib/finance'
-import { analyzeDesk, isRehabPaper, loadAutoState, runAutoAnalyst, type AnalystAutoState } from '../lib/analyst'
+import { acceptAnalystRecipe, analyzeDesk, isRehabPaper, loadAutoState, runAutoAnalyst, type AnalystAutoState } from '../lib/analyst'
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { readTestCloseClock } from '../lib/close-clock'
@@ -681,6 +684,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   useEffect(() => {
     if (!hostReady || book.killed) return
+    if (!dailyPnlFloorHit(book)) return
+    setBook(engageKill(book))
+    setSettings(disarmAllBots(loadSettings()))
+    setMsg(`floor hit — daily P/L ≤ ${DAILY_PNL_FLOOR_PAPER}. KILL on. Place blocked.`)
+  }, [hostReady, book])
+
+  useEffect(() => {
+    if (!hostReady || book.killed) return
     const stored = loadSettings()
     const report = analyzeDesk(board ?? null, hits, book.bets, stored.tapes)
     const next = runAutoAnalyst({
@@ -782,6 +793,17 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                   setMsg('KILL on — bots stay off')
                   return
                 }
+                if (patch.liveOn === true) {
+                  const arm = liveArmGateForDesk(book, {
+                    cash: cash.cash,
+                    deposits: cash.deposits,
+                    hasKeys: hostCreds,
+                  })
+                  if (!arm.ok) {
+                    setMsg(arm.reason)
+                    return
+                  }
+                }
                 const gate = recipeRetuneGate(book, patch)
                 if (!gate.ok) {
                   setMsg(gate.reason)
@@ -844,6 +866,15 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             events={liveEvents}
             killed={book.killed}
             rehab={rehab}
+            onAccept={(id, proposed) => {
+              const next = acceptAnalystRecipe(loadSettings(), id, proposed, book)
+              if (!next.ok) {
+                setMsg(next.reason)
+                return
+              }
+              setSettings(next.settings)
+              setMsg(`${TAPE_META[id].label} recipe accepted`)
+            }}
           />
         ) : null}
         {financeOpen ? (
@@ -863,6 +894,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           />
         ) : null}
 
+        {book.killed && dailyPnlFloorHit(book) ? (
+          <p className="desk-msg" data-testid="floor-hit">
+            floor hit — daily P/L ≤ {DAILY_PNL_FLOOR_PAPER}. KILL on. Place blocked.
+          </p>
+        ) : null}
+
         {msg ? <p className="desk-msg" data-testid="desk-msg">{msg}</p> : null}
 
         {settingsOpen ? (
@@ -874,6 +911,17 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               if (book.killed && patch.botOn) {
                 setMsg('KILL on — bots stay off')
                 return
+              }
+              if (patch.liveOn === true) {
+                const arm = liveArmGateForDesk(book, {
+                  cash: cash.cash,
+                  deposits: cash.deposits,
+                  hasKeys: hostCreds,
+                })
+                if (!arm.ok) {
+                  setMsg(arm.reason)
+                  return
+                }
               }
               const gate = recipeRetuneGate(book, patch)
               if (!gate.ok) {
@@ -898,6 +946,7 @@ function AnalystDesk({
   events,
   killed,
   rehab,
+  onAccept,
 }: {
   board: DeskBoard | null
   hits: ReturnType<typeof loadHits>
@@ -906,6 +955,7 @@ function AnalystDesk({
   events: Partial<Record<TapeId, string>>
   killed: boolean
   rehab: AnalystAutoState
+  onAccept: (id: TapeId, proposed: TapeRecipe) => void
 }) {
   const liveSig = TAPE_IDS.map((id) => {
     const q = board?.tapes[id]
@@ -935,6 +985,7 @@ function AnalystDesk({
       briefs={briefQuery.data ?? null}
       killed={killed}
       rehab={rehab}
+      onAccept={onAccept}
     />
   )
 }

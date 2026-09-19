@@ -66,6 +66,7 @@ export const LIVE_FLOOR_PCT = 0.2
 export const ASK_CAP = 80
 export const PAPER_HOURS = 48
 export const DAILY_PNL_FLOOR_PAPER = -50
+export const CLOCK_MAX_SPEND = 25
 export const HIT_FLOOR = 83
 
 export type BetKind = 'live' | 'paper' | 'hist'
@@ -474,6 +475,21 @@ export function collapseClockBets(state: FinanceState): FinanceState {
 
 export type Gate = { ok: true } | { ok: false; reason: string }
 
+export function readTestLiveArm(): Gate | null {
+  if (typeof window === 'undefined') return null
+  const v = (window as Window & { __HUB_TEST_LIVE_ARM?: Gate }).__HUB_TEST_LIVE_ARM
+  if (!v || typeof v !== 'object' || !('ok' in v)) return null
+  return v
+}
+
+export function liveArmGateForDesk(
+  state: FinanceState,
+  opts: { cash: number | null; deposits: number | null; hasKeys: boolean },
+  now = Date.now(),
+): Gate {
+  return readTestLiveArm() ?? liveArmGate(state, opts, now)
+}
+
 export function liveArmGate(
   state: FinanceState,
   opts: { cash: number | null; deposits: number | null; hasKeys: boolean },
@@ -619,7 +635,10 @@ export function liveSendGate(
   }
   const daily = deskDailyRealizedPnl(state, now)
   if (daily <= DAILY_PNL_FLOOR_PAPER) {
-    return { ok: false, reason: `Daily P/L floor ${DAILY_PNL_FLOOR_PAPER} — KILL / sit` }
+    return { ok: false, reason: `Daily P/L floor ${DAILY_PNL_FLOOR_PAPER} — floor hit` }
+  }
+  if (opts.spent > CLOCK_MAX_SPEND) {
+    return { ok: false, reason: `Clock spend $${opts.spent} over $${CLOCK_MAX_SPEND} cap` }
   }
   const floor = liveCashFloor(opts.deposits)
   if (Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) - opts.spent < floor) {
@@ -1017,6 +1036,10 @@ export function settleBook(
     }
   })
   return changed ? saveFinance({ ...state, bets }) : state
+}
+
+export function dailyPnlFloorHit(state: FinanceState, now = Date.now()) {
+  return deskDailyRealizedPnl(state, now) <= DAILY_PNL_FLOOR_PAPER
 }
 
 export function engageKill(state: FinanceState) {

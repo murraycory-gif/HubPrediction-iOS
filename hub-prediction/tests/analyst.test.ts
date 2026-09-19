@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   analyzeDesk,
+  acceptAnalystRecipe,
   applyAnalystAccept,
   applyDraftsToLiveSettings,
   consecutiveLosses,
@@ -109,7 +110,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
     expect(() => applyDraftsToLiveSettings()).toThrow(/must not apply paper drafts to LIVE/)
   })
 
-  it('auto recipe write leaves Live OFF and does not arm live cash', () => {
+  it('Accept recipe write leaves Live OFF and does not arm live cash', () => {
     const start = loadSettings()
     expect(start.tapes.btc.through).toBe(40)
     const next = applyAnalystAccept(start, 'btc', { ...GOLD_RECIPES.btc, through: 46, botOn: true, liveOn: true })
@@ -122,7 +123,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
     expect(GOLD_RECIPES.btc.through).toBe(40)
   })
 
-  it('recipe auto-write keeps user Live cash ON and contracts', () => {
+  it('Accept recipe write keeps user Live cash ON and contracts', () => {
     const armed = patchTape(loadSettings(), 'btc', { liveOn: true, botOn: true, contracts: 17 })
     expect(armed.tapes.btc.liveOn).toBe(true)
     const next = applyAnalystAccept(armed, 'btc', { ...GOLD_RECIPES.btc, through: 46, liveOn: false, contracts: 1 })
@@ -305,7 +306,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     expect(consecutiveLosses([settled('btc', -1, now), settled('btc', 1, now - 1)], 'btc')).toBe(1)
   })
 
-  it('auto-applies an 83% retune once per book change and never arms master Live', () => {
+  it('proposes an 83% retune and does not auto-apply into Live recipes', () => {
     const now = Date.now()
     const bets = [
       { tape: 'btc' as const, side: 'up' as const, ask: 72, pnl: 0.28, status: 'settled' as const, filledAt: now - 1000, settledAt: now - 500, closeAt: now + 4 * 60_000, betId: 'a' },
@@ -316,15 +317,59 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
       tapes: { btc: { ...GOLD_RECIPES.btc, botOn: true, liveOn: false } },
     })
     const report = analyzeDesk(board({ btc: quote('btc', 76600, 76500) }), emptyHits(), bets, start.tapes)
-    expect(report.tapes.find((t) => t.id === 'btc')?.changed).toBe(true)
+    const note = report.tapes.find((t) => t.id === 'btc')
+    expect(note?.changed).toBe(true)
     const first = runAutoAnalyst({ settings: start, report, bets, rehab: emptyAutoState() })
     expect(first.didChange).toBe(true)
-    expect(first.settings.tapes.btc.through).toBeLessThan(40)
+    expect(first.settings.tapes.btc.through).toBe(start.tapes.btc.through)
+    expect(first.settings.tapes.btc.through).toBe(40)
+    expect(first.settings.tapes.btc.armFromMin).toBe(start.tapes.btc.armFromMin)
+    expect(first.settings.tapes.btc.centLo).toBe(start.tapes.btc.centLo)
+    expect(first.msg).toMatch(/proposed rules — Accept to apply/)
     expect(first.settings).not.toHaveProperty('liveBets')
     expect(first.settings.tapes.btc.liveOn).toBe(false)
     const again = runAutoAnalyst({ settings: first.settings, report, bets, rehab: first.rehab })
     expect(again.didChange).toBe(false)
-    expect(again.settings.tapes.btc.through).toBe(first.settings.tapes.btc.through)
+    expect(again.settings.tapes.btc.through).toBe(40)
+    const accepted = acceptAnalystRecipe(start, 'btc', note!.nextRecipe, {
+      killed: false,
+      paperStartedAt: 1,
+      bets: [],
+    })
+    expect(accepted.ok).toBe(true)
+    if (accepted.ok) {
+      expect(accepted.settings.tapes.btc.through).not.toBe(40)
+      expect(accepted.settings.tapes.btc.liveOn).toBe(false)
+    }
+    const liveOn = patchTape(start, 'btc', { liveOn: true, botOn: true })
+    const liveReport = analyzeDesk(board({ btc: quote('btc', 76600, 76500) }), emptyHits(), bets, liveOn.tapes)
+    const autoLive = runAutoAnalyst({ settings: liveOn, report: liveReport, bets, rehab: emptyAutoState() })
+    expect(autoLive.settings.tapes.btc.through).toBe(liveOn.tapes.btc.through)
+    expect(autoLive.settings.tapes.btc.liveOn).toBe(true)
+    const chasing = acceptAnalystRecipe(start, 'btc', note!.nextRecipe, {
+      killed: false,
+      paperStartedAt: 1,
+      bets: [
+        {
+          betId: 'bet_loss',
+          tape: 'btc',
+          ticker: 'KXBTC15M-1',
+          clock: '15m',
+          closeAt: now,
+          side: 'up',
+          count: 1,
+          ask: 72,
+          spent: 0.72,
+          orderId: 'ord-loss-accept',
+          status: 'settled',
+          pnl: -0.72,
+          filledAt: now - 1000,
+          settledAt: now,
+          kind: 'live',
+        },
+      ],
+    }, now)
+    expect(chasing.ok).toBe(false)
   })
 
   it('halts live cash after 3 losses, papers 12, then restores at 83%', () => {
@@ -337,6 +382,8 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     const halted = runAutoAnalyst({ settings: armed, report, bets: losses, rehab: emptyAutoState(), now })
     expect(isRehabPaper(halted.rehab, 'btc')).toBe(true)
     expect(halted.settings.tapes.btc.liveOn).toBe(true)
+    expect(halted.settings.tapes.btc.through).toBe(armed.tapes.btc.through)
+    expect(halted.settings.tapes.btc.armFromMin).toBe(armed.tapes.btc.armFromMin)
     expect(halted.settings).not.toHaveProperty('liveBets')
     expect(halted.rehab.tapes.btc?.liveWasOn).toBe(true)
     expect(REHAB_PAPER_RUNS).toBe(12)

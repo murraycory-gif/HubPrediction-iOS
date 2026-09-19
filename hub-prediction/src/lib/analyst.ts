@@ -18,7 +18,7 @@ import {
   type TapeRecipe,
 } from './tapes'
 import { deskStorage } from './desk-storage'
-import { HIT_FLOOR, isKalshiRecordedBet, isPaperBet } from './finance'
+import { HIT_FLOOR, isKalshiRecordedBet, isPaperBet, recipeRetuneGate, type FinanceState } from './finance'
 import type { DeskBoard } from './types'
 
 export const PAPER_DRAFTS_KEY = 'hub.desk.analyst.paper.v1'
@@ -383,7 +383,7 @@ export function analyzeDesk(
   const summary =
     retunes === 0
       ? `Goal ${HIT_FLOOR}% win ratio. All four desks match the book. Rules stay. 3-loss HALT papers the tape — Live cash stays as the user left it.`
-      : `Goal ${HIT_FLOOR}% win ratio. ${retunes} desk${retunes === 1 ? '' : 's'} retune automatically. No Accept / Deny. Live cash only moves on a 3-loss halt or an ${HIT_FLOOR}% paper restore.`
+      : `Goal ${HIT_FLOOR}% win ratio. ${retunes} desk${retunes === 1 ? '' : 's'} proposed — Accept to apply. Soft FAIL auto-write into Live recipes.`
 
   return {
     liveTouched: false,
@@ -465,7 +465,7 @@ export function listDeniedRecs() {
   return loadDenied()
 }
 
-/** Auto recipe write — recipe only. Soft FAIL flipping Live cash. */
+/** Accept button write — recipe only. Soft FAIL flipping Live cash. Soft FAIL auto-call. */
 export function applyAnalystAccept(settings: DeskSettings, id: TapeId, proposed: TapeRecipe): DeskSettings {
   const gold = GOLD_RECIPES[id]
   const next = clampTapeRecipe(id, proposed, gold)
@@ -476,6 +476,31 @@ export function applyAnalystAccept(settings: DeskSettings, id: TapeId, proposed:
     centLo: next.centLo,
     centHi: next.centHi,
   })
+}
+
+/** Accept + recipeRetuneGate. Soft FAIL auto-retune. Soft FAIL flipping liveOn. */
+export function acceptAnalystRecipe(
+  settings: DeskSettings,
+  id: TapeId,
+  proposed: TapeRecipe,
+  book: FinanceState,
+  now = Date.now(),
+): { ok: true; settings: DeskSettings } | { ok: false; reason: string } {
+  const gold = GOLD_RECIPES[id]
+  const next = clampTapeRecipe(id, proposed, gold)
+  const gate = recipeRetuneGate(
+    book,
+    {
+      armFromMin: next.armFromMin,
+      armToMin: next.armToMin,
+      through: next.through,
+      centLo: next.centLo,
+      centHi: next.centHi,
+    },
+    now,
+  )
+  if (!gate.ok) return gate
+  return { ok: true, settings: applyAnalystAccept(settings, id, proposed) }
 }
 
 /** Hard stop — analyst never copies a draft onto live cash / Live ON. */
@@ -765,7 +790,6 @@ export function runAutoAnalyst(opts: {
     if (!active && streak >= LOSS_STREAK_HALT) {
       const liveWasOn = settings.tapes[id].liveOn === true
       if (note.changed) {
-        settings = applyAnalystAccept(settings, id, note.nextRecipe)
         rehab = {
           ...rehab,
           lastAuto: { ...rehab.lastAuto, [id]: { token: note.token, betSig: sig } },
@@ -789,7 +813,6 @@ export function runAutoAnalyst(opts: {
       )
       if (paperStreak >= LOSS_STREAK_HALT) {
         if (note.changed) {
-          settings = applyAnalystAccept(settings, id, note.nextRecipe)
           rehab = {
             ...rehab,
             lastAuto: { ...rehab.lastAuto, [id]: { token: note.token, betSig: sig } },
@@ -819,12 +842,11 @@ export function runAutoAnalyst(opts: {
     }
 
     if (note.changed && rehab.lastAuto[id]?.betSig !== sig) {
-      settings = applyAnalystAccept(settings, id, note.nextRecipe)
       rehab = {
         ...rehab,
         lastAuto: { ...rehab.lastAuto, [id]: { token: note.token, betSig: sig } },
       }
-      notes.push(`${TAPE_META[id].label} rules auto-updated for the ${HIT_FLOOR}% path`)
+      notes.push(`${TAPE_META[id].label} proposed rules — Accept to apply. Live recipe unchanged.`)
     }
   }
 

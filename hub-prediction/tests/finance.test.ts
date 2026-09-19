@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   ASK_CAP,
+  CLOCK_MAX_SPEND,
+  DAILY_PNL_FLOOR_PAPER,
   HIT_FLOOR,
   LIVE_FLOOR_MIN,
   hitFloorGate,
@@ -16,6 +18,9 @@ import {
   tapeBotNote,
   liveCashFloor,
   liveSendGate,
+  liveArmGateForDesk,
+  dailyPnlFloorHit,
+  engageKill,
   paper48hPassed,
   paperCashFloor,
   pnlVsDeposits,
@@ -94,6 +99,52 @@ describe('finance Soft KEEP', () => {
     })
     expect(blocked.ok).toBe(false)
     if (!blocked.ok) expect(blocked.reason).toMatch(new RegExp(String(ASK_CAP)))
+    const over = liveSendGate(emptyFinance(), {
+      tape: 'btc', ticker: 'KXBTC15M-1', ask: 72, cash: 400, deposits: 760, spent: CLOCK_MAX_SPEND + 1,
+    })
+    expect(over.ok).toBe(false)
+    if (!over.ok) expect(over.reason).toMatch(/Clock spend/)
+    const under = liveSendGate(
+      { ...emptyFinance(), paperStartedAt: Date.now() - 49 * 3600_000 },
+      { tape: 'btc', ticker: 'KXBTC15M-1', ask: 72, cash: 400, deposits: 760, spent: 8 },
+    )
+    expect(under.ok).toBe(true)
+    expect(CLOCK_MAX_SPEND).toBe(25)
+  })
+
+  it('daily P/L floor is a visible kill, not a silent Place-block', () => {
+    const now = Date.now()
+    const hit = {
+      ...emptyFinance(),
+      bets: [
+        {
+          betId: 'bet_floor',
+          tape: 'btc' as const,
+          ticker: 'KXBTC15M-F',
+          clock: '15m',
+          closeAt: now,
+          side: 'up' as const,
+          count: 1,
+          ask: 72,
+          spent: 0.72,
+          orderId: 'ord-floor-1',
+          status: 'settled' as const,
+          pnl: DAILY_PNL_FLOOR_PAPER,
+          filledAt: now - 1000,
+          settledAt: now,
+          kind: 'live' as const,
+        },
+      ],
+    }
+    expect(dailyPnlFloorHit(hit, now)).toBe(true)
+    const gated = liveSendGate(hit, {
+      tape: 'btc', ticker: 'KXBTC15M-2', ask: 72, cash: 400, deposits: 760, spent: 0.72,
+    }, now)
+    expect(gated.ok).toBe(false)
+    if (!gated.ok) expect(gated.reason).toMatch(/floor hit/)
+    const killed = engageKill(hit)
+    expect(killed.killed).toBe(true)
+    expect(hit.bets[0]).not.toHaveProperty('liveOn')
   })
 
   it('Soft FAIL Live ON before paper 48h and under cash floor', () => {
@@ -125,6 +176,7 @@ describe('finance Soft KEEP', () => {
       })),
     }
     expect(liveArmGate(bookReady, { cash: 293.36, deposits: 760, hasKeys: true }).ok).toBe(true)
+    expect(liveArmGateForDesk(fresh, { cash: 293.36, deposits: 760, hasKeys: true }).ok).toBe(false)
   })
 
   it('does not send Kalshi orders', () => {

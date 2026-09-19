@@ -22,6 +22,8 @@ import {
   TAPE_META,
   type DeskSettings,
   type HitLatch,
+  type TapeId,
+  type TapeRecipe,
 } from '../lib/tapes'
 import type { DeskBoard } from '../lib/types'
 
@@ -34,6 +36,7 @@ export function AnalystPanel({
   briefs,
   rehab,
   killed,
+  onAccept,
 }: {
   board: DeskBoard | null
   hits: HitLatch
@@ -43,6 +46,7 @@ export function AnalystPanel({
   briefs?: DeskBriefsPayload | null
   rehab: AnalystAutoState
   killed?: boolean
+  onAccept?: (id: TapeId, proposed: TapeRecipe) => void
 }) {
   const report = useMemo(
     () => analyzeDesk(board, hits, bets, settings.tapes, paths),
@@ -53,11 +57,11 @@ export function AnalystPanel({
 
   return (
     <section className="analyst" data-testid="analyst">
-      <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal · auto</p>
+      <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal · drafts</p>
       <p className="settings-note" data-testid="analyst-lock">
-        Each tape has its own desk chief. Rules update automatically toward {HIT_FLOOR}%. More than two
-        losses in a row halt that desk’s live cash, load the new settings, and paper-test {REHAB_PAPER_RUNS}{' '}
-        consistent runs. At {HIT_FLOOR}% live cash comes back. No Accept / Deny.
+        Each tape has its own desk chief. Analyst proposes paper drafts only. Accept writes a recipe after
+        the retune gate. Soft FAIL auto-apply into Live recipes. More than two losses halt that desk for
+        paper rehab — Live cash stays as you left it. Paper-test {REHAB_PAPER_RUNS} consistent runs.
       </p>
       <div className="analyst-grid">
         {report.tapes.map((t) => {
@@ -97,7 +101,7 @@ export function AnalystPanel({
               <div className="analyst-block" data-testid={`analyst-proposed-${t.id}`}>
                 <p className="analyst-report-label">Proposed</p>
                 <p className="tape-recipe" data-testid={`analyst-next-${t.id}`}>
-                  {t.changed ? 'Auto-applying these rules' : proposal.title}
+                  {t.changed ? 'Proposed — Accept to apply' : proposal.title}
                 </p>
                 {proposal.lines.map((line) => (
                   <p key={line} className="analyst-plain">
@@ -176,12 +180,21 @@ export function AnalystPanel({
                 data-testid={`analyst-auto-${t.id}`}
               >
                 {killed
-                  ? 'KILL on — auto recipe lock'
+                  ? 'KILL on — recipe lock. Accept stays off.'
                   : rehabNote ||
                     (t.changed
-                      ? `Auto-updating toward ${HIT_FLOOR}%. No Accept / Deny.`
-                      : `Auto on. Matching the ${HIT_FLOOR}% book.`)}
+                      ? `Draft ready. Accept to apply toward ${HIT_FLOOR}%.`
+                      : `Matching the ${HIT_FLOOR}% book. No draft.`)}
               </p>
+              <button
+                type="button"
+                className="chip-btn rec-accept"
+                data-testid={`analyst-accept-${t.id}`}
+                disabled={!t.changed || killed || !onAccept}
+                onClick={() => onAccept?.(t.id, t.nextRecipe)}
+              >
+                Accept
+              </button>
             </article>
           )
         })}

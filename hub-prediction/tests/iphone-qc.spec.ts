@@ -4,6 +4,12 @@ async function waitHost(page: Page) {
   await expect(page.getByTestId('desk-head')).toHaveAttribute('data-host-ready', '1', { timeout: 20_000 })
 }
 
+async function allowLiveArm(page: Page) {
+  await page.evaluate(() => {
+    ;(window as Window & { __HUB_TEST_LIVE_ARM?: { ok: true } }).__HUB_TEST_LIVE_ARM = { ok: true }
+  })
+}
+
 async function setToggle(page: Page, testId: string, on: boolean) {
   const box = page.getByTestId(testId)
   if ((await box.isChecked()) === on) return
@@ -487,7 +493,7 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
 })
 
-test('desktop desk: full bets log + auto analyst, no Accept/Deny', async ({ page }) => {
+test('desktop desk: full bets log + analyst drafts, Accept gated', async ({ page }) => {
   const now = Date.now()
   await page.addInitScript(
     ([ts]) => {
@@ -571,11 +577,14 @@ test('desktop desk: full bets log + auto analyst, no Accept/Deny', async ({ page
   await assertCashColumnClear(page)
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/desktop-bets-all.png' })
   await expect(page.getByTestId('analyst')).toBeVisible()
-  await expect(page.getByTestId('analyst-lock')).toContainText(/No Accept/)
-  await expect(page.locator('.rec-accept')).toHaveCount(0)
+  await expect(page.getByTestId('analyst-lock')).toContainText(/proposes paper drafts only/)
+  await expect(page.getByTestId('analyst-lock')).toContainText(/Accept/)
+  await expect(page.getByTestId('analyst-lock')).not.toContainText(/No Accept/)
+  await expect(page.getByTestId('analyst-lock')).not.toContainText(/auto-apply/)
+  await expect(page.getByTestId('analyst-accept-btc')).toBeVisible()
   await expect(page.locator('.rec-deny')).toHaveCount(0)
   await expect(page.getByTestId('analyst-auto-btc')).toBeVisible()
-  await page.getByTestId('analyst').screenshot({ path: '/opt/cursor/artifacts/screenshots/desktop-analyst-auto.png' })
+  await page.getByTestId('analyst').screenshot({ path: '/opt/cursor/artifacts/screenshots/desktop-analyst-drafts.png' })
   await assertNoMasterLive(page)
 })
 
@@ -599,6 +608,7 @@ test('phone desk: MAXIMUM QC every tap — no master Live; Live cash OFF is pape
   await waitHost(page)
   await resetGoldDesk(page)
   await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash OFF — paper only|Kalshi window closed|Bot OFF/)
+  await allowLiveArm(page)
   await setToggle(page, 'live-cash-btc', true)
   if (await page.getByTestId('stale-btc').count()) {
     await expect(page.getByTestId('bot-note-btc')).toContainText(
@@ -658,8 +668,10 @@ test('phone desk: MAXIMUM QC every tap — no master Live; Live cash OFF is pape
   await expect(page.getByTestId('analyst-rules-btc')).toContainText(/Current rules/)
   await expect(page.getByTestId('analyst-proposed-btc')).toContainText(/Proposed/)
   await expect(page.getByTestId('analyst-profit-btc')).toContainText(/Profit dollars/)
-  await expect(page.getByTestId('analyst-lock')).toContainText(/No Accept/)
-  await expect(page.locator('.rec-accept')).toHaveCount(0)
+  await expect(page.getByTestId('analyst-lock')).toContainText(/proposes paper drafts only/)
+  await expect(page.getByTestId('analyst-lock')).toContainText(/Accept/)
+  await expect(page.getByTestId('analyst-lock')).not.toContainText(/No Accept/)
+  await expect(page.getByTestId('analyst-accept-btc')).toBeVisible()
   await expect(page.locator('.rec-deny')).toHaveCount(0)
   await expect(page.locator('.bets-log-head')).toContainText('WINDOW')
   await expect(page.locator('.bets-log-head')).toContainText('CLOCK')
@@ -841,11 +853,47 @@ test('header: HUB Predictions centered, no keys chrome, readable labels — desk
   expect(Math.abs(row.cashTop - row.pnlTop)).toBeLessThan(8)
 })
 
+test('analyst proposes drafts only — Accept gated, no auto Live rewrite', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await expect(page.getByTestId('analyst-lock')).toContainText(/proposes paper drafts only/)
+  await expect(page.getByTestId('analyst-lock')).toContainText(/Accept/)
+  await expect(page.getByTestId('analyst-lock')).not.toContainText(/No Accept/)
+  await expect(page.getByTestId('analyst-lock')).not.toContainText(/auto-apply|Auto-applying|auto-updated/)
+  await expect(page.getByTestId('analyst-accept-btc')).toBeVisible()
+  await expect(page.getByTestId('analyst-accept-ng')).toBeVisible()
+  await expect(page.locator('.rec-deny')).toHaveCount(0)
+  await page.getByTestId('settings-toggle').click()
+  await expect(page.getByTestId('through-btc')).toHaveValue(/^(40|46)$/)
+})
+
+test('Live cash ON toggle runs liveArmGate — Soft FAIL enable if !ok', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await resetGoldDesk(page)
+  await expect(page.getByTestId('live-cash-btc')).not.toBeChecked()
+  await page.evaluate(() => {
+    ;(window as Window & { __HUB_TEST_LIVE_ARM?: { ok: false; reason: string } }).__HUB_TEST_LIVE_ARM = {
+      ok: false,
+      reason: 'LIVE needs keys',
+    }
+  })
+  await page.locator('label').filter({ has: page.getByTestId('live-cash-btc') }).click({ force: true })
+  await expect(page.getByTestId('live-cash-btc')).not.toBeChecked()
+  await expect(page.getByTestId('desk-msg')).toContainText('LIVE needs keys')
+  await allowLiveArm(page)
+  await setToggle(page, 'live-cash-btc', true)
+  await expect(page.getByTestId('live-cash-btc')).toBeChecked()
+  await setToggle(page, 'live-cash-btc', false)
+})
+
 test('Live cash ON survives reload; no master Live switch', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await resetGoldDesk(page)
   await assertNoMasterLive(page)
+  await allowLiveArm(page)
   await setToggle(page, 'live-cash-btc', true)
   await setToggle(page, 'live-cash-ng', true)
   await setToggle(page, 'live-cash-cu', true)
@@ -1364,6 +1412,7 @@ test('desktop + 390: Live cash and contracts survive reload and a second client'
     await desk.goto('/', { waitUntil: 'domcontentloaded' })
     await waitHost(desk)
     await resetGoldDesk(desk)
+    await allowLiveArm(desk)
     await setToggle(desk, 'live-cash-btc', true)
     await setToggle(desk, 'live-cash-ng', true)
     await setToggle(desk, 'live-cash-cu', true)
