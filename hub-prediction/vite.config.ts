@@ -46,6 +46,9 @@ export default defineConfig({
     strictPort: true,
     host: process.env.DESK_VITE_HOST || true,
     allowedHosts: true,
+    watch: {
+      ignored: ['**/.secrets/**', '**/test-results/**', '**/playwright-report/**'],
+    },
     hmr: {
       protocol: 'ws',
       clientPort: publicPort,
