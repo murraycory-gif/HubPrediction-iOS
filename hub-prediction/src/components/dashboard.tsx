@@ -139,8 +139,10 @@ import { RaceChart, useSmoothedLive } from './race-chart'
 import { SettingsPanel } from './settings-panel'
 import { TapeIcon } from './tape-icon'
 
+let deskHostReady = false
+
 export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
-  const [hostReady, setHostReady] = useState(false)
+  const [hostReady, setHostReady] = useState(deskHostReady)
   const [settings, setSettings] = useState<DeskSettings>(() => hydrateSettings(null))
   const [tickets, setTickets] = useState<DeskTicket[]>(() => loadTickets())
   const [hits, setHits] = useState(() => loadHits())
@@ -226,7 +228,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       return writeChain
     }
     setHostDeskWriter(writeHost)
-    const markReady = () => setHostReady(true)
+    const markReady = () => {
+      deskHostReady = true
+      setHostReady(true)
+    }
+    markReady()
     const readyTimer = window.setTimeout(markReady, 4000)
     const flushHost = async () => {
       setHostDeskWriter(writeHost)
