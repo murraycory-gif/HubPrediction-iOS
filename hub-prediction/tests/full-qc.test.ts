@@ -62,6 +62,8 @@ describe('QC2 wires', () => {
     expect(dash).toMatch(/nextBoardRolloverWait/)
     expect(dash).toMatch(/holdTapeQuote/)
     expect(dash).toMatch(/quoteIsLiveClock/)
+    expect(dash).toMatch(/trueLiveGate/)
+    expect(dash).toMatch(/STALE — paper only/)
     expect(dash).toMatch(/runAutoAnalyst/)
     expect(dash).toMatch(/isRehabPaper/)
     expect(dash).toMatch(/getTapePaths/)

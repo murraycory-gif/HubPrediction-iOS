@@ -596,12 +596,15 @@ describe('liveBotCall instant Kalshi post', () => {
     askOk: true,
     lean: 'up' as const,
     hitOk: true,
+    fresh: true,
   }
 
   it('posts live from Bot + Live cash — Soft FAIL master liveBets', () => {
     expect(liveBotCall(ready)).toBe('live')
     expect(liveBotCall({ ...ready, liveCash: false })).toBe('paper')
     expect(liveBotCall({ ...ready, rehabPaper: true })).toBe('paper')
+    expect(liveBotCall({ ...ready, fresh: false })).toBe('paper')
+    expect(liveBotCall({ ...ready, fresh: undefined })).toBe('paper')
     expect(liveBotCall({ ...ready, lean: 'sit' })).toBe('sit')
     expect(liveBotCall({ ...ready, hitOk: false })).toBe('sit')
     expect(liveBotCall({ ...ready, tradingActive: false })).toBe('sit')
@@ -624,6 +627,7 @@ describe('liveBotCall instant Kalshi post', () => {
     }
     expect(tapeBotNote(note)).toBe('Live cash OFF — paper only, not sent to Kalshi')
     expect(tapeBotNote({ ...note, liveCash: true })).toBe('Live cash ON — next through posts to Kalshi')
+    expect(tapeBotNote({ ...note, liveCash: true, stale: true })).toBe('STALE — paper only')
     expect(tapeBotNote({ ...note, liveCash: true, hostCreds: false })).toBe('Kalshi keys missing on this PC — cannot POST')
   })
 })

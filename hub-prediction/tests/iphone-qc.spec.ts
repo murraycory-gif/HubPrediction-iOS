@@ -547,8 +547,13 @@ test('phone desk: MAXIMUM QC every tap — no master Live; Live cash OFF is pape
   await resetGoldDesk(page)
   await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash OFF — paper only|Kalshi window closed|Bot OFF/)
   await setToggle(page, 'live-cash-btc', true)
-  await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash ON — next through|Sit —|Kalshi keys missing|Kalshi window closed/)
-  await expect(page.getByTestId('bot-note-btc')).not.toContainText('Live cash OFF — paper only')
+  if (await page.getByTestId('stale-btc').count()) {
+    await expect(page.getByTestId('bot-note-btc')).toContainText('STALE — paper only')
+    expect(livePosts).toEqual([])
+  } else {
+    await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash ON — next through|Sit —|Kalshi keys missing|Kalshi window closed/)
+    await expect(page.getByTestId('bot-note-btc')).not.toContainText('Live cash OFF — paper only')
+  }
   await setToggle(page, 'live-cash-btc', false)
   await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash OFF — paper only|Kalshi window closed|Bot OFF/)
   await assertNoMasterLive(page)

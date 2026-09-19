@@ -21,6 +21,7 @@ import {
   quoteHasClock,
   quoteIsLiveClock,
   holdTapeQuote,
+  trueLiveGate,
   saveHeldBoard,
   mergeLiveOntoBoard,
   askInBand,
@@ -391,8 +392,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       return
     }
     if (!quote.ticker) return
-    if (quote.tradingActive === false) {
-      setMsg(`${TAPE_META[tape].label} Kalshi window closed — sit`)
+    if (!quoteIsLiveClock(quote) || quote.tradingActive === false) {
+      setMsg(`${TAPE_META[tape].label} STALE — paper only`)
+      return
+    }
+    const liveGate = trueLiveGate({
+      quote,
+      kalshiLive: printsQuery.data?.tapes[tape]?.live,
+    })
+    if (!liveGate.ok) {
+      setMsg(`${TAPE_META[tape].label} ${liveGate.reason}`)
       return
     }
     const ask = side === 'down' ? quote.noAsk : quote.yesAsk
@@ -464,6 +473,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       const recipe = settings.tapes[id]
       if (!quote?.ticker || !recipe.botOn) continue
       if (quote.tradingActive === false) continue
+      const liveGate = trueLiveGate({
+        quote,
+        kalshiLive: printsQuery.data?.tapes[id]?.live,
+      })
       if (ticketFor(tickets, id, quote.ticker)) continue
       if (!inArmWindow(recipe, quote.closeAt)) continue
       const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe })
@@ -480,11 +493,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         botOn: recipe.botOn,
         liveCash: gates.liveCash,
         rehabPaper: paperRehab,
-        tradingActive: quote.tradingActive !== false,
+        tradingActive: quoteIsLiveClock(quote),
         inArm: true,
         askOk: true,
         lean,
         hitOk: hitFloorGate(recent.w, recent.l).ok,
+        fresh: liveGate.ok,
       })
       if (call === 'sit') continue
       if (claimSend(sentRef.current, key) !== 'send') continue
@@ -574,6 +588,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               chart={settings.charts?.[id] ?? DEFAULT_CHART}
               rehabPaper={isRehabPaper(rehab, id)}
               recipeLocked={chasingLosses(book) || book.killed}
+              stale={trueLiveGate({ quote: board?.tapes[id], kalshiLive: printsQuery.data?.tapes[id]?.live }).stale}
               botNote={(() => {
                 const quote = board?.tapes[id]
                 const recipe = settings.tapes[id]
@@ -585,18 +600,23 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                 })
                 const ask = lean === 'down' ? quote?.noAsk : quote?.yesAsk
                 const cell = tapeHitCell(id, hits, book.bets, Date.now(), hitFrom)
+                const liveGate = trueLiveGate({
+                  quote,
+                  kalshiLive: printsQuery.data?.tapes[id]?.live,
+                })
                 return tapeBotNote({
                   botOn: recipe.botOn,
                   liveCash: recipe.liveOn,
                   rehabPaper: isRehabPaper(rehab, id),
                   hostCreds,
-                  tradingActive: quote?.tradingActive !== false,
+                  tradingActive: quoteIsLiveClock(quote),
                   inArm: quote?.closeAt ? inArmWindow(recipe, quote.closeAt) : false,
                   askOk: ask != null && askInBand(ask, recipe),
                   lean,
                   hitOk: hitFloorGate(cell.w, cell.l).ok,
                   armFromMin: recipe.armFromMin,
                   armToMin: recipe.armToMin,
+                  stale: liveGate.stale,
                 })
               })()}
               onClock={(next) => setSettings(setTapeClock(settings, id, next))}
@@ -789,6 +809,7 @@ function TapeRow({
   chart,
   rehabPaper,
   recipeLocked,
+  stale,
   botNote,
   onClock,
   onChart,
@@ -803,6 +824,7 @@ function TapeRow({
   chart: ChartRange
   rehabPaper: boolean
   recipeLocked: boolean
+  stale?: boolean
   botNote: string
   onClock: (clock: TapeClock) => void
   onChart: (chart: ChartRange) => void
@@ -859,7 +881,11 @@ function TapeRow({
               <span className="tape-name">
                 {formatWindowRange(shownQuote?.openAt, shownQuote?.closeAt)}
               </span>
-              {liveOn ? (
+              {stale ? (
+                <span className="stale-flag" data-testid={`stale-${id}`}>
+                  STALE
+                </span>
+              ) : liveOn ? (
                 <span className="tape-live-flag">
                   <span className="live-dot" /> LIVE
                 </span>

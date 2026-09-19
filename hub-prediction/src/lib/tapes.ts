@@ -225,6 +225,79 @@ export function quoteIsLiveClock(q: TapeQuote | null | undefined, now = Date.now
   return true
 }
 
+export const LIVE_NOW_SLACK = 2
+export const LIVE_ASK_SLACK = 1
+export const LIVE_FRESH_MS = 30_000
+
+function lastTrailPx(points: TapeQuote['points'] | undefined) {
+  const pts = points ?? []
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const px = pts[i]?.px
+    if (Number.isFinite(px) && (px as number) > 0) return px as number
+  }
+  return null
+}
+
+/** Soft FAIL a lone NOW-dot as a live series. */
+export function chartHasContinuousSeries(points: TapeQuote['points'] | undefined) {
+  const times: number[] = []
+  for (const p of points ?? []) {
+    const t = pointTime(p.t)
+    if (t == null || !Number.isFinite(p.px) || p.px <= 0) continue
+    times.push(t)
+  }
+  if (times.length < 3) return false
+  times.sort((a, b) => a - b)
+  return times[times.length - 1]! - times[0]! >= 4000
+}
+
+/** Same-second Kalshi clock. Soft FAIL Live POST on stale / expired latch / lone-dot. */
+export function trueLiveGate(opts: {
+  quote: TapeQuote | null | undefined
+  kalshiLive?: number | null
+  kalshiYesAsk?: number | null
+  kalshiNoAsk?: number | null
+  now?: number
+}) {
+  const now = opts.now ?? Date.now()
+  const q = opts.quote
+  if (!quoteIsLiveClock(q, now) || !q) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (now - (q.fetchedAt || 0) > LIVE_FRESH_MS) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  const shown = q.live
+  const kalshi = opts.kalshiLive ?? lastTrailPx(q.points) ?? shown
+  if (shown == null || !Number.isFinite(shown) || shown <= 0 || kalshi == null || !Number.isFinite(kalshi) || kalshi <= 0) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (Math.abs(shown - kalshi) > LIVE_NOW_SLACK) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (!Number.isFinite(q.yesAsk) || !Number.isFinite(q.noAsk) || q.yesAsk < 1 || q.yesAsk > 99 || q.noAsk < 1 || q.noAsk > 99) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (
+    opts.kalshiYesAsk != null &&
+    Number.isFinite(opts.kalshiYesAsk) &&
+    Math.abs(q.yesAsk - opts.kalshiYesAsk) > LIVE_ASK_SLACK
+  ) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (
+    opts.kalshiNoAsk != null &&
+    Number.isFinite(opts.kalshiNoAsk) &&
+    Math.abs(q.noAsk - opts.kalshiNoAsk) > LIVE_ASK_SLACK
+  ) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (!chartHasContinuousSeries(q.points)) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  return { ok: true as const, stale: false, reason: '' }
+}
+
 export function expireClosedQuote<T extends TapeQuote | null | undefined>(q: T, now = Date.now()): T {
   if (!q || quoteIsLiveClock(q, now) || q.tradingActive === false) return q
   return { ...q, tradingActive: false }

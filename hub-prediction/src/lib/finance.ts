@@ -478,6 +478,7 @@ export function liveBotCall(opts: {
   askOk: boolean
   lean: 'up' | 'down' | 'sit'
   hitOk: boolean
+  fresh?: boolean
 }): 'live' | 'paper' | 'sit' {
   if (
     !opts.tabOpen ||
@@ -490,7 +491,7 @@ export function liveBotCall(opts: {
   ) {
     return 'sit'
   }
-  if (opts.rehabPaper || opts.liveCash !== true) return 'paper'
+  if (opts.rehabPaper || opts.liveCash !== true || opts.fresh !== true) return 'paper'
   if (!opts.hitOk) return 'sit'
   return 'live'
 }
@@ -508,10 +509,12 @@ export function tapeBotNote(opts: {
   hitOk: boolean
   armFromMin: number
   armToMin: number
+  stale?: boolean
 }) {
   if (!opts.botOn) return 'Bot OFF'
   if (opts.rehabPaper) return 'Live cash HALT — paper rehab, not sent to Kalshi'
   if (opts.tradingActive === false) return 'Kalshi window closed — sit'
+  if (opts.stale) return 'STALE — paper only'
   if (!opts.liveCash) return 'Live cash OFF — paper only, not sent to Kalshi'
   if (!opts.inArm) return `Sit — arm ${opts.armFromMin}–${opts.armToMin} min`
   if (opts.lean === 'sit') return 'Sit — no through / hug'

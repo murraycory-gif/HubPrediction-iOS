@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadDeskBoard, loadLivePrints, pickOpen, resetDeskBoardForTests } from '../src/lib/kalshi.server'
-import { BOARD_CLOSED_MS, BOARD_STRUCTURE_MS, LIVE_TRAIL_DOTS, boardPollMs, holdLiveEvents, holdTapeQuote, latchDeskBoard, liveRangeFromCharts, loadHeldBoard, mergeLiveOntoBoard, nextBoardRolloverWait, saveHeldBoard, slimLivePoints } from '../src/lib/tapes'
-import type { DeskBoard } from '../src/lib/types'
+import { BOARD_CLOSED_MS, BOARD_STRUCTURE_MS, LIVE_TRAIL_DOTS, boardPollMs, holdLiveEvents, holdTapeQuote, latchDeskBoard, liveRangeFromCharts, loadHeldBoard, mergeLiveOntoBoard, nextBoardRolloverWait, saveHeldBoard, slimLivePoints, trueLiveGate } from '../src/lib/tapes'
+import type { DeskBoard, TapeQuote } from '../src/lib/types'
 
 afterEach(() => {
   resetDeskBoardForTests()
@@ -675,5 +675,63 @@ describe('desk never blanks on a Kalshi miss', () => {
     const held = loadHeldBoard()
     expect(held?.tapes.btc?.ticker).toBe('KXBTC15M-LIVE')
     expect(held?.tapes.btc?.beat).toBe(81100)
+  })
+})
+
+describe('trueLiveGate Soft FAIL stale Live POST', () => {
+  function fresh(now = Date.now(), partial: Partial<TapeQuote> = {}): TapeQuote {
+    return {
+      id: 'btc',
+      series: 'KXBTC15M',
+      ticker: 'KXBTC15M-NOW',
+      eventTicker: 'KXBTC15M',
+      yesAsk: 72,
+      noAsk: 29,
+      beat: 80000,
+      live: 80040,
+      liveSource: 'kalshi-live',
+      points: [
+        { t: now - 12_000, px: 80020 },
+        { t: now - 8000, px: 80030 },
+        { t: now - 4000, px: 80035 },
+        { t: now - 200, px: 80040 },
+      ],
+      openAt: now - 5 * 60_000,
+      closeAt: now + 10 * 60_000,
+      fetchedAt: now - 400,
+      clock: '15m',
+      clockId: '15m',
+      tradingActive: true,
+      ...partial,
+    }
+  }
+
+  it('fresh clock + NOW + ask + series is live', () => {
+    const now = Date.now()
+    expect(trueLiveGate({ quote: fresh(now), kalshiLive: 80040, now }).ok).toBe(true)
+    expect(trueLiveGate({ quote: fresh(now), kalshiLive: 80041.5, now }).ok).toBe(true)
+  })
+
+  it('expired latch / dead clock is STALE — paper only', () => {
+    const now = Date.now()
+    expect(trueLiveGate({ quote: fresh(now, { closeAt: now - 1, tradingActive: true }), now }).stale).toBe(true)
+    expect(trueLiveGate({ quote: fresh(now, { tradingActive: false }), now }).reason).toBe('STALE — paper only')
+  })
+
+  it('NOW off Kalshi by more than $2 or print older than 30s is stale', () => {
+    const now = Date.now()
+    expect(trueLiveGate({ quote: fresh(now), kalshiLive: 80043, now }).ok).toBe(false)
+    expect(trueLiveGate({ quote: fresh(now, { fetchedAt: now - 31_000 }), kalshiLive: 80040, now }).ok).toBe(false)
+  })
+
+  it('ask off Kalshi by more than 1¢ is stale', () => {
+    const now = Date.now()
+    expect(trueLiveGate({ quote: fresh(now), kalshiLive: 80040, kalshiYesAsk: 74, now }).ok).toBe(false)
+    expect(trueLiveGate({ quote: fresh(now), kalshiLive: 80040, kalshiYesAsk: 72, kalshiNoAsk: 29, now }).ok).toBe(true)
+  })
+
+  it('lone NOW-dot is not a live series', () => {
+    const now = Date.now()
+    expect(trueLiveGate({ quote: fresh(now, { points: [{ t: now, px: 80040 }] }), kalshiLive: 80040, now }).ok).toBe(false)
   })
 })
