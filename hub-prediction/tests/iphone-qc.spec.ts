@@ -1152,3 +1152,35 @@ test('phone 390: ticket line is contracts + ¢ + cost + win, not a 36-char uuid'
   await expect(page.getByTestId('ticket-id-btc')).toHaveText(/LIVE|PAPER/)
   await assertNoMasterLive(page)
 })
+
+test('two browsers share host contracts — A saves, B hydrates the same number', async ({ browser }) => {
+  const pc = await browser.newContext({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false })
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  const pageA = await pc.newPage()
+  const pageB = await phone.newPage()
+  try {
+    await pageA.goto('/', { waitUntil: 'domcontentloaded' })
+    await pageB.goto('/', { waitUntil: 'domcontentloaded' })
+    await waitHost(pageA)
+    await waitHost(pageB)
+    await expect(pageA.getByTestId('desk')).toHaveAttribute('data-settings-latch', '3000')
+    if (!(await pageA.getByTestId('contracts-btc').isEnabled())) return
+    await pageA.getByTestId('contracts-btc').fill('23')
+    await pageA.getByTestId('save-btc').click()
+    await expect(pageA.getByTestId('contracts-btc')).toHaveValue('23')
+    await expect(pageB.getByTestId('contracts-btc')).toHaveValue('23', { timeout: 12_000 })
+    await pageB.getByTestId('contracts-ng').fill('11')
+    await pageB.getByTestId('contracts-ng').blur()
+    await expect(pageB.getByTestId('contracts-ng')).toHaveValue('11')
+    await expect(pageA.getByTestId('contracts-ng')).toHaveValue('11', { timeout: 12_000 })
+    await pageA.getByTestId('contracts-btc').fill('1')
+    await pageA.getByTestId('save-btc').click()
+    await pageB.getByTestId('contracts-ng').fill('1')
+    await pageB.getByTestId('contracts-ng').blur()
+  } finally {
+    await pageA.close()
+    await pageB.close()
+    await pc.close()
+    await phone.close()
+  }
+})

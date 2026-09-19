@@ -128,4 +128,18 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     )
     await rm(dir, { recursive: true, force: true })
   })
+
+  it('PC contract save is the host book — a wiped phone hydrates the same count', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hub-desk-share-'))
+    process.env.HUB_DESK_STATE_FILE = join(dir, 'desk-state.json')
+    const pc = patchTape(loadSettings(), 'btc', { contracts: 23 })
+    expect(pc.tapes.btc.contracts).toBe(23)
+    writeDeskState({ settings: pc })
+    localStorage.clear()
+    expect(loadSettings().tapes.btc.contracts).toBe(GOLD_RECIPES.btc.contracts)
+    applyHostDeskState(readDeskState())
+    expect(loadSettings().tapes.btc.contracts).toBe(23)
+    expect(loadSettings().clocks.btc).toBe(pc.clocks.btc)
+    await rm(dir, { recursive: true, force: true })
+  })
 })

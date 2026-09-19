@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getClockSettle, getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiBook, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
-import { applyHostDeskState } from '../lib/desk-hydrate'
+import { applyHostDeskState, hostSettingsNewer, SETTINGS_DEBOUNCE_MS, SETTINGS_LATCH_MS } from '../lib/desk-hydrate'
 import { DESK_TICK_MS, useDeskTick } from '../lib/desk-tick'
 import { setHostDeskWriter } from '../lib/desk-persist'
 import {
@@ -125,6 +125,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [financeOpen, setFinanceOpen] = useState(false)
   const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
   const sentRef = useRef<Record<string, SendClaim>>({})
+  const lastLocalWrite = useRef(0)
   const wall = useDeskTick()
 
   function applyCashAndSettlements(r: {
@@ -171,6 +172,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     )
     setRehab(loadAutoState())
     const writeHost = (patch: { settings?: unknown; tickets?: unknown; finance?: unknown; hits?: unknown }) => {
+      if (patch.settings) lastLocalWrite.current = Date.now()
       void saveDeskState({ data: patch })
     }
     setHostDeskWriter(writeHost)
@@ -217,6 +219,48 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })
     return () => setHostDeskWriter(null)
   }, [])
+
+  useEffect(() => {
+    if (!hostReady) return
+    let cancelled = false
+    const latchHost = async () => {
+      if (Date.now() - lastLocalWrite.current < SETTINGS_DEBOUNCE_MS + 400) return
+      try {
+        const host = await getDeskState()
+        if (cancelled || !host) return
+        const newer = hostSettingsNewer(host)
+        const applied = applyHostDeskState(host)
+        if (!applied && !newer) return
+        setSettings(loadSettings())
+        const hostTickets = loadTickets()
+        setTickets(hostTickets)
+        setBook(
+          syncTicketsIntoBook(loadFinance(), hostTickets, () => ({
+            clock: '',
+            closeAt: 0,
+            ask: 50,
+          })),
+        )
+      } catch {
+        /* host latch stays */
+      }
+    }
+    void latchHost()
+    const id = window.setInterval(() => {
+      void latchHost()
+    }, SETTINGS_LATCH_MS)
+    const onFocus = () => {
+      void latchHost()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [hostReady])
 
   const heldBoard = useRef<DeskBoard | null>(seedBoard ?? loadHeldBoard())
   const heldEvents = useRef<Partial<Record<TapeId, string>>>({})
@@ -655,7 +699,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   )
 
   return (
-    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0} data-book-latch={BOOK_LATCH_MS}>
+    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0} data-book-latch={BOOK_LATCH_MS} data-settings-latch={SETTINGS_LATCH_MS}>
       <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">
@@ -730,8 +774,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                   stale: liveGate.stale,
                 })
               })()}
-              onClock={(next) => setSettings(setTapeClock(settings, id, next))}
-              onChart={(next) => setSettings(setTapeChart(settings, id, next))}
+              onClock={(next) => setSettings(setTapeClock(loadSettings(), id, next))}
+              onChart={(next) => setSettings(setTapeChart(loadSettings(), id, next))}
               onTape={(patch) => {
                 if (book.killed && patch.botOn) {
                   setMsg('KILL on — bots stay off')
@@ -742,7 +786,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                   setMsg(gate.reason)
                   return
                 }
-                setSettings(patchTape(settings, id, patch))
+                setSettings(patchTape(loadSettings(), id, patch))
               }}
             />
           ))}
@@ -761,7 +805,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             .sort((a, b) => (b.filledAt || b.settledAt || 0) - (a.filledAt || a.settledAt || 0))}
           cashByBet={cashByBet}
           filter={settings.betsFilter}
-          onFilter={(chip) => setSettings((cur) => applyBetsFilter(cur, chip))}
+          onFilter={(chip) => setSettings(applyBetsFilter(loadSettings(), chip))}
         />
 
         <div className="under-desk" data-testid="under-desk">
@@ -835,7 +879,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                 setMsg(gate.reason)
                 return
               }
-              setSettings(patchTape(settings, id, patch))
+              setSettings(patchTape(loadSettings(), id, patch))
             }}
             onRefreshCash={() => void refreshCash()}
           />
@@ -970,10 +1014,12 @@ function TapeRow({
   const liveOn = shownQuote?.tradingActive === true
   const [draft, setDraft] = useState(recipe.contracts)
   const contractsRef = useRef<HTMLInputElement>(null)
+  const saveTimer = useRef(0)
   const lastTicker = useRef(quote?.ticker ?? '')
   useEffect(() => {
     setDraft(recipe.contracts)
   }, [recipe.contracts])
+  useEffect(() => () => window.clearTimeout(saveTimer.current), [])
   useEffect(() => {
     const ticker = quote?.ticker ?? ''
     if (lastTicker.current && ticker && lastTicker.current !== ticker && chart !== DEFAULT_CHART) {
@@ -983,11 +1029,18 @@ function TapeRow({
   }, [quote?.ticker, chart, onChart])
 
   function saveContracts(raw?: number) {
+    window.clearTimeout(saveTimer.current)
     const fromDom = contractsRef.current ? Number(contractsRef.current.value) : draft
     const n = clampContracts(Number(raw ?? fromDom))
     setDraft(n)
-    patchTape(loadSettings(), id, { contracts: n })
     onTape({ contracts: n })
+  }
+
+  function queueContracts(raw: number) {
+    const n = clampContracts(raw)
+    setDraft(n)
+    window.clearTimeout(saveTimer.current)
+    saveTimer.current = window.setTimeout(() => saveContracts(n), SETTINGS_DEBOUNCE_MS)
   }
 
   const fillLine = ticket ? ticketFillStrip(ticket, shownQuote, booked) : ''
@@ -1169,16 +1222,8 @@ function TapeRow({
             value={draft}
             disabled={recipeLocked}
             ref={contractsRef}
-            onChange={(e) => {
-              const n = clampContracts(Number(e.target.value))
-              setDraft(n)
-              onTape({ contracts: n })
-            }}
-            onInput={(e) => {
-              const n = clampContracts(Number((e.target as HTMLInputElement).value))
-              setDraft(n)
-              onTape({ contracts: n })
-            }}
+            onChange={(e) => queueContracts(Number(e.target.value))}
+            onInput={(e) => queueContracts(Number((e.target as HTMLInputElement).value))}
             onBlur={() => saveContracts()}
             onKeyDown={(e) => {
               if (e.key === 'Enter') saveContracts()

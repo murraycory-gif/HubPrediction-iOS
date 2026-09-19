@@ -3,6 +3,11 @@ import { settingsSavedAt, unionFinance, unionTickets, type HostDeskState } from 
 import { FINANCE_KEY, hydrateFinance } from './finance'
 import { GOLD_RECIPES, SETTINGS_KEY, TAPE_IDS, TICKETS_KEY, hydrateSettings, loadSettings, loadTickets } from './tapes'
 
+/** Phone + PC latch the host book this often. Soft FAIL local-only localStorage. */
+export const SETTINGS_LATCH_MS = 3000
+/** Contract keystrokes flush to `.secrets/desk-state.json` after this pause. */
+export const SETTINGS_DEBOUNCE_MS = 280
+
 /** Host restore keeps user picks. Soft FAIL a recipe rewrite surviving update-desk. */
 function hostSettingsPicks(raw: object, savedAt: number) {
   const incoming = hydrateSettings({ ...raw, savedAt })
@@ -17,6 +22,14 @@ function hostSettingsPicks(raw: object, savedAt: number) {
     }
   }
   return incoming
+}
+
+export function hostSettingsNewer(host: HostDeskState | null | undefined) {
+  if (!host?.settings) return false
+  const hostAt = settingsSavedAt(host.settings)
+  if (!hostAt) return false
+  const localAt = Number(loadSettings().savedAt) || 0
+  return hostAt > localAt
 }
 
 /** Host fills an empty / new-origin store. Soft FAIL overwriting a newer local pick. */
