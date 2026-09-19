@@ -636,7 +636,20 @@ function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe, 
 /** Bots default ON. Live cash boots OFF unless stored true. User Bot / Live cash choices persist. Soft FAIL live-cash ON by default. */
 export function hydrateSettings(raw: unknown): DeskSettings {
   const o = raw && typeof raw === 'object' ? (raw as Partial<DeskSettings> & { tapes?: Partial<Record<TapeId, Partial<TapeRecipe>>> }) : {}
-  const picked = o.togglesPicked === true
+  const savedAt = Number((o as { savedAt?: unknown }).savedAt) || undefined
+  const togglesAt = Number((o as { togglesAt?: unknown }).togglesAt) || undefined
+  const picked =
+    o.togglesPicked === true ||
+    (togglesAt ?? 0) > 0 ||
+    ((savedAt ?? 0) > 0 &&
+      TAPE_IDS.some((id) => {
+        const stored = o.tapes?.[id]
+        return (
+          stored?.liveOn === true ||
+          stored?.botOn === false ||
+          (stored?.contracts != null && clampContracts(Number(stored.contracts)) !== GOLD_RECIPES[id].contracts)
+        )
+      }))
   const tapes = {} as Record<TapeId, TapeRecipe>
   for (const id of TAPE_IDS) {
     const gold = GOLD_RECIPES[id]
@@ -656,15 +669,14 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     clocks: hydrateClocks((o as { clocks?: unknown }).clocks),
     charts: hydrateChartRanges((o as { charts?: unknown }).charts),
     togglesPicked: picked,
-    savedAt: Number((o as { savedAt?: unknown }).savedAt) || undefined,
-    togglesAt: Number((o as { togglesAt?: unknown }).togglesAt) || undefined,
+    savedAt,
+    togglesAt,
     clocksAt: Number((o as { clocksAt?: unknown }).clocksAt) || undefined,
   }
 }
 
 export function settingsReadyToPush(settings: DeskSettings) {
   if (settings.togglesPicked === true) return true
-  if ((Number(settings.savedAt) || 0) > 0) return true
   if ((Number(settings.togglesAt) || 0) > 0) return true
   return TAPE_IDS.some(
     (id) =>

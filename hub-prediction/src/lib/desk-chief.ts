@@ -461,7 +461,12 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
       clock: currentClock,
     }
     progress[id] = snap
-    const want = targetContracts(recipe.contracts, snap, wins, losses)
+    let want = targetContracts(recipe.contracts, snap, wins, losses)
+    if (liveOn) {
+      const stepUp = wins >= STEP_UP_WINS && (snap.hitPct >= HIT_FLOOR || snap.w + snap.l < 4)
+      const cut = losses >= CUT_LOSSES
+      if (!stepUp && !cut) want = recipe.contracts
+    }
     sleeves[id] = { contracts: want, sleeveUsd: money(want * (ask / 100)) }
     const wantClock = pickChiefClock(currentClock, snap)
 

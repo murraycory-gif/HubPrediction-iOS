@@ -937,6 +937,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               chart={settings.charts?.[id] ?? DEFAULT_CHART}
               rehabPaper={isRehabPaper(rehab, id)}
               recipeLocked={chasingLosses(book) || book.killed}
+              hostReady={hostReady}
               stale={trueLiveGate({ quote: board?.tapes[id], kalshiLive: printsQuery.data?.tapes[id]?.live }).stale}
               botNote={(() => {
                 const quote = board?.tapes[id]
@@ -1255,6 +1256,7 @@ function TapeRow({
   recipeLocked,
   stale,
   botNote,
+  hostReady,
   onClock,
   onChart,
   onTape,
@@ -1271,6 +1273,7 @@ function TapeRow({
   recipeLocked: boolean
   stale?: boolean
   botNote: string
+  hostReady?: boolean
   onClock: (clock: TapeClock) => void
   onChart: (chart: ChartRange) => void
   onTape: (patch: Partial<TapeRecipe>) => void
@@ -1299,18 +1302,21 @@ function TapeRow({
   const [draft, setDraft] = useState(recipe.contracts)
   const contractsRef = useRef<HTMLInputElement>(null)
   const saveTimer = useRef(0)
+  const typedRef = useRef(false)
   const lastTicker = useRef(quote?.ticker ?? '')
-  useEffect(() => {
-    setDraft(recipe.contracts)
+  useLayoutEffect(() => {
+    if (!typedRef.current) setDraft(recipe.contracts)
   }, [recipe.contracts])
   useEffect(() => () => window.clearTimeout(saveTimer.current), [])
   useEffect(() => {
     const flush = () => {
       window.clearTimeout(saveTimer.current)
+      if (hostReady !== true || !typedRef.current) return
       const fromDom = contractsRef.current ? Number(contractsRef.current.value) : draft
       if (!Number.isFinite(fromDom)) return
       const n = clampContracts(fromDom)
       if (n === recipe.contracts) return
+      if (n === 1 && recipe.contracts > 1 && !typedRef.current) return
       onTape({ contracts: n })
     }
     window.addEventListener('pagehide', flush)
@@ -1321,7 +1327,7 @@ function TapeRow({
       window.removeEventListener('beforeunload', flush)
       document.removeEventListener('visibilitychange', flush)
     }
-  }, [draft, recipe.contracts, onTape])
+  }, [draft, recipe.contracts, onTape, hostReady])
   useEffect(() => {
     const ticker = quote?.ticker ?? ''
     if (lastTicker.current && ticker && lastTicker.current !== ticker && chart !== DEFAULT_CHART) {
@@ -1332,15 +1338,27 @@ function TapeRow({
 
   function saveContracts(raw?: number) {
     window.clearTimeout(saveTimer.current)
+    if (hostReady !== true) return
+    if (!typedRef.current) {
+      setDraft(recipe.contracts)
+      return
+    }
     const fromDom = contractsRef.current ? Number(contractsRef.current.value) : draft
     const n = clampContracts(Number(raw ?? fromDom))
+    if (n === recipe.contracts) {
+      setDraft(n)
+      return
+    }
+    if (n === 1 && recipe.contracts > 1 && !typedRef.current) return
     setDraft(n)
     onTape({ contracts: n })
   }
 
   function queueContracts(raw: number) {
+    typedRef.current = true
     const n = clampContracts(raw)
     setDraft(n)
+    if (hostReady !== true) return
     window.clearTimeout(saveTimer.current)
     saveContracts(n)
   }

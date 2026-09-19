@@ -143,6 +143,29 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it('factory contracts 1 with savedAt cannot overwrite host 20 / Live ON', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hub-desk-gold1-'))
+    process.env.HUB_DESK_STATE_FILE = join(dir, 'desk-state.json')
+    const armed = patchTape(loadSettings(), 'btc', { liveOn: true, botOn: true, contracts: 20 })
+    patchTape(loadSettings(), 'ng', { liveOn: true, botOn: true, contracts: 15 })
+    patchTape(loadSettings(), 'cu', { liveOn: true, botOn: true, contracts: 15 })
+    writeDeskState({ settings: loadSettings() })
+    const factory = { ...hydrateSettings(null), savedAt: Date.now() + 60_000, togglesPicked: false, togglesAt: 0 }
+    const merged = mergeHostDeskState(readDeskState()!, { settings: factory })
+    const tapes = (merged.settings as { tapes?: Record<string, { liveOn?: boolean; contracts?: number }> })?.tapes
+    expect(tapes?.btc).toMatchObject({ liveOn: true, contracts: 20 })
+    expect(tapes?.ng).toMatchObject({ liveOn: true, contracts: 15 })
+    expect(tapes?.cu).toMatchObject({ liveOn: true, contracts: 15 })
+    expect(pickNewerSettings(armed, factory)).toMatchObject({ tapes: { btc: { liveOn: true, contracts: 20 } } })
+    localStorage.clear()
+    applyHostDeskState(readDeskState())
+    expect(loadSettings().tapes.btc.contracts).toBe(20)
+    expect(loadSettings().tapes.btc.liveOn).toBe(true)
+    expect(loadSettings().tapes.ng.contracts).toBe(15)
+    expect(loadSettings().tapes.cu.contracts).toBe(15)
+    await rm(dir, { recursive: true, force: true })
+  })
+
   it('factory liveOn false cannot overwrite host user Live cash ON', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'hub-desk-factory-'))
     process.env.HUB_DESK_STATE_FILE = join(dir, 'desk-state.json')

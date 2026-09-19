@@ -161,6 +161,34 @@ test('HARD QA 6 persist Live cash/contracts + WTI/Silver paper only', async ({ b
   }
 })
 
+test('two clients: BTC 20 on A is host book — B and reload stay 20', async ({ browser }) => {
+  test.setTimeout(45_000)
+  const aCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  const bCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  const a = await aCtx.newPage()
+  const b = await bCtx.newPage()
+  try {
+    await a.goto('/', { waitUntil: 'domcontentloaded' })
+    await waitHost(a)
+    await allowLiveArm(a)
+    await a.getByTestId('contracts-btc').fill('20')
+    await a.getByTestId('contracts-btc').blur()
+    await expect(a.getByTestId('contracts-btc')).toHaveValue('20')
+    await b.goto('/', { waitUntil: 'domcontentloaded' })
+    await waitHost(b)
+    await expect(b.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 5_000 })
+    await a.reload({ waitUntil: 'domcontentloaded' })
+    await waitHost(a)
+    await expect(a.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 5_000 })
+    await expect(b.getByTestId('contracts-btc')).toHaveValue('20')
+  } finally {
+    await a.close()
+    await b.close()
+    await aCtx.close()
+    await bCtx.close()
+  }
+})
+
 test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ page }) => {
   test.setTimeout(45_000)
   await page.setViewportSize({ width: 1280, height: 800 })

@@ -174,6 +174,16 @@ describe('settings persist', () => {
     expect(empty.togglesPicked).not.toBe(true)
     expect(settingsReadyToPush(empty)).toBe(false)
     expect(empty.tapes.btc.liveOn).toBe(false)
+    expect(settingsReadyToPush({ ...empty, savedAt: Date.now() })).toBe(false)
+    const user = hydrateSettings({
+      togglesPicked: true,
+      togglesAt: Date.now(),
+      savedAt: Date.now(),
+      tapes: { btc: { ...GOLD_RECIPES.btc, contracts: 20, liveOn: true } },
+    })
+    expect(user.tapes.btc.contracts).toBe(20)
+    expect(user.tapes.btc.liveOn).toBe(true)
+    expect(settingsReadyToPush(user)).toBe(true)
   })
 
   it('keeps Bot OFF and Live cash ON after reload when the user picked them', () => {

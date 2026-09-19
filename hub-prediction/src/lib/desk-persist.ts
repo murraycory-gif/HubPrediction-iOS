@@ -41,11 +41,76 @@ export function settingsClocksAt(settings: unknown): number {
   return Number((settings as { clocksAt?: unknown }).clocksAt) || 0
 }
 
+function tapeContracts(t: { contracts?: unknown } | undefined) {
+  const n = Number(t?.contracts)
+  return Number.isFinite(n) && n > 0 ? n : 1
+}
+
+function tapeIsGoldDefault(t: { liveOn?: unknown; contracts?: unknown } | undefined) {
+  if (!t) return true
+  return t.liveOn !== true && tapeContracts(t) === 1
+}
+
+export function settingsHasUserPicks(settings: unknown) {
+  if (!settings || typeof settings !== 'object') return false
+  const o = settings as { togglesPicked?: unknown; togglesAt?: unknown }
+  if (o.togglesPicked === true || (Number(o.togglesAt) || 0) > 0) return true
+  if (settingsHasUserLive(settings)) return true
+  return TOGGLE_IDS.some((id) => {
+    const t = settingsTapes(settings)[id]
+    return t?.liveOn === true || t?.botOn === false || tapeContracts(t) !== 1
+  })
+}
+
 function incomingIsUnsavedFactory(settings: unknown) {
   if (!settings || typeof settings !== 'object') return true
   if (settingsHasUserLive(settings)) return false
   const o = settings as { savedAt?: unknown; togglesPicked?: unknown; togglesAt?: unknown }
+  const allGold = TOGGLE_IDS.every((id) => tapeIsGoldDefault(settingsTapes(settings)[id]))
+  if (allGold && o.togglesPicked !== true && (Number(o.togglesAt) || 0) === 0) return true
   return (Number(o.savedAt) || 0) === 0 && o.togglesPicked !== true && (Number(o.togglesAt) || 0) === 0
+}
+
+/** Soft FAIL GOLD contracts 1 / liveOn false overwriting a user/phone pick. */
+function protectUserSizes(winner: unknown, other: unknown) {
+  if (!winner || !other || typeof winner !== 'object' || typeof other !== 'object') return winner
+  const wt = settingsTapes(winner)
+  const ot = settingsTapes(other)
+  const winT = settingsTogglesAt(winner)
+  const otherT = settingsTogglesAt(other)
+  const winnerNewer = winT > otherT
+  const tapes: Record<string, unknown> = { ...wt }
+  let changed = false
+  for (const id of TOGGLE_IDS) {
+    const w = wt[id]
+    const o = ot[id]
+    if (!w || !o) continue
+    const wC = tapeContracts(w)
+    const oC = tapeContracts(o)
+    let liveOn = w.liveOn === true
+    let botOn = w.botOn === true
+    let contracts = wC
+    if (o.liveOn === true && w.liveOn !== true && !winnerNewer) {
+      liveOn = true
+      changed = true
+    }
+    if (oC > 1 && wC === 1 && !winnerNewer) {
+      contracts = oC
+      changed = true
+    }
+    if (o.botOn === false && w.botOn !== false && !winnerNewer) {
+      botOn = false
+      changed = true
+    }
+    tapes[id] = { ...w, liveOn, botOn, contracts }
+  }
+  if (!changed) return winner
+  return {
+    ...(winner as object),
+    tapes,
+    togglesPicked: true,
+    togglesAt: Math.max(winT, otherT) || (winner as { togglesAt?: number }).togglesAt,
+  }
 }
 
 function copyUserToggles(from: unknown, onto: unknown) {
@@ -79,7 +144,7 @@ export function pickNewerSettings(prev: unknown, incoming: unknown) {
   if (prev == null) return incoming
   const prevAt = settingsSavedAt(prev)
   const nextAt = settingsSavedAt(incoming)
-  if (incomingIsUnsavedFactory(incoming) && (settingsHasUserLive(prev) || prevAt > 0 || settingsTogglesAt(prev) > 0)) {
+  if (incomingIsUnsavedFactory(incoming) && (settingsHasUserPicks(prev) || settingsHasUserLive(prev) || prevAt > 0 || settingsTogglesAt(prev) > 0)) {
     return prev
   }
   if (nextAt === 0 && prevAt > 0) return prev
@@ -89,6 +154,7 @@ export function pickNewerSettings(prev: unknown, incoming: unknown) {
   const otherT = settingsTogglesAt(other)
   if (otherT > winT) winner = copyUserToggles(other, winner)
   else if (otherT === winT && otherT > 0) winner = copyUserToggles(prev, winner)
+  winner = protectUserSizes(winner, other)
   const winC = settingsClocksAt(winner)
   const otherC = settingsClocksAt(other)
   if (otherC > winC && other && typeof other === 'object') {

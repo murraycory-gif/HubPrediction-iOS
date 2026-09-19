@@ -17,13 +17,20 @@ function hostSettingsPicks(raw: object, savedAt: number) {
     const cur = incoming.tapes[id]
     incoming.tapes[id] = {
       ...gold,
+      ...cur,
       contracts: cur.contracts,
       botOn: cur.botOn === true,
       liveOn: cur.liveOn === true,
     }
   }
   incoming.togglesPicked =
-    incoming.togglesPicked === true || TAPE_IDS.some((id) => incoming.tapes[id].liveOn === true || incoming.tapes[id].botOn === false)
+    incoming.togglesPicked === true ||
+    TAPE_IDS.some(
+      (id) =>
+        incoming.tapes[id].liveOn === true ||
+        incoming.tapes[id].botOn === false ||
+        incoming.tapes[id].contracts !== GOLD_RECIPES[id].contracts,
+    )
   incoming.togglesAt = Number((raw as { togglesAt?: unknown }).togglesAt) || incoming.togglesAt
   incoming.clocksAt = Number((raw as { clocksAt?: unknown }).clocksAt) || incoming.clocksAt
   return incoming
