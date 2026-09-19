@@ -160,7 +160,7 @@ describe('QC2 wires', () => {
     expect(deskCss).toMatch(/\.toggle\.toggle-halt[\s\S]*?#ff8a3d/)
     expect(deskCss).toMatch(/-webkit-text-fill-color:\s*#ff8a3d/)
     expect(deskCss).toMatch(/@media \(max-width: 520px\)[\s\S]*\.tape-marks \{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/)
-    expect(deskCss).toMatch(/@media \(max-width: 520px\)[\s\S]*\.scoreboard-row \{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/)
+    expect(deskCss).toMatch(/@media \(max-width: 520px\)[\s\S]*\.desk-head \.scoreboard-row \{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/)
     expect(dash).toMatch(/Hit percent/)
     expect(dash).toMatch(/hits\.w\}W–\{hits\.l\}L/)
     expect(dash).toMatch(/tapeHitCell/)
