@@ -1024,7 +1024,11 @@ function TapeRow({
           />
           Bot {recipe.botOn ? 'ON' : 'OFF'}
         </label>
-        <label className={`toggle tap glyph-plate ${recipe.liveOn ? 'toggle-hot' : ''}`}>
+        <label
+          className={`toggle tap glyph-plate ${rehabPaper ? 'toggle-halt' : recipe.liveOn ? 'toggle-hot' : ''}`}
+          data-testid={`live-cash-box-${id}`}
+          data-halt={rehabPaper ? '1' : '0'}
+        >
           <input
             type="checkbox"
             data-testid={`live-cash-${id}`}
