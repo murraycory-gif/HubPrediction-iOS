@@ -57,7 +57,7 @@ export function applyHostDeskState(host: HostDeskState | null | undefined) {
   const hostHasLive = settingsHasUserLive(host.settings)
   const localHasLive = settingsHasUserLive(local)
   const localUserOff = local.togglesPicked === true && localAt > hostSettingsAt && !localHasLive
-  if (host.settings && (!raw || hostSettingsAt > localAt || (hostHasLive && !localHasLive && !localUserOff) || settingsSavedAt(host.settings) > 0)) {
+  if (host.settings && (!raw || hostSettingsAt > localAt || (hostHasLive && !localHasLive && !localUserOff))) {
     try {
       const incoming = hostSettingsPicks(host.settings as object, hostSettingsAt || Date.now())
       const merged = pickNewerSettings(raw ? local : undefined, incoming)

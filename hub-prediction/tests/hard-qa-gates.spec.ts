@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 
 const FIRST_PAINT_MS = 2000
@@ -18,6 +20,17 @@ async function setToggle(page: Page, testId: string, on: boolean) {
   if ((await box.isChecked()) === on) return
   await page.locator('label').filter({ has: box }).click({ force: true })
   await expect(box).toBeChecked({ checked: on })
+}
+
+function hostBtcContracts() {
+  try {
+    const raw = JSON.parse(readFileSync(resolve('.secrets/desk-state.json'), 'utf8')) as {
+      settings?: { tapes?: { btc?: { contracts?: unknown } } }
+    }
+    return Number(raw.settings?.tapes?.btc?.contracts) || 0
+  } catch {
+    return 0
+  }
 }
 
 test('HARD QA 4 first paint + live numbers under budget', async ({ page }) => {
@@ -172,10 +185,14 @@ test('two clients: BTC 20 on A is host book — B and reload stay 20', async ({ 
     await a.goto('/', { waitUntil: 'domcontentloaded' })
     await waitHost(a)
     await allowLiveArm(a)
-    await a.getByTestId('contracts-btc').fill('20')
-    await a.getByTestId('contracts-btc').blur()
-    await expect.poll(async () => a.getByTestId('contracts-btc').inputValue(), { timeout: 8_000 }).toBe('20')
-    await a.waitForTimeout(2000)
+    const box = a.getByTestId('contracts-btc')
+    await box.click({ clickCount: 3 })
+    await box.press('Backspace')
+    await box.pressSequentially('20')
+    await box.press('Enter')
+    await expect.poll(async () => box.inputValue(), { timeout: 8_000 }).toBe('20')
+    await expect.poll(() => hostBtcContracts(), { timeout: 10_000 }).toBe(20)
+    await a.waitForTimeout(1200)
     await b.goto('/', { waitUntil: 'domcontentloaded' })
     await waitHost(b)
     await expect.poll(async () => b.getByTestId('contracts-btc').inputValue(), { timeout: 15_000 }).toBe('20')

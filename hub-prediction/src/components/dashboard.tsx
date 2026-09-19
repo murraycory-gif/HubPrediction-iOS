@@ -282,6 +282,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       try {
         const host = await getDeskState({ data: { t: Date.now() } })
         if (cancelled || !host) return
+        if (Date.now() - lastLocalWrite.current < SETTINGS_LATCH_MS * 3) return
         const newer = hostSettingsNewer(host)
         const applied = applyHostDeskState(host)
         if (!applied && !newer) return
