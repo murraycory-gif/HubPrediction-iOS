@@ -898,12 +898,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         inject: (bets: FinanceState['bets']) => void
         add: (bet: FinanceState['bets'][number]) => void
       }
-      __HUB_TEST_EXIT?: {
-        apply: (input: ExitWatchInput) => ExitWatchDecision
-        scan: () => ExitWatchDecision[]
-        logs: () => ExitWatchLog[]
-        live: boolean
-      }
     }
     w.__HUB_TEST_CHIEF = {
       run: (over) => tickChief(over, { force: true }),
@@ -924,17 +918,27 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         setBook((prev) => ({ ...prev, bets: [...prev.bets, bet] }))
       },
     }
+    return () => {
+      delete w.__HUB_TEST_CHIEF
+      delete w.__HUB_APPLY_BOOK
+      delete w.__HUB_TEST_BETS
+    }
+  })
+
+  useLayoutEffect(() => {
+    const w = window as Window & {
+      __HUB_TEST_EXIT?: {
+        apply: (input: ExitWatchInput) => ExitWatchDecision
+        scan: () => ExitWatchDecision[]
+        logs: () => ExitWatchLog[]
+        live: boolean
+      }
+    }
     w.__HUB_TEST_EXIT = {
       apply: (input) => runExitWatch(input),
       scan: () => scanExitWatch(),
       logs: () => loadExitLogs(),
       live: EXIT_WATCH_LIVE,
-    }
-    return () => {
-      delete w.__HUB_TEST_CHIEF
-      delete w.__HUB_APPLY_BOOK
-      delete w.__HUB_TEST_BETS
-      delete w.__HUB_TEST_EXIT
     }
   })
 

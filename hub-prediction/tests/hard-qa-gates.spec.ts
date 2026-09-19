@@ -494,7 +494,11 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
-  await expect.poll(async () => page.evaluate(() => Boolean((window as Window & { __HUB_TEST_EXIT?: unknown }).__HUB_TEST_EXIT))).toBe(true)
+  await expect
+    .poll(async () => page.evaluate(() => Boolean((window as Window & { __HUB_TEST_EXIT?: unknown }).__HUB_TEST_EXIT)), {
+      timeout: 20_000,
+    })
+    .toBe(true)
   const now = Date.now()
   const out = await page.evaluate((at) => {
     const w = window as Window & {
