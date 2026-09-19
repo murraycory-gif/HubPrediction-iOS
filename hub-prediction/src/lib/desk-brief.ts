@@ -26,6 +26,16 @@ export const DESK_EXPERT: Record<TapeId, { title: string; focus: string; newsQ: 
     focus: 'Gold vs $2 through, 34–89¢ including 56–68. Real yields and USD set the swing.',
     newsQ: 'gold bullion price',
   },
+  wti: {
+    title: 'WTI desk chief · crude',
+    focus: 'WTI vs $0.05 through, 34–89¢. Paper only until HARD QA PASS.',
+    newsQ: 'WTI crude oil price',
+  },
+  slv: {
+    title: 'SLV desk chief · silver',
+    focus: 'Silver vs $0.05 through, 34–89¢. Paper only until HARD QA PASS.',
+    newsQ: 'silver COMEX price',
+  },
 }
 
 export type ListedClock = {
@@ -253,6 +263,8 @@ export function emptyBriefs(): Record<TapeId, DeskBrief> {
     ng: buildDeskBrief({ id: 'ng', quote: null, recipe: GOLD_RECIPES.ng, now }),
     cu: buildDeskBrief({ id: 'cu', quote: null, recipe: GOLD_RECIPES.cu, now }),
     gld: buildDeskBrief({ id: 'gld', quote: null, recipe: GOLD_RECIPES.gld, now }),
+    wti: buildDeskBrief({ id: 'wti', quote: null, recipe: GOLD_RECIPES.wti, now }),
+    slv: buildDeskBrief({ id: 'slv', quote: null, recipe: GOLD_RECIPES.slv, now }),
   }
 }
 

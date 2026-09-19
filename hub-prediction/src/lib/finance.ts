@@ -5,6 +5,7 @@ import {
   GOLD_RECIPES,
   TAPE_IDS,
   TAPE_META,
+  tapeAllowsLive,
   eventsFromKalshiSettlements,
   hydrateBetsFilter,
   isPaperOrderId,
@@ -683,6 +684,7 @@ export function liveSendGate(
   now = Date.now(),
 ): Gate {
   if (state.killed) return { ok: false, reason: 'KILL on — Place blocked until cleared' }
+  if (!tapeAllowsLive(opts.tape)) return { ok: false, reason: `${TAPE_META[opts.tape].label} paper desk — Soft FAIL Live` }
   if (!opts.ticker) return { ok: false, reason: 'No ticker' }
   if (!askAllowedByGold(opts.tape, opts.ask, { locked: opts.locked === true })) {
     return { ok: false, reason: `Ask ${opts.ask}¢ skip (≥${ASK_CAP} unless locked)` }

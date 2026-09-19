@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { V2_EVENTS_ORDERS, v2EventsOrderBody } from '../src/lib/kalshi-trade.server'
-import { GOLD_RECIPES, cashGates, confirmedPlaceOrderId, extractOrderId, hydrateSettings, hostLivePlaceGate, isRealOrderId, livePlaceGate, tabIsOpen } from '../src/lib/tapes'
+import { GOLD_RECIPES, cashGates, confirmedPlaceOrderId, extractOrderId, hydrateSettings, hostLivePlaceGate, isRealOrderId, livePlaceGate, placeOrderStatus, tabIsOpen, tapeAllowsLive } from '../src/lib/tapes'
 
 describe('placeContract V2 Soft KEEP', () => {
   it('BUY UP is bid at yes_ask 0.xxxx with taker_at_cross', () => {
@@ -37,6 +37,7 @@ describe('placeContract V2 Soft KEEP', () => {
     expect(body.side).not.toBe('bid')
     expect(body.price).toBe('0.8800')
     expect(body.price).not.toBe('0.1200')
+    expect(body.time_in_force).toBe('good_till_canceled')
     expect(body.self_trade_prevention_type).toBe('taker_at_cross')
     expect(body.client_order_id).toBe(id)
   })
@@ -64,6 +65,12 @@ describe('placeContract V2 Soft KEEP', () => {
     expect(confirmedPlaceOrderId({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'canceled', fill_count: 0, count_fp: '20.00' } })).toBeNull()
     expect(confirmedPlaceOrderId({ order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', fill_count: '0.00' })).toBeNull()
     expect(confirmedPlaceOrderId({ order: { order_id: 'deskfill-btc-ghost01' } })).toBeNull()
+    expect(placeOrderStatus({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'canceled', fill_count: 0 } })).toBe('canceled')
+    expect(placeOrderStatus({ order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'resting', fill_count: 0 } })).toBe('resting')
+    expect(placeOrderStatus({ order: { order_id: '01a0b74f-7b30-701f-8eb6-fa1303b858ad', status: 'executed', fill_count: 1 } })).toBe('filled')
+    expect(tapeAllowsLive('btc')).toBe(true)
+    expect(tapeAllowsLive('wti')).toBe(false)
+    expect(tapeAllowsLive('slv')).toBe(false)
   })
 
   it('does not flip Live/bots ON or retune recipes', () => {

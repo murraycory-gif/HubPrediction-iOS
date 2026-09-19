@@ -528,7 +528,7 @@ describe('one fast quote path Soft KEEP same ticker/second', () => {
     expect(mergeLiveOntoBoard(board, { ...prints, tapes: { ...prints.tapes, btc: { ...prints.tapes.btc!, eventTicker: 'OTHER' } } })?.tapes.btc?.live).toBeCloseTo(80800)
     const same = mergeLiveOntoBoard(merged, {
       fetchedAt: now,
-      tapes: { btc: { ...prints.tapes.btc!, live: 80910, points: [] }, ng: null, cu: null, gld: null },
+      tapes: { btc: { ...prints.tapes.btc!, live: 80910, points: [] }, ng: null, cu: null, gld: null, wti: null, slv: null },
     })
     expect(same).toBe(merged)
   })
@@ -560,12 +560,12 @@ describe('desk never blanks on a Kalshi miss', () => {
     const now = Date.now()
     const dead = q({ ticker: 'KXBTC15M-DEAD', closeAt: now - 1000, tradingActive: true, clock: '9:00 PM' })
     const next = q({ ticker: 'KXBTC15M-NEXT', closeAt: now + 15 * 60_000, tradingActive: true, clock: '9:15 PM', beat: 81200 })
-    const prev: DeskBoard = { fetchedAt: 1, tapes: { btc: dead, ng: null, cu: null, gld: null } }
-    const hole: DeskBoard = { fetchedAt: 2, tapes: { btc: null, ng: null, cu: null, gld: null } }
+    const prev: DeskBoard = { fetchedAt: 1, tapes: { btc: dead, ng: null, cu: null, gld: null, wti: null, slv: null } }
+    const hole: DeskBoard = { fetchedAt: 2, tapes: { btc: null, ng: null, cu: null, gld: null, wti: null, slv: null } }
     const heldDead = latchDeskBoard(hole, prev, now)
     expect(heldDead?.tapes.btc?.ticker).toBe('KXBTC15M-DEAD')
     expect(heldDead?.tapes.btc?.tradingActive).toBe(false)
-    const rolled = latchDeskBoard({ fetchedAt: 3, tapes: { btc: next, ng: null, cu: null, gld: null } }, prev, now)
+    const rolled = latchDeskBoard({ fetchedAt: 3, tapes: { btc: next, ng: null, cu: null, gld: null, wti: null, slv: null } }, prev, now)
     expect(rolled?.tapes.btc?.ticker).toBe('KXBTC15M-NEXT')
     expect(rolled?.tapes.btc?.tradingActive).toBe(true)
     expect(holdTapeQuote(null, dead, now)?.tradingActive).toBe(false)
@@ -575,11 +575,11 @@ describe('desk never blanks on a Kalshi miss', () => {
   it('latchDeskBoard keeps the last good clock when the next poll is holes', () => {
     const prev: DeskBoard = {
       fetchedAt: 1,
-      tapes: { btc: q(), ng: null, cu: null, gld: null },
+      tapes: { btc: q(), ng: null, cu: null, gld: null, wti: null, slv: null },
     }
     const hole: DeskBoard = {
       fetchedAt: 2,
-      tapes: { btc: null, ng: null, cu: null, gld: null },
+      tapes: { btc: null, ng: null, cu: null, gld: null, wti: null, slv: null },
     }
     const held = latchDeskBoard(hole, prev)
     expect(held?.tapes.btc?.ticker).toBe('KXBTC15M-LIVE')
@@ -590,11 +590,11 @@ describe('desk never blanks on a Kalshi miss', () => {
   it('latchDeskBoard keeps live + trail when the same ticker comes back without a print', () => {
     const prev: DeskBoard = {
       fetchedAt: 1,
-      tapes: { btc: q(), ng: null, cu: null, gld: null },
+      tapes: { btc: q(), ng: null, cu: null, gld: null, wti: null, slv: null },
     }
     const incoming: DeskBoard = {
       fetchedAt: 2,
-      tapes: { btc: q({ live: null, points: [], yesAsk: 73 }), ng: null, cu: null, gld: null },
+      tapes: { btc: q({ live: null, points: [], yesAsk: 73 }), ng: null, cu: null, gld: null, wti: null, slv: null },
     }
     const held = latchDeskBoard(incoming, prev)
     expect(held?.tapes.btc?.yesAsk).toBe(73)
@@ -669,7 +669,7 @@ describe('desk never blanks on a Kalshi miss', () => {
     if (typeof localStorage !== 'undefined') localStorage.clear()
     const prev: DeskBoard = {
       fetchedAt: 3,
-      tapes: { btc: q(), ng: null, cu: null, gld: null },
+      tapes: { btc: q(), ng: null, cu: null, gld: null, wti: null, slv: null },
     }
     saveHeldBoard(prev)
     const held = loadHeldBoard()

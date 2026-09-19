@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { closeClockView, readTestCloseClock } from '../lib/close-clock'
+import { closeClockView, readTestCloseClock, readTestOpenMarkets } from '../lib/close-clock'
 import { holdCloseAt, useDeskTick } from '../lib/desk-tick'
 
 export function CloseClock({
@@ -7,6 +7,7 @@ export function CloseClock({
   live,
   stale,
   tradingActive,
+  openMarkets,
   nextOpenLabel,
   tape,
 }: {
@@ -14,6 +15,7 @@ export function CloseClock({
   live?: boolean
   stale?: boolean
   tradingActive?: boolean
+  openMarkets?: number
   nextOpenLabel?: string
   tape?: string
 }) {
@@ -27,6 +29,7 @@ export function CloseClock({
     live,
     stale: test?.stale ?? stale,
     tradingActive: test?.tradingActive ?? tradingActive,
+    openMarkets: readTestOpenMarkets(tape) ?? test?.openMarkets ?? openMarkets,
     now,
     nextOpenLabel,
   })

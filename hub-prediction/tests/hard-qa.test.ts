@@ -30,7 +30,7 @@ describe('HARD QA 1–10', () => {
     expect('HUB Predictions').toBe('HUB Predictions')
     expect('HUB Predictions').not.toBe('HUBPREDICTIONS')
     expect('HUB Predictions').not.toMatch(/HUB\s*\/\s*PREDICTIONS/)
-    expect(TAPE_IDS).toEqual(['btc', 'ng', 'cu', 'gld'])
+    expect(TAPE_IDS).toEqual(['btc', 'ng', 'cu', 'gld', 'wti', 'slv'])
     const dash = await import('node:fs/promises').then((fs) =>
       fs.readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8'),
     )
@@ -141,6 +141,8 @@ describe('HARD QA 1–10', () => {
     expect(down.self_trade_prevention_type).toBe('taker_at_cross')
     expect(up.client_order_id).toBe(id)
     expect(down.client_order_id).toBe(id)
+    expect(up.time_in_force).toBe('immediate_or_cancel')
+    expect(down.time_in_force).toBe('good_till_canceled')
   })
 
   it('8 Soft FAIL mid-session recipe retune after a loss / KILL', () => {

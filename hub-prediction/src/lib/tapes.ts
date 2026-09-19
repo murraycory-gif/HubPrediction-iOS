@@ -4,8 +4,13 @@ import { mergeRaceTrail, pointTime } from './race-path'
 import { cashFromBalancePayload, ticketCost } from './size-cash'
 import type { DeskBoard, LivePrints, TapeQuote } from './types'
 
-export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
+export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld', 'wti', 'slv'] as const
 export type TapeId = (typeof TAPE_IDS)[number]
+/** Paper desks. Soft FAIL Live until HARD QA PASS. */
+export const PAPER_ONLY_TAPES = ['wti', 'slv'] as const
+export function tapeAllowsLive(id: TapeId) {
+  return !(PAPER_ONLY_TAPES as readonly string[]).includes(id)
+}
 
 export type TapeRecipe = {
   contracts: number
@@ -80,7 +85,7 @@ export function hydrateChartRange(raw: unknown): ChartRange {
 }
 
 export function defaultChartRanges(): Record<TapeId, ChartRange> {
-  return { btc: DEFAULT_CHART, ng: DEFAULT_CHART, cu: DEFAULT_CHART, gld: DEFAULT_CHART }
+  return { btc: DEFAULT_CHART, ng: DEFAULT_CHART, cu: DEFAULT_CHART, gld: DEFAULT_CHART, wti: DEFAULT_CHART, slv: DEFAULT_CHART }
 }
 
 export function hydrateChartRanges(raw: unknown): Record<TapeId, ChartRange> {
@@ -96,6 +101,8 @@ export const TAPE_SERIES: Record<TapeId, Record<TapeClock, string>> = {
   ng: { '5m': 'KXNATGAS5M', '15m': 'KXNATGAS15M', '1h': 'KXNATGAS1H' },
   cu: { '5m': 'KXCOPPER5M', '15m': 'KXCOPPER15M', '1h': 'KXCOPPER1H' },
   gld: { '5m': 'KXGOLD5M', '15m': 'KXGOLD15M', '1h': 'KXGOLDH' },
+  wti: { '5m': 'KXWTI5M', '15m': 'KXWTI15M', '1h': 'KXWTI1H' },
+  slv: { '5m': 'KXSILVER5M', '15m': 'KXSILVER15M', '1h': 'KXSILVER1H' },
 }
 
 export function isTapeClock(v: unknown): v is TapeClock {
@@ -107,7 +114,7 @@ export function hydrateClock(raw: unknown): TapeClock {
 }
 
 export function defaultClocks(): Record<TapeId, TapeClock> {
-  return { btc: DEFAULT_CLOCK, ng: DEFAULT_CLOCK, cu: DEFAULT_CLOCK, gld: DEFAULT_CLOCK }
+  return { btc: DEFAULT_CLOCK, ng: DEFAULT_CLOCK, cu: DEFAULT_CLOCK, gld: DEFAULT_CLOCK, wti: DEFAULT_CLOCK, slv: DEFAULT_CLOCK }
 }
 
 export function hydrateClocks(raw: unknown): Record<TapeId, TapeClock> {
@@ -152,6 +159,7 @@ export function boardPollMs(
 ) {
   if (!board) return 400
   for (const id of TAPE_IDS) {
+    if (!tapeAllowsLive(id)) continue
     const q = board.tapes[id]
     if (!q) return BOARD_CLOSED_MS
     if (q.tradingActive === false) return BOARD_CLOSED_MS
@@ -173,6 +181,7 @@ export function nextBoardRolloverWait(
   let next = Infinity
   let dead = false
   for (const id of TAPE_IDS) {
+    if (!tapeAllowsLive(id)) continue
     const q = board.tapes[id]
     if (!q) {
       dead = true
@@ -301,6 +310,7 @@ export function trueLiveGate(opts: {
 
 export function expireClosedQuote<T extends TapeQuote | null | undefined>(q: T, now = Date.now()): T {
   if (!q || quoteIsLiveClock(q, now) || q.tradingActive === false) return q
+  if ((q.openMarkets ?? 0) > 0) return q
   return { ...q, tradingActive: false }
 }
 
@@ -509,6 +519,8 @@ export const TAPE_META: Record<
   ng: { id: 'ng', label: 'NG', short: 'NG', series: 'KXNATGAS15M', decimals: 5, pulseName: 'NATURAL GAS 15 MINUTE' },
   cu: { id: 'cu', label: 'CU', short: 'CU', series: 'KXCOPPER15M', decimals: 5, pulseName: 'COPPER 15 MINUTE' },
   gld: { id: 'gld', label: 'GLD', short: 'GLD', series: 'KXGOLD15M', decimals: 2, pulseName: 'GOLD 15 MINUTE' },
+  wti: { id: 'wti', label: 'WTI', short: 'WTI', series: 'KXWTI15M', decimals: 2, pulseName: 'WTI 15 MINUTE' },
+  slv: { id: 'slv', label: 'SLV', short: 'SLV', series: 'KXSILVER15M', decimals: 2, pulseName: 'SILVER 15 MINUTE' },
 }
 
 /** Final locked Grok Build recipes — Soft FAIL inventing new ones. */
@@ -517,6 +529,8 @@ export const GOLD_RECIPES: Record<TapeId, TapeRecipe> = {
   ng: { contracts: 1, botOn: true, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
   cu: { contracts: 1, botOn: true, liveOn: false, armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
   gld: { contracts: 1, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 },
+  wti: { contracts: 1, botOn: true, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.05, centLo: 34, centHi: 89 },
+  slv: { contracts: 1, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 0.05, centLo: 34, centHi: 89 },
 }
 
 export const DEFAULT_SETTINGS: DeskSettings = {
@@ -525,6 +539,8 @@ export const DEFAULT_SETTINGS: DeskSettings = {
     ng: { ...GOLD_RECIPES.ng },
     cu: { ...GOLD_RECIPES.cu },
     gld: { ...GOLD_RECIPES.gld },
+    wti: { ...GOLD_RECIPES.wti },
+    slv: { ...GOLD_RECIPES.slv },
   },
   betsFilter: allBetsFilter(),
   clocks: defaultClocks(),
@@ -606,6 +622,7 @@ function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe, 
   else next.botOn = partial.botOn === true
   if (partial == null || typeof partial.liveOn !== 'boolean') next.liveOn = false
   else next.liveOn = partial.liveOn === true
+  if (!tapeAllowsLive(id)) next.liveOn = false
   return next
 }
 
@@ -623,6 +640,7 @@ export function hydrateSettings(raw: unknown): DeskSettings {
       if (typeof stored.liveOn === 'boolean') next.liveOn = stored.liveOn === true
       if (stored.contracts != null) next.contracts = clampContracts(Number(stored.contracts))
     }
+    if (!tapeAllowsLive(id)) next.liveOn = false
     tapes[id] = next
   }
   return {
@@ -716,12 +734,13 @@ export function saveSettings(settings: DeskSettings, opts?: { touchToggles?: boo
 }
 
 export function patchTape(settings: DeskSettings, id: TapeId, patch: Partial<TapeRecipe>): DeskSettings {
-  const touch = 'botOn' in patch || 'liveOn' in patch || 'contracts' in patch
+  const nextPatch = !tapeAllowsLive(id) && patch.liveOn === true ? { ...patch, liveOn: false } : patch
+  const touch = 'botOn' in nextPatch || 'liveOn' in nextPatch || 'contracts' in nextPatch
   return saveSettings(
     {
       ...settings,
       togglesPicked: settings.togglesPicked === true || touch,
-      tapes: { ...settings.tapes, [id]: { ...settings.tapes[id], ...patch } },
+      tapes: { ...settings.tapes, [id]: { ...settings.tapes[id], ...nextPatch } },
     },
     { touchToggles: touch },
   )
@@ -816,7 +835,7 @@ export function tabIsOpen() {
 /** Tape bot + tape live cash. Soft FAIL master liveBets. Bot ON + Live cash ON posts. */
 export function cashGates(settings: DeskSettings, tape: TapeId) {
   const bot = settings.tapes[tape].botOn === true
-  const liveCash = settings.tapes[tape].liveOn === true
+  const liveCash = tapeAllowsLive(tape) && settings.tapes[tape].liveOn === true
   return { bot, liveCash, ok: bot && liveCash }
 }
 
@@ -837,6 +856,7 @@ export function hostLivePlaceGate(opts: {
   hasKeys?: boolean
 }) {
   if (!opts.tape || !isTapeId(opts.tape)) return { ok: false as const, reason: 'Kalshi POST needs a tape' }
+  if (!tapeAllowsLive(opts.tape)) return { ok: false as const, reason: `${opts.tape.toUpperCase()} paper desk — Soft FAIL Live` }
   const recipe = hydrateSettings(opts.settings).tapes[opts.tape]
   return livePlaceGate({
     botOn: opts.clientBotOn === true || recipe.botOn === true,
@@ -1038,7 +1058,14 @@ export type HitLatch = {
 export const TTL_MS = 24 * 60 * 60 * 1000
 
 function emptyCells(): Record<TapeId, HitCell> {
-  return { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } }
+  return {
+    btc: { w: 0, l: 0 },
+    ng: { w: 0, l: 0 },
+    cu: { w: 0, l: 0 },
+    gld: { w: 0, l: 0 },
+    wti: { w: 0, l: 0 },
+    slv: { w: 0, l: 0 },
+  }
 }
 
 export function emptyHits(): HitLatch {
@@ -1233,8 +1260,10 @@ export function ttlFromHits(hits: HitLatch) {
   let w = 0
   let l = 0
   for (const id of TAPE_IDS) {
-    w += hits.tapes[id].w
-    l += hits.tapes[id].l
+    const cell = hits.tapes[id]
+    if (!cell) continue
+    w += cell.w
+    l += cell.l
   }
   const n = w + l
   return { w, l, pct: n ? Math.round((w / n) * 100) : 0 }
@@ -1363,6 +1392,8 @@ export function seriesToTape(seriesOrTicker: string): TapeId | null {
   if (s.startsWith('KXNATGAS') || s.startsWith('KXNG')) return 'ng'
   if (s.startsWith('KXCOPPER') || s.startsWith('KXCU')) return 'cu'
   if (s.startsWith('KXGOLD') || s.startsWith('KXGLD')) return 'gld'
+  if (s.startsWith('KXWTI') || s.startsWith('KXCL')) return 'wti'
+  if (s.startsWith('KXSILVER') || s.startsWith('KXSLV')) return 'slv'
   return null
 }
 
@@ -1647,6 +1678,18 @@ export function extractOrderId(raw: unknown): string | null {
     }
   }
   return null
+}
+
+export function placeOrderStatus(raw: unknown): 'filled' | 'resting' | 'canceled' | 'none' {
+  const id = extractOrderId(raw)
+  if (!id || isPaperOrderId(id)) return 'none'
+  if (placeFillCount(raw) > 0) return 'filled'
+  const bag = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  const order = bag?.order && typeof bag.order === 'object' ? (bag.order as Record<string, unknown>) : bag
+  const status = String(order?.status ?? bag?.status ?? '').toLowerCase()
+  if (['resting', 'open', 'pending', 'live', 'working', 'active', 'new'].includes(status)) return 'resting'
+  if (['canceled', 'cancelled', 'expired', 'executed'].includes(status)) return 'canceled'
+  return 'canceled'
 }
 
 /** Real fill only. Soft FAIL canceled / resting / 0-fill order_id as BOT BOUGHT. */

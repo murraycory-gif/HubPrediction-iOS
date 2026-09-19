@@ -92,6 +92,38 @@ describe('closeClockView — countdown only while LIVE', () => {
     expect(view.text).not.toMatch(/CLOSED/)
   })
 
+  it('CLOSED only when series openMarkets === 0', () => {
+    const now = Date.parse('2026-09-19T00:20:00-05:00')
+    const btcClose = Date.parse('2026-09-19T00:30:00-05:00')
+    expect(closeClockLive({ openMarkets: 1, tradingActive: true, closeAt: btcClose, now })).toBe(true)
+    expect(closeClockView({ openMarkets: 1, tradingActive: false, stale: true, closeAt: btcClose, now }).kind).toBe('live')
+    expect(closeClockView({ openMarkets: 1, tradingActive: false, stale: true, closeAt: btcClose, now }).text).not.toMatch(/CLOSED/)
+    expect(closeClockLive({ openMarkets: 0, tradingActive: true, live: true, closeAt: btcClose, now })).toBe(false)
+    expect(closeClockView({ openMarkets: 0, tradingActive: true, live: true, closeAt: btcClose, now, nextOpenLabel: 'Sun Sep 20 5:00 PM' })).toEqual({
+      kind: 'closed',
+      text: 'CLOSED · Sun Sep 20 5:00 PM',
+    })
+  })
+
+  it('Friday night NG/CU/GLD 0 open is CLOSED; BTC active 15m is not', () => {
+    const now = Date.parse('2026-09-18T21:20:00-05:00')
+    const closeAt = Date.parse('2026-09-18T21:30:00-05:00')
+    expect(closeClockView({ openMarkets: 1, tradingActive: true, closeAt, now }).kind).toBe('live')
+    expect(closeClockView({ openMarkets: 1, tradingActive: true, closeAt, now }).text).not.toMatch(/CLOSED/)
+    for (const _tape of ['ng', 'cu', 'gld'] as const) {
+      const view = closeClockView({
+        openMarkets: 0,
+        tradingActive: false,
+        closeAt: now + 8 * 60_000,
+        now,
+        nextOpenLabel: 'Sun Sep 20 5:00 PM',
+      })
+      expect(view.kind).toBe('closed')
+      expect(view.text).toMatch(/CLOSED/)
+      void _tape
+    }
+  })
+
   it('tradingActive false stays CLOSED even if live=true', () => {
     const now = Date.parse('2026-09-19T20:57:00-05:00')
     const view = closeClockView({

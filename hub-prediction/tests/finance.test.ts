@@ -438,7 +438,7 @@ describe('finance Soft KEEP', () => {
 
   it('Last 24H bets filter persists All·BTC·NG·CU·GLD multi-select', () => {
     expect(isAllBetsFilter(hydrateBetsFilter(null))).toBe(true)
-    expect(hydrateBetsFilter([])).toEqual(['btc', 'ng', 'cu', 'gld'])
+    expect(hydrateBetsFilter([])).toEqual(['btc', 'ng', 'cu', 'gld', 'wti', 'slv'])
     const btc = toggleBetsFilter(loadBetsFilter(), 'btc')
     expect(btc).toEqual(['btc'])
     expect(JSON.parse(localStorage.getItem(BETS_FILTER_KEY) || '[]')).toEqual(['btc'])
@@ -449,7 +449,7 @@ describe('finance Soft KEEP', () => {
     expect(stay).toEqual(['btc'])
     const all = toggleBetsFilter(plus, 'all')
     expect(isAllBetsFilter(all)).toBe(true)
-    expect(saveBetsFilter(['nope' as never])).toEqual(['btc', 'ng', 'cu', 'gld'])
+    expect(saveBetsFilter(['nope' as never])).toEqual(['btc', 'ng', 'cu', 'gld', 'wti', 'slv'])
     const persisted = applyBetsFilter(loadSettings(), 'btc')
     expect(persisted.betsFilter).toEqual(['btc'])
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}').betsFilter).toEqual(['btc'])

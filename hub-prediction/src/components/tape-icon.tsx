@@ -5,6 +5,8 @@ const FILL: Record<TapeId, string> = {
   ng: '#3d8bfd',
   cu: '#b87333',
   gld: '#d4af37',
+  wti: '#2f6b4f',
+  slv: '#c0c7d1',
 }
 
 export function TapeIcon({ id }: { id: TapeId }) {
@@ -18,7 +20,7 @@ export function TapeIcon({ id }: { id: TapeId }) {
           </text>
         ) : (
           <text x="16" y="21" textAnchor="middle" fontSize="11" fontWeight="700" fill="#0a100e">
-            {id === 'ng' ? 'NG' : id === 'cu' ? 'CU' : 'AU'}
+            {id === 'ng' ? 'NG' : id === 'cu' ? 'CU' : id === 'wti' ? 'WTI' : id === 'slv' ? 'AG' : 'AU'}
           </text>
         )}
       </svg>

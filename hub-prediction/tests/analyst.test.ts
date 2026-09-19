@@ -70,12 +70,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
   it('starts from gold and never marks live touched', () => {
     const report = analyzeDesk(board(), emptyHits())
     expect(report.liveTouched).toBe(false)
-    expect(report.locked).toEqual({
-      btc: GOLD_RECIPES.btc,
-      ng: GOLD_RECIPES.ng,
-      cu: GOLD_RECIPES.cu,
-      gld: GOLD_RECIPES.gld,
-    })
+    expect(report.locked).toEqual(GOLD_RECIPES)
     expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
   })
 
@@ -501,7 +496,7 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
 
   it('HIT_FLOOR 80 is the same sit/rehab goal on BTC NG CU GLD', () => {
     expect(HIT_FLOOR).toBe(80)
-    expect(TAPE_IDS).toEqual(['btc', 'ng', 'cu', 'gld'])
+    expect(TAPE_IDS).toEqual(['btc', 'ng', 'cu', 'gld', 'wti', 'slv'])
     const now = Date.now()
     const hits = emptyHits()
     const coldBets = TAPE_IDS.flatMap((id) =>

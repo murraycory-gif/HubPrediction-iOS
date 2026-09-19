@@ -16,6 +16,7 @@ import {
   num,
   seriesForTape,
   seriesToTape,
+  tapeAllowsLive,
   type TapeClock,
   type TapeId,
 } from './tapes'
@@ -147,8 +148,21 @@ function mergeMarkets(...lists: Market[][]) {
   return [...bag.values()]
 }
 
+/** status=open count. CLOSED only when this is 0. Soft FAIL STALE painting CLOSED on an active 15m. */
+export function countOpenSeriesMarkets(markets: Market[], now = Date.now()) {
+  let n = 0
+  for (const m of markets ?? []) {
+    const status = String(m.status ?? '').toLowerCase()
+    const close = marketCloseAt(m)
+    const stillListed = !Number.isFinite(close) || close > now
+    if (isLiveWindow(m, now)) n += 1
+    else if ((status === 'open' || status === 'active') && stillListed) n += 1
+  }
+  return n
+}
+
 /** Open + unfiltered. Next 15m clocks are status=initialized and missing from status=open. */
-async function listSeriesMarkets(series: string, limit: number): Promise<Market[]> {
+async function listSeriesMarkets(series: string, limit: number): Promise<{ markets: Market[]; openMarkets: number }> {
   const openUrl = `${KALSHI}/markets?series_ticker=${series}&status=open&limit=${limit}`
   const allUrl = `${KALSHI}/markets?series_ticker=${series}&limit=${limit}`
   const [open, all] = await Promise.all([
@@ -157,11 +171,13 @@ async function listSeriesMarkets(series: string, limit: number): Promise<Market[
   ])
   let merged = mergeMarkets(open.markets ?? [], all.markets ?? [])
   const now = Date.now()
+  let openListed = open.markets ?? []
   if (!merged.some((m) => isLiveWindow(m, now) || isUpcomingWindow(m, now))) {
     const again = await fetchJson<{ markets?: Market[] }>(openUrl, LIST_RETRY).catch(() => ({ markets: [] as Market[] }))
     merged = mergeMarkets(merged, again.markets ?? [])
+    openListed = mergeMarkets(openListed, again.markets ?? [])
   }
-  return merged
+  return { markets: merged, openMarkets: countOpenSeriesMarkets(openListed.length ? openListed : merged, now) }
 }
 
 function listedWindow(m: Market | null, now: number) {
@@ -181,9 +197,14 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
   const prevLive = Boolean(sameSeries && prev?.ticker && stillOpen(prev.openAt, prev.closeAt, now))
   const nearClose = Boolean(prev?.closeAt && prev.closeAt - now <= NEAR_CLOSE_MS)
   const reuse = prevLive && !nearClose
+  let openMarkets = sameSeries ? Number(prev?.openMarkets ?? (prevLive ? 1 : 0)) : 0
   if (!reuse) {
-    const markets = await listSeriesMarkets(series, clock === '1h' ? 48 : LIST_LIMIT)
-    listed = pickOpen(markets, now, sameSeries ? prev?.live ?? prev?.beat : null)
+    const listedSeries = await listSeriesMarkets(series, clock === '1h' ? 48 : LIST_LIMIT)
+    openMarkets = listedSeries.openMarkets
+    listed = pickOpen(listedSeries.markets, now, sameSeries ? prev?.live ?? prev?.beat : null)
+    if (!listed && openMarkets > 0) {
+      listed = listedSeries.markets.find((m) => isLiveWindow(m, now)) ?? listedSeries.markets[0] ?? null
+    }
   }
 
   const listedLive = listedWindow(listed, now)
@@ -191,7 +212,11 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
   const eventTicker = String(
     (listedLive && listed?.event_ticker) || (prevLive ? prev?.eventTicker : '') || '',
   )
-  if (!ticker) return prevLive ? prev : sameSeries && prev ? { ...prev, tradingActive: false } : null
+  if (!ticker) {
+    if (openMarkets > 0 && sameSeries && prev) return { ...prev, tradingActive: true, openMarkets }
+    if (prevLive && prev) return { ...prev, openMarkets }
+    return sameSeries && prev ? { ...prev, tradingActive: false, openMarkets: 0 } : null
+  }
 
   const skipLive = reuse
   const [freshPayload, livePayload] = await Promise.all([
@@ -206,8 +231,9 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
 
   const m = unwrapMarket(freshPayload, listed)
   if (!m) {
-    if (prevLive && prev) return prev
-    return sameSeries && prev ? { ...prev, tradingActive: false } : null
+    if (openMarkets > 0 && prev) return { ...prev, tradingActive: true, openMarkets }
+    if (prevLive && prev) return { ...prev, openMarkets }
+    return sameSeries && prev ? { ...prev, tradingActive: false, openMarkets: 0 } : null
   }
 
   const sameTicker = Boolean(prev && prev.ticker === ticker)
@@ -251,7 +277,8 @@ async function loadTape(id: TapeId, now: number, clock: TapeClock): Promise<Tape
     fetchedAt: now,
     clock: closeAt ? formatClock(closeAt) : '—',
     clockId: clock,
-    tradingActive: marketTradingActive(m, now),
+    tradingActive: openMarkets > 0 && marketTradingActive(m, now),
+    openMarkets,
   }
 }
 
@@ -335,6 +362,7 @@ export async function loadLivePrints(
 function boardNeedsRollover(board: DeskBoard | null, now: number) {
   if (!board) return true
   return TAPE_IDS.some((id) => {
+    if (!tapeAllowsLive(id)) return false
     const q = board.tapes[id]
     if (!q) return true
     if (q.tradingActive === false) return true
@@ -425,12 +453,7 @@ export function applySettlementsToHits(
   const byTicker = new Map(settled.map((s) => [s.ticker, s]))
   const next = {
     asOf: Date.now(),
-    tapes: {
-      btc: { ...hits.tapes.btc },
-      ng: { ...hits.tapes.ng },
-      cu: { ...hits.tapes.cu },
-      gld: { ...hits.tapes.gld },
-    },
+    tapes: Object.fromEntries(TAPE_IDS.map((id) => [id, { ...hits.tapes[id] }])) as typeof hits.tapes,
   }
   const seen = new Set<string>()
   for (const t of tickets) {
@@ -523,8 +546,8 @@ export async function loadUpcomingRuns(
   const rows = await Promise.all(
     TAPE_IDS.map(async (id) => {
       const series = seriesForTape(id, hydrateClock(clocks[id]))
-      const markets = await listSeriesMarkets(series, 32)
-      return markets
+      const listedSeries = await listSeriesMarkets(series, 32)
+      return listedSeries.markets
         .map((m) => ({
           ticker: String(m.ticker ?? ''),
           openAt: marketOpenAt(m),

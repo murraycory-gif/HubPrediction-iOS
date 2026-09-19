@@ -32,6 +32,8 @@ import {
   disarmAllBots,
   eventsFromTickets,
   confirmedPlaceOrderId,
+  placeOrderStatus,
+  tapeAllowsLive,
   formatCash,
   isPaperOrderId,
   isRealOrderId,
@@ -381,7 +383,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       try {
         return await getLivePrints({ data: { events: liveEvents, charts: settings.charts, clocks: settings.clocks } })
       } catch {
-        return printsHold.current ?? { tapes: { btc: null, ng: null, cu: null, gld: null }, fetchedAt: 0 }
+        return printsHold.current ?? { tapes: { btc: null, ng: null, cu: null, gld: null, wti: null, slv: null }, fetchedAt: 0 }
       }
     },
     enabled: Object.values(liveEvents).some(Boolean),
@@ -595,6 +597,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       abortLive(`${TAPE_META[tape].label} live cash halted — paper rehab`)
       return
     }
+    if (!tapeAllowsLive(tape)) {
+      abortLive(`${TAPE_META[tape].label} paper desk — Soft FAIL Live`)
+      return
+    }
     const flags = liveDeskFlags(tape)
     const gates = cashGates(settings, tape)
     if (!flags.botOn || !flags.liveOn) {
@@ -665,6 +671,19 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               clientOrderId,
             },
           })
+      const life = placeOrderStatus(raw)
+      if (life === 'resting') {
+        abortLive(`${TAPE_META[tape].label} RESTING — BUY NO sits, 0 fill`)
+        return
+      }
+      if (life !== 'filled') {
+        abortLive(
+          life === 'canceled'
+            ? `${TAPE_META[tape].label} Kalshi canceled 0-fill — not bought`
+            : `${TAPE_META[tape].label} Kalshi returned no order id — no ticket`,
+        )
+        return
+      }
       const orderId = confirmedPlaceOrderId(raw)
       const ticket = makeTicket({
         tape,
@@ -676,7 +695,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask,
       })
       if (!ticket || !isRealOrderId(ticket.orderId) || isPaperOrderId(ticket.orderId)) {
-        abortLive(`${TAPE_META[tape].label} Kalshi returned no order id — no ticket`)
+        abortLive(`${TAPE_META[tape].label} Kalshi canceled 0-fill — not bought`)
         return
       }
       markFilled(sentRef.current, key, ticket.orderId)
@@ -734,12 +753,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       cash: over?.cash ?? cash.cash,
       deposits: over?.deposits ?? cash.deposits,
       quotes: over?.quotes ?? chiefQuotes(),
-      halt: over?.halt ?? {
-        btc: isRehabPaper(rehab, 'btc'),
-        ng: isRehabPaper(rehab, 'ng'),
-        cu: isRehabPaper(rehab, 'cu'),
-        gld: isRehabPaper(rehab, 'gld'),
-      },
+      halt: over?.halt ?? Object.fromEntries(TAPE_IDS.map((id) => [id, isRehabPaper(rehab, id)])) as Record<TapeId, boolean>,
       typicalAsk: over?.typicalAsk,
       now: over?.now,
       prev: over?.prev ?? loadChief(),
@@ -956,6 +970,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                   setMsg('KILL on — bots stay off')
                   return
                 }
+                if (patch.liveOn === true && !tapeAllowsLive(id)) {
+                  setMsg(`${TAPE_META[id].label} paper desk — Soft FAIL Live`)
+                  return
+                }
                 if (patch.liveOn === true) {
                   const quote = readTestTapeQuote(id) ?? board?.tapes[id]
                   const tapeGate = tapeLiveArmGate(id, quote)
@@ -1099,6 +1117,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             onTape={(id, patch) => {
               if (book.killed && patch.botOn) {
                 setMsg('KILL on — bots stay off')
+                return
+              }
+              if (patch.liveOn === true && !tapeAllowsLive(id)) {
+                setMsg(`${TAPE_META[id].label} paper desk — Soft FAIL Live`)
                 return
               }
               if (patch.liveOn === true) {
@@ -1361,6 +1383,7 @@ function TapeRow({
             live={tradingLive}
             stale={staleFlag}
             tradingActive={testClock?.tradingActive ?? shownQuote?.tradingActive}
+            openMarkets={shownQuote?.openMarkets}
             nextOpenLabel={nextOpenLabel}
           />
           <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
@@ -1483,11 +1506,12 @@ function TapeRow({
             type="checkbox"
             data-testid={`live-cash-${id}`}
             checked={recipe.liveOn}
+            disabled={!tapeAllowsLive(id) || recipeLocked}
             onChange={(e) => {
               onTape({ liveOn: e.target.checked })
             }}
           />
-          Live cash {rehabPaper ? 'HALT' : recipe.liveOn ? 'ON' : 'OFF'}
+          Live cash {rehabPaper ? 'HALT' : !tapeAllowsLive(id) ? 'PAPER' : recipe.liveOn ? 'ON' : 'OFF'}
         </label>
         <label className="contracts-field">
           <span className="contracts-label glyph-plate" data-testid={`contracts-label-${id}`}>

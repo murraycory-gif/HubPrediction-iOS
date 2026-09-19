@@ -30,6 +30,8 @@ const TAPE_STROKE: Record<TapeId, string> = {
   ng: '#4ea3ff',
   cu: '#c47a3a',
   gld: '#d4af37',
+  wti: '#2f6b4f',
+  slv: '#c0c7d1',
 }
 
 /** Per-tape zoom around BEAT / live. Soft FAIL drawing Gold on a BTC ±$90 scale. */
@@ -39,7 +41,7 @@ export function raceDomain(id: TapeId, beat: number, live: number | null, pts: P
   if (live != null && Number.isFinite(live) && live > 0) ys.push(live)
   const mid = (Number.isFinite(beat) && beat > 0 ? beat : live) || 0
   const floor =
-    id === 'btc' ? 90 : id === 'gld' ? 2 : id === 'ng' || id === 'cu' ? 0.004 : 1
+    id === 'btc' ? 90 : id === 'gld' || id === 'slv' ? 2 : id === 'ng' || id === 'cu' ? 0.004 : id === 'wti' ? 0.4 : 1
   if (!ys.length) {
     if (!(mid > 0)) return { lo: 0, hi: 1 }
     return { lo: mid - floor, hi: mid + floor }

@@ -27,6 +27,7 @@ import {
   GOLD_RECIPES,
   TAPE_IDS,
   TAPE_META,
+  tapeAllowsLive,
   clampContracts,
   hydrateClock,
   type DeskSettings,
@@ -150,6 +151,9 @@ export function liveHeatTapes(
 }
 
 export function tapeLiveArmGate(id: TapeId, quote?: ChiefQuote | null, now = Date.now()): Gate {
+  if (!tapeAllowsLive(id)) {
+    return { ok: false, reason: `${TAPE_META[id].label} paper desk — Soft FAIL Live` }
+  }
   const session = tapeSessionHours(id, now)
   const closed = quote?.tradingActive === false
   const stale = quote?.stale === true || closed

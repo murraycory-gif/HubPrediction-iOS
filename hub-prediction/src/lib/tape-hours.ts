@@ -8,6 +8,8 @@ export const TAPE_SESSION_LABEL: Record<TapeId, string> = {
   ng: 'Sun 5:00 PM – Fri 4:00 PM CT',
   cu: 'Sun 5:00 PM – Fri 4:00 PM CT',
   gld: 'Sun 5:00 PM – Fri 4:00 PM CT',
+  wti: 'Sun 5:00 PM – Fri 4:00 PM CT',
+  slv: 'Sun 5:00 PM – Fri 4:00 PM CT',
 }
 
 export type TapeSessionHours = {

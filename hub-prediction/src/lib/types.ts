@@ -88,6 +88,8 @@ export type TapeQuote = {
   clock: string
   clockId?: '5m' | '15m' | '1h'
   tradingActive: boolean
+  /** Kalshi series status=open count. CLOSED only when this is 0. */
+  openMarkets?: number
 }
 
 export type DeskBoard = {

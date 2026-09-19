@@ -19,7 +19,7 @@ export function settingsSavedAt(settings: unknown): number {
   return Number((settings as { savedAt?: unknown }).savedAt) || 0
 }
 
-const TOGGLE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
+const TOGGLE_IDS = ['btc', 'ng', 'cu', 'gld', 'wti', 'slv'] as const
 
 function settingsTapes(raw: unknown) {
   if (!raw || typeof raw !== 'object') return {}

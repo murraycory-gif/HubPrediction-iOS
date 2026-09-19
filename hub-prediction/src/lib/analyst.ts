@@ -325,7 +325,7 @@ export function analyzeDesk(
       current.contracts = recipes[id]!.contracts
     }
     const quote = board?.tapes[id] ?? null
-    const cell = hits.tapes[id]
+    const cell = hits.tapes[id] ?? { w: 0, l: 0 }
     const { hug, gap } = hugState(id, quote?.live ?? null, quote?.beat ?? 0, current)
     const lean = tapeLean({ id, live: quote?.live ?? null, beat: quote?.beat ?? 0, recipe: current })
     const clockMin = quote?.closeAt ? remainingMinutes(quote.closeAt, now) : null
@@ -382,17 +382,12 @@ export function analyzeDesk(
   const retunes = tapes.filter((t) => t.changed).length
   const summary =
     retunes === 0
-      ? `Goal ${HIT_FLOOR}% win ratio. All four desks match the book. Rules stay. 3-loss HALT papers the tape — Live cash stays as the user left it.`
+      ? `Goal ${HIT_FLOOR}% win ratio. All desks match the book. Rules stay. 3-loss HALT papers the tape — Live cash stays as the user left it.`
       : `Goal ${HIT_FLOOR}% win ratio. ${retunes} desk${retunes === 1 ? '' : 's'} proposed — Accept to apply. Soft FAIL auto-write into Live recipes.`
 
   return {
     liveTouched: false,
-    locked: {
-      btc: { ...GOLD_RECIPES.btc },
-      ng: { ...GOLD_RECIPES.ng },
-      cu: { ...GOLD_RECIPES.cu },
-      gld: { ...GOLD_RECIPES.gld },
-    },
+    locked: Object.fromEntries(TAPE_IDS.map((id) => [id, { ...GOLD_RECIPES[id] }])) as Record<TapeId, TapeRecipe>,
     tapes,
     summary,
   }
@@ -403,12 +398,9 @@ export function makePaperDrafts(report: AnalystReport): PaperDrafts {
   return {
     asOf: Date.now(),
     notes: report.tapes.map((t) => t.proposed).join(' · '),
-    recipes: {
-      btc: { ...report.tapes.find((t) => t.id === 'btc')?.nextRecipe ?? GOLD_RECIPES.btc },
-      ng: { ...report.tapes.find((t) => t.id === 'ng')?.nextRecipe ?? GOLD_RECIPES.ng },
-      cu: { ...report.tapes.find((t) => t.id === 'cu')?.nextRecipe ?? GOLD_RECIPES.cu },
-      gld: { ...report.tapes.find((t) => t.id === 'gld')?.nextRecipe ?? GOLD_RECIPES.gld },
-    },
+    recipes: Object.fromEntries(
+      TAPE_IDS.map((id) => [id, { ...(report.tapes.find((t) => t.id === id)?.nextRecipe ?? GOLD_RECIPES[id]) }]),
+    ) as Record<TapeId, TapeRecipe>,
   }
 }
 

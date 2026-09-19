@@ -351,7 +351,7 @@ export function v2EventsOrderBody(args: {
     side: args.side === 'up' ? 'bid' : 'ask',
     count: String(count),
     price,
-    time_in_force: 'immediate_or_cancel',
+    time_in_force: args.side === 'down' ? 'good_till_canceled' : 'immediate_or_cancel',
     self_trade_prevention_type: 'taker_at_cross',
     client_order_id: args.clientOrderId,
   }
