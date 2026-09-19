@@ -34,6 +34,7 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     const again = loadSettings()
     expect(again.tapes.btc.liveOn).toBe(true)
     expect(again.tapes.btc.botOn).toBe(true)
+    expect(again.tapes.btc.through).toBe(GOLD_RECIPES.btc.through)
     expect(again.liveBets).toBe(false)
     expect(GOLD_RECIPES.btc.liveOn).toBe(false)
     await rm(dir, { recursive: true, force: true })

@@ -1,7 +1,23 @@
 import { deskStorage } from './desk-storage'
 import { settingsSavedAt, unionFinance, unionTickets, type HostDeskState } from './desk-persist'
 import { FINANCE_KEY, hydrateFinance } from './finance'
-import { SETTINGS_KEY, TICKETS_KEY, hydrateSettings, loadSettings, loadTickets } from './tapes'
+import { GOLD_RECIPES, SETTINGS_KEY, TAPE_IDS, TICKETS_KEY, hydrateSettings, loadSettings, loadTickets } from './tapes'
+
+/** Host restore keeps user picks. Soft FAIL a recipe rewrite surviving update-desk. */
+function hostSettingsPicks(raw: object, savedAt: number) {
+  const incoming = hydrateSettings({ ...raw, savedAt })
+  for (const id of TAPE_IDS) {
+    const gold = GOLD_RECIPES[id]
+    const cur = incoming.tapes[id]
+    incoming.tapes[id] = {
+      ...gold,
+      contracts: cur.contracts,
+      botOn: cur.botOn === true,
+      liveOn: cur.liveOn === true,
+    }
+  }
+  return incoming
+}
 
 /** Host fills an empty / new-origin store. Soft FAIL overwriting a newer local pick. */
 export function applyHostDeskState(host: HostDeskState | null | undefined) {
@@ -9,12 +25,16 @@ export function applyHostDeskState(host: HostDeskState | null | undefined) {
   const ls = deskStorage()
   if (!ls) return false
   let any = false
+  const raw = ls.getItem(SETTINGS_KEY)
   const local = loadSettings()
   const localAt = Number(local.savedAt) || 0
   const hostSettingsAt = settingsSavedAt(host.settings)
-  if (host.settings && (localAt === 0 || hostSettingsAt > localAt)) {
+  if (host.settings && (!raw || hostSettingsAt > localAt)) {
     try {
-      ls.setItem(SETTINGS_KEY, JSON.stringify(hydrateSettings({ ...(host.settings as object), savedAt: hostSettingsAt })))
+      ls.setItem(
+        SETTINGS_KEY,
+        JSON.stringify(hostSettingsPicks(host.settings as object, hostSettingsAt || Date.now())),
+      )
       any = true
     } catch {
       /* quota */

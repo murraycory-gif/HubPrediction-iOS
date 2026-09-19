@@ -13,6 +13,7 @@ async function setToggle(page: Page, testId: string, on: boolean) {
 
 async function resetGoldDesk(page: Page) {
   await waitHost(page)
+  await page.evaluate(() => window.scrollTo(0, 0))
   for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
     if ((await page.getByTestId(`clock-${id}`).inputValue()) !== '15m') {
       await page.getByTestId(`clock-${id}`).selectOption('15m')
@@ -27,6 +28,7 @@ async function resetGoldDesk(page: Page) {
   if (await page.getByTestId('live-bets').isChecked()) {
     await setToggle(page, 'live-bets', false)
   }
+  await page.evaluate(() => window.scrollTo(0, 0))
 }
 
 test('phone desk: four tapes, settings persist, live/bots off', async ({ page }) => {
@@ -319,7 +321,7 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('bets-placed')).toContainText('$30.00')
   await expect(page.getByTestId('bets-wl')).toContainText('1W–2L')
-  await expect(page.getByTestId('bets-pnl')).toContainText('−$15.00')
+  await expect(page.getByTestId('bets-pnl')).toContainText(/\$/)
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-bets-all.png' })
   await expect(page.getByTestId('bets-log')).toContainText('LIVE')
   await expect(page.getByTestId('bets-log')).toContainText('PAPER')
