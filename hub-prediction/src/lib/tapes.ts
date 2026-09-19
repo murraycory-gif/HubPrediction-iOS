@@ -600,8 +600,10 @@ export function clampTapeRecipe(id: TapeId, partial: Partial<TapeRecipe> | undef
 
 function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe, id: TapeId): TapeRecipe {
   const next = clampTapeRecipe(id, partial, gold)
-  next.botOn = true
-  next.liveOn = false
+  if (partial == null || typeof partial.botOn !== 'boolean') next.botOn = true
+  else next.botOn = partial.botOn === true
+  if (partial == null || typeof partial.liveOn !== 'boolean') next.liveOn = false
+  else next.liveOn = partial.liveOn === true
   return next
 }
 
@@ -631,16 +633,20 @@ export function hydrateSettings(raw: unknown): DeskSettings {
   }
 }
 
+export function settingsReadyToPush(settings: DeskSettings) {
+  if (settings.togglesPicked === true) return true
+  if ((Number(settings.savedAt) || 0) > 0) return true
+  return TAPE_IDS.some((id) => settings.tapes[id].liveOn === true || settings.tapes[id].botOn === false)
+}
+
 export function loadSettings(): DeskSettings {
-  const empty = { ...hydrateSettings(null), togglesPicked: true }
+  const empty = hydrateSettings(null)
   const ls = deskStorage()
   if (!ls) return empty
   try {
     const raw = ls.getItem(SETTINGS_KEY)
     if (!raw) return empty
-    const next = hydrateSettings(JSON.parse(raw))
-    if (next.togglesPicked === true) return next
-    return saveSettings({ ...next, togglesPicked: true })
+    return hydrateSettings(JSON.parse(raw))
   } catch {
     return empty
   }

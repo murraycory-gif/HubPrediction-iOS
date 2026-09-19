@@ -1,10 +1,10 @@
 import { deskStorage } from './desk-storage'
-import { settingsSavedAt, unionFinance, unionTickets, type HostDeskState } from './desk-persist'
+import { settingsHasUserLive, settingsSavedAt, unionFinance, unionTickets, type HostDeskState } from './desk-persist'
 import { FINANCE_KEY, hydrateFinance } from './finance'
 import { GOLD_RECIPES, SETTINGS_KEY, TAPE_IDS, TICKETS_KEY, hydrateSettings, loadSettings, loadTickets } from './tapes'
 
 /** Phone + PC latch the host book this often. Soft FAIL local-only localStorage. */
-export const SETTINGS_LATCH_MS = 3000
+export const SETTINGS_LATCH_MS = 1000
 /** Contract keystrokes flush to `.secrets/desk-state.json` after this pause. */
 export const SETTINGS_DEBOUNCE_MS = 280
 
@@ -21,6 +21,8 @@ function hostSettingsPicks(raw: object, savedAt: number) {
       liveOn: cur.liveOn === true,
     }
   }
+  incoming.togglesPicked =
+    incoming.togglesPicked === true || TAPE_IDS.some((id) => incoming.tapes[id].liveOn === true || incoming.tapes[id].botOn === false)
   return incoming
 }
 
@@ -42,7 +44,10 @@ export function applyHostDeskState(host: HostDeskState | null | undefined) {
   const local = loadSettings()
   const localAt = Number(local.savedAt) || 0
   const hostSettingsAt = settingsSavedAt(host.settings)
-  if (host.settings && (!raw || hostSettingsAt > localAt)) {
+  const hostHasLive = settingsHasUserLive(host.settings)
+  const localHasLive = settingsHasUserLive(local)
+  const localUserOff = local.togglesPicked === true && localAt > hostSettingsAt && !localHasLive
+  if (host.settings && (!raw || hostSettingsAt > localAt || (hostHasLive && !localHasLive && !localUserOff))) {
     try {
       ls.setItem(
         SETTINGS_KEY,

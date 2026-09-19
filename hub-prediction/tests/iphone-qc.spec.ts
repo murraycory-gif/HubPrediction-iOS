@@ -1244,7 +1244,7 @@ test('two browsers share host contracts — A saves, B hydrates the same number'
     await pageB.goto('/', { waitUntil: 'domcontentloaded' })
     await waitHost(pageA)
     await waitHost(pageB)
-    await expect(pageA.getByTestId('desk')).toHaveAttribute('data-settings-latch', '3000')
+    await expect(pageA.getByTestId('desk')).toHaveAttribute('data-settings-latch', '1000')
     if (!(await pageA.getByTestId('contracts-btc').isEnabled())) return
     await pageA.getByTestId('contracts-btc').fill('23')
     await pageA.getByTestId('contracts-btc').blur()
@@ -1261,6 +1261,65 @@ test('two browsers share host contracts — A saves, B hydrates the same number'
   } finally {
     await pageA.close()
     await pageB.close()
+    await pc.close()
+    await phone.close()
+  }
+})
+
+test('desktop + 390: Live cash and contracts survive reload and a second client', async ({ browser }) => {
+  test.setTimeout(90_000)
+  const pc = await browser.newContext({ viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false })
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  const desk = await pc.newPage()
+  const hand = await phone.newPage()
+  try {
+    await desk.goto('/', { waitUntil: 'domcontentloaded' })
+    await waitHost(desk)
+    await resetGoldDesk(desk)
+    await setToggle(desk, 'live-cash-btc', true)
+    await setToggle(desk, 'live-cash-ng', true)
+    await setToggle(desk, 'live-cash-cu', true)
+    if (await desk.getByTestId('contracts-btc').isEnabled()) {
+      await desk.getByTestId('contracts-btc').fill('17')
+      await desk.getByTestId('contracts-btc').blur()
+      await expect(desk.getByTestId('contracts-btc')).toHaveValue('17')
+    }
+    await expect(desk.getByTestId('live-cash-btc')).toBeChecked()
+    await desk.reload({ waitUntil: 'domcontentloaded' })
+    await waitHost(desk)
+    await expect(desk.getByTestId('live-cash-btc')).toBeChecked({ timeout: 15_000 })
+    await expect(desk.getByTestId('live-cash-ng')).toBeChecked()
+    await expect(desk.getByTestId('live-cash-cu')).toBeChecked()
+    if (await desk.getByTestId('contracts-btc').isEnabled()) {
+      await expect(desk.getByTestId('contracts-btc')).toHaveValue('17')
+    }
+    await hand.goto('/', { waitUntil: 'domcontentloaded' })
+    await waitHost(hand)
+    await expect(hand.getByTestId('live-cash-btc')).toBeChecked({ timeout: 15_000 })
+    await expect(hand.getByTestId('live-cash-ng')).toBeChecked()
+    await expect(hand.getByTestId('live-cash-cu')).toBeChecked()
+    if (await hand.getByTestId('contracts-btc').isEnabled()) {
+      await expect(hand.getByTestId('contracts-btc')).toHaveValue('17')
+    }
+    await hand.evaluate(() => localStorage.clear())
+    await hand.reload({ waitUntil: 'domcontentloaded' })
+    await waitHost(hand)
+    await expect(hand.getByTestId('live-cash-btc')).toBeChecked({ timeout: 15_000 })
+    await expect(hand.getByTestId('live-cash-ng')).toBeChecked()
+    await expect(hand.getByTestId('live-cash-cu')).toBeChecked()
+    if (await hand.getByTestId('contracts-btc').isEnabled()) {
+      await expect(hand.getByTestId('contracts-btc')).toHaveValue('17')
+    }
+    await setToggle(desk, 'live-cash-btc', false)
+    await setToggle(desk, 'live-cash-ng', false)
+    await setToggle(desk, 'live-cash-cu', false)
+    if (await desk.getByTestId('contracts-btc').isEnabled()) {
+      await desk.getByTestId('contracts-btc').fill('1')
+      await desk.getByTestId('contracts-btc').blur()
+    }
+  } finally {
+    await desk.close()
+    await hand.close()
     await pc.close()
     await phone.close()
   }

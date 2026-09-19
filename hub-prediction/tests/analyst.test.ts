@@ -325,7 +325,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     const report = analyzeDesk(board(), emptyHits(), losses, armed.tapes)
     const halted = runAutoAnalyst({ settings: armed, report, bets: losses, rehab: emptyAutoState(), now })
     expect(isRehabPaper(halted.rehab, 'btc')).toBe(true)
-    expect(halted.settings.tapes.btc.liveOn).toBe(false)
+    expect(halted.settings.tapes.btc.liveOn).toBe(true)
     expect(halted.settings).not.toHaveProperty('liveBets')
     expect(halted.rehab.tapes.btc?.liveWasOn).toBe(true)
     expect(REHAB_PAPER_RUNS).toBe(12)
@@ -373,7 +373,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
       now: now + 40_000,
     })
     expect(isRehabPaper(stay.rehab, 'ng')).toBe(true)
-    expect(stay.settings.tapes.ng.liveOn).toBe(false)
+    expect(stay.settings.tapes.ng.liveOn).toBe(true)
     expect(stay.settings).not.toHaveProperty('liveBets')
   })
 
@@ -401,7 +401,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
       now,
     })
     expect(isRehabPaper(halted.rehab, 'gld')).toBe(true)
-    expect(halted.settings.tapes.gld.liveOn).toBe(false)
+    expect(halted.settings.tapes.gld.liveOn).toBe(true)
     const stay = runAutoAnalyst({
       settings: { ...halted.settings, tapes: { ...halted.settings.tapes, gld: { ...halted.settings.tapes.gld, liveOn: true } } },
       report: analyzeDesk(board(), emptyHits(), losses, halted.settings.tapes),
@@ -410,6 +410,32 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
       now: now + 1000,
     })
     expect(isRehabPaper(stay.rehab, 'gld')).toBe(true)
-    expect(stay.settings.tapes.gld.liveOn).toBe(false)
+    expect(stay.settings.tapes.gld.liveOn).toBe(true)
+  })
+
+  it('never writes liveOn false into desk-state during HALT', () => {
+    const now = 8_000_000
+    const losses = [0, 1, 2].map((i) => settled('cu', -1, now - i * 1000, { kind: 'live' }))
+    const armed = hydrateSettings({
+      tapes: { cu: { ...GOLD_RECIPES.cu, botOn: true, liveOn: true } },
+    })
+    const halted = runAutoAnalyst({
+      settings: armed,
+      report: analyzeDesk(board(), emptyHits(), losses, armed.tapes),
+      bets: losses,
+      rehab: emptyAutoState(),
+      now,
+    })
+    expect(isRehabPaper(halted.rehab, 'cu')).toBe(true)
+    expect(halted.settings.tapes.cu.liveOn).toBe(true)
+    const again = runAutoAnalyst({
+      settings: halted.settings,
+      report: analyzeDesk(board(), emptyHits(), losses, halted.settings.tapes),
+      bets: losses,
+      rehab: halted.rehab,
+      now: now + 1000,
+    })
+    expect(isRehabPaper(again.rehab, 'cu')).toBe(true)
+    expect(again.settings.tapes.cu.liveOn).toBe(true)
   })
 })

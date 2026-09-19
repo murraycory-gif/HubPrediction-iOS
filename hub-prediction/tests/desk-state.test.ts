@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { applyHostDeskState } from '../src/lib/desk-hydrate'
-import { mergeHostDeskState } from '../src/lib/desk-persist'
+import { mergeHostDeskState, pickNewerSettings } from '../src/lib/desk-persist'
 import { readDeskState, writeDeskState } from '../src/lib/desk-state.server'
 import { bookFill, emptyFinance, hydrateFinance, loadFinance, saveFinance } from '../src/lib/finance'
 import { GOLD_RECIPES, hydrateSettings, loadSettings, loadTickets, patchTape, saveTickets } from '../src/lib/tapes'
@@ -140,6 +140,25 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     applyHostDeskState(readDeskState())
     expect(loadSettings().tapes.btc.contracts).toBe(23)
     expect(loadSettings().clocks.btc).toBe(pc.clocks.btc)
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('factory liveOn false cannot overwrite host user Live cash ON', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hub-desk-factory-'))
+    process.env.HUB_DESK_STATE_FILE = join(dir, 'desk-state.json')
+    const armed = patchTape(loadSettings(), 'btc', { liveOn: true, botOn: true, contracts: 14 })
+    writeDeskState({ settings: armed })
+    const factory = hydrateSettings(null)
+    const merged = mergeHostDeskState(readDeskState()!, { settings: factory })
+    expect((merged.settings as { tapes?: { btc?: { liveOn?: boolean; contracts?: number } } })?.tapes?.btc?.liveOn).toBe(
+      true,
+    )
+    expect((merged.settings as { tapes?: { btc?: { contracts?: number } } })?.tapes?.btc?.contracts).toBe(14)
+    expect(pickNewerSettings(armed, factory)).toMatchObject({ tapes: { btc: { liveOn: true, contracts: 14 } } })
+    localStorage.clear()
+    applyHostDeskState(readDeskState())
+    expect(loadSettings().tapes.btc.liveOn).toBe(true)
+    expect(loadSettings().tapes.btc.contracts).toBe(14)
     await rm(dir, { recursive: true, force: true })
   })
 })

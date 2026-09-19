@@ -18,11 +18,33 @@ export function settingsSavedAt(settings: unknown): number {
   return Number((settings as { savedAt?: unknown }).savedAt) || 0
 }
 
-/** Newer savedAt wins. Soft FAIL a finance write restoring stale Live cash OFF. */
+function settingsTapes(raw: unknown) {
+  if (!raw || typeof raw !== 'object') return {}
+  const tapes = (raw as { tapes?: Record<string, { liveOn?: unknown; botOn?: unknown }> }).tapes
+  return tapes && typeof tapes === 'object' ? tapes : {}
+}
+
+export function settingsHasUserLive(settings: unknown) {
+  return Object.values(settingsTapes(settings)).some((t) => t?.liveOn === true)
+}
+
+function incomingIsUnsavedFactory(settings: unknown) {
+  if (!settings || typeof settings !== 'object') return true
+  if (settingsHasUserLive(settings)) return false
+  const o = settings as { savedAt?: unknown; togglesPicked?: unknown }
+  return (Number(o.savedAt) || 0) === 0 && o.togglesPicked !== true
+}
+
+/** Newer savedAt wins. Soft FAIL factory liveOn:false overwriting a user pick. */
 export function pickNewerSettings(prev: unknown, incoming: unknown) {
   if (incoming == null) return prev
   if (prev == null) return incoming
-  return settingsSavedAt(incoming) >= settingsSavedAt(prev) ? incoming : prev
+  const prevAt = settingsSavedAt(prev)
+  const nextAt = settingsSavedAt(incoming)
+  if (incomingIsUnsavedFactory(incoming) && (settingsHasUserLive(prev) || prevAt > 0)) return prev
+  if (nextAt === 0 && prevAt > 0) return prev
+  if (settingsHasUserLive(prev) && !settingsHasUserLive(incoming) && incomingIsUnsavedFactory(incoming)) return prev
+  return nextAt >= prevAt ? incoming : prev
 }
 
 export function unionTickets(prev: unknown, incoming: unknown) {

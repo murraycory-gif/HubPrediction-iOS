@@ -32,6 +32,7 @@ import {
   lastPrintFromLiveData,
   pointsFromLiveData,
   loadSettings,
+  settingsReadyToPush,
   makePaperTicket,
   makeTicket,
   marketTradingActive,
@@ -166,6 +167,13 @@ describe('settings persist', () => {
     expect(s.tapes.cu).toMatchObject({ contracts: 5, botOn: false, liveOn: false })
     expect(s.tapes.gld).toMatchObject({ contracts: 3, botOn: true, liveOn: false })
     expect(s).not.toHaveProperty('liveBets')
+  })
+
+  it('factory hydrate does not stamp a user pick that can overwrite host Live cash', () => {
+    const empty = loadSettings()
+    expect(empty.togglesPicked).not.toBe(true)
+    expect(settingsReadyToPush(empty)).toBe(false)
+    expect(empty.tapes.btc.liveOn).toBe(false)
   })
 
   it('keeps Bot OFF and Live cash ON after reload when the user picked them', () => {

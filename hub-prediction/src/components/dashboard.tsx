@@ -45,6 +45,7 @@ import {
   loadHits,
   hydrateSettings,
   loadSettings,
+  settingsReadyToPush,
   loadTickets,
   makePaperTicket,
   makeTicket,
@@ -191,8 +192,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           )
         }
         setHostDeskWriter(writeHost)
+        const local = loadSettings()
         writeHost({
-          settings: loadSettings(),
+          settings: settingsReadyToPush(local) ? local : undefined,
           tickets: loadTickets(),
           finance: loadFinance(),
         })
@@ -200,8 +202,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })
       .catch(() => {
         setHostDeskWriter(writeHost)
+        const local = loadSettings()
         writeHost({
-          settings: loadSettings(),
+          settings: settingsReadyToPush(local) ? local : undefined,
           tickets: loadTickets(),
           finance: loadFinance(),
         })
@@ -675,10 +678,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }, [hostReady, board, printsQuery.dataUpdatedAt, settings, tickets, book, hits, rehab])
 
   useEffect(() => {
-    if (book.killed) return
-    const report = analyzeDesk(board ?? null, hits, book.bets, settings.tapes)
+    if (!hostReady || book.killed) return
+    const stored = loadSettings()
+    const report = analyzeDesk(board ?? null, hits, book.bets, stored.tapes)
     const next = runAutoAnalyst({
-      settings,
+      settings: stored,
       report,
       bets: book.bets,
       rehab,
@@ -688,7 +692,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     setSettings(next.settings)
     setRehab(next.rehab)
     if (next.msg) setMsg(next.msg)
-  }, [board, book.bets, book.killed, hits, rehab, settings])
+  }, [hostReady, board, book.bets, book.killed, hits, rehab, settings])
 
   const hitFrom = cash.firstDepositAt ?? 0
   const ttl = last24hBets(book, hits, Date.now(), TAPE_IDS)
@@ -1210,9 +1214,7 @@ function TapeRow({
             type="checkbox"
             data-testid={`live-cash-${id}`}
             checked={recipe.liveOn}
-            aria-disabled={rehabPaper ? 'true' : undefined}
             onChange={(e) => {
-              if (rehabPaper) return
               onTape({ liveOn: e.target.checked })
             }}
           />

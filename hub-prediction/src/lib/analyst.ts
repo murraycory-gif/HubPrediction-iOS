@@ -382,7 +382,7 @@ export function analyzeDesk(
   const retunes = tapes.filter((t) => t.changed).length
   const summary =
     retunes === 0
-      ? `Goal ${HIT_FLOOR}% win ratio. All four desks match the book. Rules stay. Live cash is not flipped unless a desk is in 3-loss rehab.`
+      ? `Goal ${HIT_FLOOR}% win ratio. All four desks match the book. Rules stay. 3-loss HALT papers the tape — Live cash stays as the user left it.`
       : `Goal ${HIT_FLOOR}% win ratio. ${retunes} desk${retunes === 1 ? '' : 's'} retune automatically. No Accept / Deny. Live cash only moves on a 3-loss halt or an ${HIT_FLOOR}% paper restore.`
 
   return {
@@ -775,24 +775,17 @@ export function runAutoAnalyst(opts: {
           lastAuto: { ...rehab.lastAuto, [id]: { token: note.token, betSig: sig } },
         }
       }
-      if (settings.tapes[id].liveOn) {
-        settings = patchTape(settings, id, { liveOn: false })
-      }
       rehab = {
         ...rehab,
         tapes: { ...rehab.tapes, [id]: startRehab(id, liveWasOn, note.token, now) },
       }
       notes.push(
-        `${TAPE_META[id].label} live cash halted — ${streak} losses. Paper ${REHAB_PAPER_RUNS} then ${HIT_FLOOR}%.`,
+        `${TAPE_META[id].label} live cash HALT — ${streak} losses. Paper ${REHAB_PAPER_RUNS} then ${HIT_FLOOR}%. Live cash stays as you left it.`,
       )
       continue
     }
 
     if (active) {
-      if (settings.tapes[id].liveOn) {
-        settings = patchTape(settings, id, { liveOn: false })
-        notes.push(`${TAPE_META[id].label} live cash stays off — paper rehab`)
-      }
       const paperStreak = consecutiveLosses(
         opts.bets.filter((b) => isPaperBet(b)),
         id,
@@ -815,7 +808,6 @@ export function runAutoAnalyst(opts: {
       }
       const paper = paperRehabStats(opts.bets, id, active.fromMs)
       if (paper.n >= active.paperTarget && paper.pct >= HIT_FLOOR) {
-        if (active.liveWasOn) settings = patchTape(settings, id, { liveOn: true })
         rehab = {
           ...rehab,
           tapes: {
@@ -824,7 +816,7 @@ export function runAutoAnalyst(opts: {
           },
         }
         notes.push(
-          `${TAPE_META[id].label} paper ${paper.pct}% on ${paper.n} — ${active.liveWasOn ? 'live cash back' : 'rehab clear, live cash stays off'}`,
+          `${TAPE_META[id].label} paper ${paper.pct}% on ${paper.n} — rehab clear. Live cash stays as you left it.`,
         )
         continue
       }
@@ -849,7 +841,7 @@ export function rehabCopy(state: AnalystAutoState, id: TapeId, bets: AutoBet[] =
   const cell = state.tapes[id]
   if (!cell) return ''
   if (cell.status === 'restored') {
-    return `Rehab clear. ${cell.liveWasOn ? 'Live cash was restored after' : 'Live cash stayed off after'} ${cell.paperTarget} paper runs at ${HIT_FLOOR}%.`
+    return `Rehab clear. Live cash stays as you left it after ${cell.paperTarget} paper runs at ${HIT_FLOOR}%.`
   }
   const paper = paperRehabStats(bets, id, cell.fromMs)
   return `Live cash halted. Paper ${paper.n}/${cell.paperTarget} · ${paper.w}W–${paper.l}L · ${paper.n ? `${paper.pct}%` : '—'}. Back on at ${HIT_FLOOR}% after ${cell.paperTarget} consistent runs.`
