@@ -832,8 +832,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         setBook((prev) => ({ ...prev, bets: [...prev.bets, bet] }))
       },
     }
-    ;(w as Window & { __HUB_TEST_CONTRACTS?: (tape: TapeId, n: number) => void }).__HUB_TEST_CONTRACTS = (tape, n) => {
-      setSettings(patchTape(loadSettings(), tape, { contracts: clampContracts(n) }))
+    ;(w as Window & { __HUB_TEST_CONTRACTS?: (tape: TapeId, n: number) => Promise<void> }).__HUB_TEST_CONTRACTS = async (tape, n) => {
+      const next = patchTape(loadSettings(), tape, { contracts: clampContracts(n) })
+      setSettings(next)
+      await saveDeskState({ data: { settings: next } })
     }
     return () => {
       delete w.__HUB_TEST_CHIEF

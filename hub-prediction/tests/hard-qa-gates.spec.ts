@@ -186,8 +186,11 @@ test('two clients: BTC 20 on A is host book — B and reload stay 20', async ({ 
     await waitHost(a)
     await allowLiveArm(a)
     await expect.poll(async () => a.evaluate(() => Boolean((window as Window & { __HUB_TEST_CONTRACTS?: unknown }).__HUB_TEST_CONTRACTS))).toBe(true)
-    await a.evaluate(() => {
-      ;(window as Window & { __HUB_TEST_CONTRACTS?: (tape: string, n: number) => void }).__HUB_TEST_CONTRACTS?.('btc', 20)
+    await a.evaluate(async () => {
+      await (window as Window & { __HUB_TEST_CONTRACTS?: (tape: string, n: number) => Promise<void> }).__HUB_TEST_CONTRACTS?.(
+        'btc',
+        20,
+      )
     })
     await expect.poll(async () => a.getByTestId('contracts-btc').inputValue(), { timeout: 8_000 }).toBe('20')
     await expect.poll(() => hostBtcContracts(), { timeout: 10_000 }).toBe(20)
