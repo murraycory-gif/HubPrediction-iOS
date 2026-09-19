@@ -33,6 +33,7 @@ export type ClockSettlePayload = {
   settlements?: unknown
   fills?: unknown
   positions?: unknown
+  orders?: unknown
   markets?: ClockMarket[]
   tickers?: string[]
   fetchedAt?: number

@@ -264,16 +264,21 @@ export async function fetchClockSettle(keyId: string, pem: string, tickers: stri
   const want = new Set(tickers.map((t) => String(t || '').trim()).filter(Boolean))
   const minSec =
     minTsMs > 1e12 ? Math.max(0, Math.floor(minTsMs / 1000) - 180) : Math.max(0, Math.floor(minTsMs || Date.now() / 1000 - 7200))
-  const [bal, settlements, markets] = await Promise.all([
+  const [bal, settlements, fills, positions, orders, markets] = await Promise.all([
     fetchBalance(keyId, pem),
     fetchSettlements(keyId, pem, minSec).catch(() => ({ settlements: [] as unknown[] })),
+    fetchFills(keyId, pem).catch(() => ({ fills: [] as unknown[] })),
+    fetchPositions(keyId, pem).catch(() => ({ market_positions: [] as unknown[], positions: [] as unknown[] })),
+    fetchOrders(keyId, pem).catch(() => ({ orders: [] as unknown[] })),
     Promise.all([...want].map((ticker) => fetchPublicMarket(ticker))),
   ])
   return {
     cash: bal.cash,
+    raw: bal.raw,
     settlements: filterTickerRows(settlements, ['settlements'], want),
-    fills: { fills: [] as unknown[] },
-    positions: { market_positions: [] as unknown[] },
+    fills: filterTickerRows(fills, ['fills'], want),
+    positions: filterTickerRows(positions, ['market_positions', 'positions'], want),
+    orders: filterTickerRows(orders, ['orders', 'event_orders'], want),
     markets,
     tickers: [...want],
     fetchedAt: Date.now(),
@@ -290,6 +295,33 @@ export async function fetchPositions(keyId: string, pem: string) {
     '&count_filter=position,total_traded',
   )
   return { market_positions: rows, positions: rows }
+}
+
+export async function fetchOrders(keyId: string, pem: string) {
+  const current = await paginatedList(keyId, pem, `${ROOT}/portfolio/orders`, ['orders', 'event_orders'])
+  return { orders: current.rows, event_orders: current.rows }
+}
+
+/** Entire Kalshi book: balance + fills + settlements + open orders + positions. Soft FAIL a drip. */
+export async function fetchKalshiBook(keyId: string, pem: string) {
+  const [bal, deposits, settlements, fills, positions, orders] = await Promise.all([
+    fetchBalance(keyId, pem),
+    fetchDeposits(keyId, pem).catch(() => null),
+    fetchSettlements(keyId, pem).catch(() => null),
+    fetchFills(keyId, pem).catch(() => null),
+    fetchPositions(keyId, pem).catch(() => null),
+    fetchOrders(keyId, pem).catch(() => null),
+  ])
+  return {
+    ...bal,
+    deposits,
+    settlements,
+    fills,
+    positions,
+    orders,
+    fetchedAt: Date.now(),
+    hostCreds: true,
+  }
 }
 
 function sleep(ms: number) {

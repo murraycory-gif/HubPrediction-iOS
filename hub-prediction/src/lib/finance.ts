@@ -100,12 +100,12 @@ export function isImportedKalshiRow(b: { betId?: unknown; orderId?: unknown }) {
   return false
 }
 
-/** This desk V2 placeContract = LIVE. deskfill = PAPER. Imported kalshi:* = HIST. Soft FAIL kind live on hydrate. */
+/** Stored kind after the Kalshi book latch. deskfill = PAPER. Soft FAIL ghost LIVE on hydrate. */
 export function betKind(b: { kind?: unknown; orderId?: unknown; betId?: unknown }): BetKind {
   if (isPaperOrderId(b.orderId) || (typeof b.betId === 'string' && /^paper:/i.test(b.betId))) return 'paper'
-  if (isImportedKalshiRow(b) || b.kind === 'hist') return 'hist'
-  if (b.kind === 'paper') return 'paper'
   if (b.kind === 'live') return 'live'
+  if (b.kind === 'paper') return 'paper'
+  if (isImportedKalshiRow(b) || b.kind === 'hist') return 'hist'
   if (typeof b.betId === 'string' && b.betId.startsWith('bet_') && isRealOrderId(b.orderId)) return 'live'
   return 'paper'
 }
@@ -205,7 +205,7 @@ export function emptyFinance(): FinanceState {
   return { killed: false, paperStartedAt: Date.now(), bets: [] }
 }
 
-export function hydrateFinance(raw: unknown): FinanceState {
+export function hydrateFinance(raw: unknown, trustKinds = false): FinanceState {
   const base = emptyFinance()
   if (!raw || typeof raw !== 'object') return base
   const o = raw as Partial<FinanceState>
@@ -225,7 +225,16 @@ export function hydrateFinance(raw: unknown): FinanceState {
             /^deskfill-/i.test(ord)
           )
         })
-        .map((b) => ({ ...b, kind: betKind(b) }))
+        .map((b) => {
+          if (isPaperOrderId(b.orderId) || (typeof b.betId === 'string' && /^paper:/i.test(b.betId))) {
+            return { ...b, kind: 'paper' as const }
+          }
+          if (trustKinds && (b.kind === 'live' || b.kind === 'paper' || b.kind === 'hist')) {
+            return { ...b, kind: b.kind }
+          }
+          if (!trustKinds && isImportedKalshiRow(b)) return { ...b, kind: 'hist' as const }
+          return { ...b, kind: betKind(b) }
+        })
     : []
   return {
     killed: o.killed === true,
@@ -246,7 +255,7 @@ export function loadFinance(): FinanceState {
 }
 
 export function saveFinance(state: FinanceState): FinanceState {
-  const next = hydrateFinance(state)
+  const next = hydrateFinance(state, true)
   const ls = deskStorage()
   if (!ls) return next
   try {
@@ -887,9 +896,48 @@ export function betsFromKalshiPositions(raw: unknown, fromMs = 0): BookedBet[] {
   return out
 }
 
+export function betsFromKalshiOrders(raw: unknown, fromMs = 0): BookedBet[] {
+  const out: BookedBet[] = []
+  for (const row of listFromPayload(raw, ['orders', 'event_orders'])) {
+    if (!row || typeof row !== 'object') continue
+    const ticker = String(row.ticker ?? row.market_ticker ?? '')
+    const tape = seriesToTape(ticker)
+    if (!tape) continue
+    const status = String(row.status ?? '').toLowerCase()
+    if (status === 'canceled' || status === 'cancelled') continue
+    const at = kalshiAt(row, ['created_time', 'created_ts', 'ts'], Date.now())
+    if (at && at < fromMs) continue
+    const side = fillSide(row)
+    const count = Math.max(1, Math.round(Math.abs(num(row.remaining_count_fp) ?? num(row.count_fp) ?? num(row.count) ?? 1)))
+    const yesPx = fillPriceDollars(row, 'yes_price_dollars', 'yes_price')
+    const noPx = fillPriceDollars(row, 'no_price_dollars', 'no_price')
+    const px = side === 'up' ? yesPx || noPx : noPx || yesPx
+    const spent = Math.round(count * px * 100) / 100
+    const orderId = String(row.order_id ?? row.client_order_id ?? `order-${ticker}`).trim()
+    out.push({
+      betId: `kalshi:${ticker}`,
+      tape,
+      ticker,
+      clock: clockFromTicker(ticker),
+      closeAt: 0,
+      side,
+      count,
+      ask: px > 0 ? Math.round(px * 100) : 50,
+      spent,
+      orderId: isRealOrderId(orderId) ? orderId : `order-${ticker}`.slice(0, 48),
+      status: 'open',
+      pnl: null,
+      filledAt: at,
+      settledAt: null,
+      kind: 'hist',
+    })
+  }
+  return out
+}
+
 export function mergeKalshiHistoryToBook(
   state: FinanceState,
-  input: { fills?: unknown; settlements?: unknown; positions?: unknown; fromMs?: number },
+  input: { fills?: unknown; settlements?: unknown; positions?: unknown; orders?: unknown; fromMs?: number },
   now = Date.now(),
 ): FinanceState {
   const fromMs = Number.isFinite(input.fromMs) ? Number(input.fromMs) : 0
@@ -913,6 +961,9 @@ export function mergeKalshiHistoryToBook(
     })
   }
   for (const b of betsFromKalshiPositions(input.positions, fromMs)) {
+    if (!byTicker.has(b.ticker)) byTicker.set(b.ticker, b)
+  }
+  for (const b of betsFromKalshiOrders(input.orders, fromMs)) {
     if (!byTicker.has(b.ticker)) byTicker.set(b.ticker, b)
   }
   const kalshi = [...byTicker.values()].map((b) => ({ ...b, kind: betKind(b) }))

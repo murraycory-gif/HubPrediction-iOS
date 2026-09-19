@@ -89,6 +89,7 @@ export const getClockSettle = createServerFn({ method: 'POST' })
         settlements: null,
         fills: null,
         positions: null,
+        orders: null,
         markets: [] as { ticker: string; result: string }[],
         tickers,
         fetchedAt: Date.now(),
@@ -110,21 +111,49 @@ export const getKalshiBalance = createServerFn({ method: 'GET' }).handler(async 
   return { ...bal, deposits, hostCreds: true }
 })
 
+export const getKalshiBook = createServerFn({ method: 'GET' }).handler(async () => {
+  const { loadKalshiHostCreds, fetchKalshiBook } = await import('./kalshi-trade.server')
+  const creds = loadKalshiHostCreds()
+  if (!creds) {
+    return {
+      cash: null,
+      deposits: null,
+      settlements: null,
+      fills: null,
+      positions: null,
+      orders: null,
+      hostCreds: false,
+      fetchedAt: Date.now(),
+    }
+  }
+  return fetchKalshiBook(creds.keyId, creds.pem)
+})
+
 export const getKalshiCash = createServerFn({ method: 'GET' }).handler(async () => {
-  const { loadKalshiHostCreds, fetchBalance, fetchDeposits, fetchSettlements, fetchFills, fetchPositions } =
+  const { loadKalshiHostCreds, fetchBalance, fetchDeposits, fetchSettlements, fetchFills, fetchPositions, fetchOrders } =
     await import('./kalshi-trade.server')
   const creds = loadKalshiHostCreds()
   if (!creds) {
-    return { cash: null, deposits: null, settlements: null, fills: null, positions: null, hostCreds: false }
+    return {
+      cash: null,
+      deposits: null,
+      settlements: null,
+      fills: null,
+      positions: null,
+      orders: null,
+      hostCreds: false,
+      fetchedAt: Date.now(),
+    }
   }
-  const [bal, deposits, settlements, fills, positions] = await Promise.all([
+  const [bal, deposits, settlements, fills, positions, orders] = await Promise.all([
     fetchBalance(creds.keyId, creds.pem),
     fetchDeposits(creds.keyId, creds.pem).catch(() => null),
     fetchSettlements(creds.keyId, creds.pem).catch(() => null),
     fetchFills(creds.keyId, creds.pem).catch(() => null),
     fetchPositions(creds.keyId, creds.pem).catch(() => null),
+    fetchOrders(creds.keyId, creds.pem).catch(() => null),
   ])
-  return { ...bal, deposits, settlements, fills, positions, hostCreds: true }
+  return { ...bal, deposits, settlements, fills, positions, orders, fetchedAt: Date.now(), hostCreds: true }
 })
 
 export const placeKalshi = createServerFn({ method: 'POST' })

@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { getClockSettle, getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
+import { getClockSettle, getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiBook, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
 import { applyHostDeskState } from '../lib/desk-hydrate'
 import { DESK_TICK_MS, useDeskTick } from '../lib/desk-tick'
 import { setHostDeskWriter } from '../lib/desk-persist'
@@ -88,7 +88,6 @@ import {
   tapeBotNote,
   liveBotCall,
   paperFillAllowed,
-  mergeKalshiHistoryToBook,
   liveSendGate,
   loadFinance,
   recipeRetuneGate,
@@ -103,6 +102,7 @@ import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
 import { formatBetWindow, formatWindowRange } from '../lib/chicago-time'
+import { applyKalshiBook, BOOK_LATCH_MS } from '../lib/kalshi-book'
 import { applyClockSettle, balanceLatchMs, clocksNeedingSettle, readTestClockSettle } from '../lib/settle-latch'
 import { RaceChart, useSmoothedLive } from './race-chart'
 import { SettingsPanel } from './settings-panel'
@@ -130,19 +130,24 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     settlements?: unknown
     fills?: unknown
     positions?: unknown
+    orders?: unknown
     hostCreds?: boolean
+    fetchedAt?: number
   }) {
     const next = hydrateCashFromKalshi(r, loadCash())
     setCash(next.cash)
     setHits(next.hits)
     setHostCreds(r.hostCreds === true)
-    if (r.settlements != null || r.fills != null || r.positions != null) {
+    if (r.settlements != null || r.fills != null || r.positions != null || r.orders != null) {
       setBook((prev) =>
-        mergeKalshiHistoryToBook(prev, {
+        applyKalshiBook(prev, {
+          cash: r.cash,
           fills: r.fills,
           settlements: r.settlements,
           positions: r.positions,
-          fromMs: next.cash.firstDepositAt ?? 0,
+          orders: r.orders,
+          fetchedAt: r.fetchedAt ?? Date.now(),
+          hostCreds: r.hostCreds === true,
         }),
       )
     }
@@ -306,10 +311,15 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       setMsg(e instanceof Error ? e.message : 'balance failed')
     }
     try {
-      const r = await getKalshiCash()
+      const r = await getKalshiBook()
       applyCashAndSettlements(r)
     } catch {
-      /* cash already painted — settlements optional */
+      try {
+        const r = await getKalshiCash()
+        applyCashAndSettlements(r)
+      } catch {
+        /* cash already painted — book optional */
+      }
     }
   }
 
@@ -324,9 +334,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const cashHitsQuery = useQuery({
     queryKey: ['kalshi-cash-hits'],
-    queryFn: () => getKalshiCash(),
-    refetchInterval: 30_000,
-    staleTime: 8_000,
+    queryFn: () => getKalshiBook(),
+    refetchInterval: cashLatch || BOOK_LATCH_MS,
+    staleTime: cashLatch ? 0 : 1_000,
     refetchOnMount: 'always',
   })
 
@@ -376,8 +386,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const payload = settleQuery.data
     if (!payload) return
     setBook((prev) => applyClockSettle(prev, payload))
-    if (payload.cash != null || payload.settlements != null) applyCashAndSettlements(payload)
+    if (payload.cash != null || payload.settlements != null || payload.orders != null || payload.fills != null) {
+      applyCashAndSettlements(payload)
+    }
   }, [settleQuery.dataUpdatedAt])
+
+  useEffect(() => {
+    if (readTestClockSettle()) return
+    if (!settleNeed.tickers.length) return
+    void cashHitsQuery.refetch()
+  }, [settleNeed.tickers.join('|')])
 
   useEffect(() => {
     setBook((prev) =>
@@ -632,7 +650,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   )
 
   return (
-    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0}>
+    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0} data-book-latch={BOOK_LATCH_MS}>
       <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">

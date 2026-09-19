@@ -482,7 +482,28 @@ describe('finance Soft KEEP', () => {
     expect(run['paper-win']).toBeNull()
     expect(run['live-loss']).toBeCloseTo(499.48)
     expect(run['live-open']).toBeCloseTo(499.48)
-    expect(betKind({ betId: 'kalshi:KXBTC15M-A', orderId: 'ord-kalshi-btc-hist-01', kind: 'live' })).toBe('hist')
+    expect(hydrateFinance({
+      killed: false,
+      paperStartedAt: 1,
+      bets: [{
+        betId: 'kalshi:KXBTC15M-A',
+        tape: 'btc',
+        ticker: 'KXBTC15M-A',
+        clock: '15m',
+        closeAt: now,
+        side: 'up',
+        count: 1,
+        ask: 50,
+        spent: 0.5,
+        orderId: 'ord-kalshi-btc-hist-01',
+        status: 'settled',
+        pnl: 0.5,
+        filledAt: now,
+        settledAt: now,
+        kind: 'live',
+      }],
+    }).bets[0]?.kind).toBe('hist')
+    expect(betKind({ betId: 'kalshi:KXBTC15M-A', orderId: 'ord-kalshi-btc-hist-01', kind: 'live' })).toBe('live')
     expect(betKind({ betId: 'paper:local', orderId: 'deskfill-btc-aaaaaaaa' })).toBe('paper')
     const keptOld = mergeKalshiHistoryToBook(
       {
@@ -566,7 +587,7 @@ describe('finance Soft KEEP', () => {
     expect(betKind({ betId: 'bet_ord-real-12345', orderId: 'ord-real-12345', kind: 'live' })).toBe('live')
     const importedCash = cashAfterEachBet(
       [
-        { betId: 'kalshi:KXBTC15M-A', kind: 'live', status: 'settled', pnl: -19, filledAt: 1, settledAt: 1 },
+        { betId: 'kalshi:KXBTC15M-A', kind: 'hist', status: 'settled', pnl: -19, filledAt: 1, settledAt: 1 },
         { betId: 'bet_ord-live-1', kind: 'live', orderId: 'ord-live-aaaaaa', status: 'settled', pnl: 0.48, filledAt: 2, settledAt: 2 },
       ],
       293.37,
