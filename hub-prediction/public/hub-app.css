@@ -756,7 +756,7 @@ body {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(212, 175, 55, 0.55) transparent;
-  padding-right: 8px;
+  padding-right: 2px;
 }
 
 .bets-log-wrap::-webkit-scrollbar {
@@ -780,7 +780,7 @@ body {
 .bets-log-scroll {
   width: 100%;
   min-width: 0;
-  padding-right: 10px;
+  padding-right: 4px;
   box-sizing: border-box;
 }
 
@@ -795,12 +795,12 @@ body {
 
 .bets-log-row {
   display: grid;
-  grid-template-columns: 2.8rem minmax(0, 2fr) 2.6rem 2.8rem 3.2rem 3.6rem minmax(3.6rem, 0.7fr) minmax(3.8rem, 0.7fr) minmax(4rem, 0.8fr);
-  gap: 6px;
+  grid-template-columns: 2rem minmax(0, 1fr) 1.8rem 2rem 2.4rem 2.6rem 2.6rem 2.8rem 3rem;
+  gap: 3px;
   align-items: center;
-  padding: 6px 8px 6px 2px;
+  padding: 5px 2px 5px 0;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--ink);
   width: 100%;
   min-width: 0;
@@ -1178,6 +1178,12 @@ button {
   .scoreboard-row .stat-value {
     font-size: 15px;
   }
+  .bets-log-row {
+    grid-template-columns: 2.8rem minmax(0, 2fr) 2.6rem 2.8rem 3.2rem 3.6rem minmax(3.6rem, 0.7fr) minmax(3.8rem, 0.7fr) minmax(4rem, 0.8fr);
+    gap: 6px;
+    font-size: 12px;
+    padding: 6px 8px 6px 2px;
+  }
 }
 
 .tape-row .count,
@@ -1220,11 +1226,5 @@ button {
   }
   .brand-actions {
     flex: 1 1 100%;
-  }
-  .bets-log-row {
-    grid-template-columns: 2.2rem minmax(0, 1.3fr) 2.2rem 2.4rem 2.8rem 3rem minmax(3.2rem, 0.6fr) minmax(3.4rem, 0.6fr) minmax(3.6rem, 0.7fr);
-    gap: 4px;
-    font-size: 11px;
-    padding: 5px 4px 5px 0;
   }
 }
