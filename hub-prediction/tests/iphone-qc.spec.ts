@@ -10,6 +10,15 @@ async function allowLiveArm(page: Page) {
   })
 }
 
+async function allowTapeLive(page: Page, ids: readonly string[] = ['btc', 'ng', 'cu']) {
+  await page.evaluate((tapes) => {
+    const w = window as Window & {
+      __HUB_TEST_TAPE_QUOTE?: Record<string, { tradingActive: boolean; stale: boolean }>
+    }
+    w.__HUB_TEST_TAPE_QUOTE = Object.fromEntries(tapes.map((id) => [id, { tradingActive: true, stale: false }]))
+  }, ids)
+}
+
 async function setToggle(page: Page, testId: string, on: boolean) {
   const box = page.getByTestId(testId)
   if ((await box.isChecked()) === on) return
@@ -977,6 +986,7 @@ test('Live cash ON survives reload; no master Live switch', async ({ page }) => 
   await resetGoldDesk(page)
   await assertNoMasterLive(page)
   await allowLiveArm(page)
+  await allowTapeLive(page)
   await setToggle(page, 'live-cash-btc', true)
   await setToggle(page, 'live-cash-ng', true)
   await setToggle(page, 'live-cash-cu', true)
@@ -1496,6 +1506,7 @@ test('desktop + 390: Live cash and contracts survive reload and a second client'
     await waitHost(desk)
     await resetGoldDesk(desk)
     await allowLiveArm(desk)
+    await allowTapeLive(desk)
     await setToggle(desk, 'live-cash-btc', true)
     await setToggle(desk, 'live-cash-ng', true)
     await setToggle(desk, 'live-cash-cu', true)
