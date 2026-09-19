@@ -273,6 +273,9 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
+  await page.evaluate(() => {
+    ;(window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 = true
+  })
   await expect.poll(async () => page.evaluate(() => Boolean((window as Window & { __HUB_TEST_BETS?: unknown }).__HUB_TEST_BETS))).toBe(true)
   const ts = Date.now()
   await page.evaluate((at) => {

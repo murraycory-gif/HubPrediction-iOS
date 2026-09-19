@@ -286,6 +286,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         setChief(loadChief())
         const hostTickets = loadTickets()
         setTickets(hostTickets)
+        if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
         setBook(
           syncTicketsIntoBook(loadFinance(), hostTickets, () => ({
             clock: '',
