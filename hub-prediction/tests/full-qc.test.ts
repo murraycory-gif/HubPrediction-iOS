@@ -36,8 +36,8 @@ afterEach(() => {
 describe('QC0 defaults Soft FAIL Live / live-cash ON', () => {
   it('defaults and hydrate stay Live OFF and every tape live-cash OFF', () => {
     const s = hydrateSettings(null)
-    expect(s.liveBets).toBe(false)
-    expect(DEFAULT_SETTINGS.liveBets).toBe(false)
+    expect(s).not.toHaveProperty('liveBets')
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('liveBets')
     for (const id of TAPE_IDS) {
       expect(s.tapes[id].liveOn).toBe(false)
       expect(DEFAULT_SETTINGS.tapes[id].liveOn).toBe(false)
@@ -49,7 +49,7 @@ describe('QC0 defaults Soft FAIL Live / live-cash ON', () => {
   it('Confirm LIVE without keys / paper / cash stays OFF', () => {
     const gate = liveArmGate(emptyFinance(), { cash: null, deposits: null, hasKeys: false })
     expect(gate.ok).toBe(false)
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
     expect(HIT_FLOOR).toBe(83)
   })
 })
@@ -87,6 +87,8 @@ describe('QC2 wires', () => {
     expect(tick).toMatch(/export const DESK_TICK_MS = 200/)
     const tapesSrc = await readFile(new URL('../src/lib/tapes.ts', import.meta.url), 'utf8')
     expect(tapesSrc).toMatch(/export const LIVE_PRINT_MS = 200/)
+    expect(tapesSrc).not.toMatch(/liveBets:/)
+    expect(tapesSrc).not.toMatch(/setLiveBets/)
     const race = await readFile(new URL('../src/components/race-chart.tsx', import.meta.url), 'utf8')
     expect(race).toMatch(/holdChartTrail/)
     expect(race).toMatch(/useDeskTick/)
@@ -111,6 +113,9 @@ describe('QC2 wires', () => {
     expect(dash).not.toMatch(/data-testid="confirm-live"/)
     expect(dash).not.toMatch(/setLiveBets/)
     expect(dash).not.toMatch(/liveBets:\s*settings\.liveBets/)
+    expect(dash).not.toMatch(/data-testid="settings-toggle"[\s\S]{0,400}brand-actions|brand-actions[\s\S]{0,400}data-testid="settings-toggle"/)
+    expect(dash).toMatch(/data-testid="under-desk"[\s\S]*data-testid="finance-toggle"[\s\S]*data-testid="settings-toggle"/)
+    expect(dash).toMatch(/cashGates\(settings, tape\)\.ok && !isRehabPaper/)
     expect(dash).toMatch(/WINDOW · CLOCK · MODE · CASH/)
     expect(dash).toMatch(/this desk LIVE walks CASH/)
     expect(dash).toMatch(/bets-cash-head/)

@@ -70,14 +70,14 @@ describe('HARD QA 1–10', () => {
     expect(forced.tapes.ng.armFromMin).toBe(10)
     expect(forced.tapes.ng.through).toBeCloseTo(0.003)
     expect(forced.tapes.gld.armFromMin).toBe(9)
-    expect(forced.liveBets).toBe(false)
+    expect(forced).not.toHaveProperty('liveBets')
     expect(forced.tapes.btc.liveOn).toBe(false)
   })
 
   it('3 Live + bots + per-tape cash Soft FAIL cold ON', () => {
     const s = hydrateSettings(null)
-    expect(s.liveBets).toBe(false)
-    expect(DEFAULT_SETTINGS.liveBets).toBe(false)
+    expect(s).not.toHaveProperty('liveBets')
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('liveBets')
     for (const id of TAPE_IDS) {
       expect(s.tapes[id].botOn).toBe(true)
       expect(s.tapes[id].liveOn).toBe(false)
@@ -108,7 +108,7 @@ describe('HARD QA 1–10', () => {
     expect(saved.tapes.btc.contracts).toBe(17)
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}').tapes.btc.contracts).toBe(17)
     expect(loadSettings().tapes.btc.contracts).toBe(17)
-    expect(loadSettings().liveBets).toBe(false)
+    expect(loadSettings()).not.toHaveProperty('liveBets')
     expect(loadSettings().tapes.btc.armFromMin).toBe(8)
   })
 

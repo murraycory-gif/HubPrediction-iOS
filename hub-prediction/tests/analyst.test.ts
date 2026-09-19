@@ -73,7 +73,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
       cu: GOLD_RECIPES.cu,
       gld: GOLD_RECIPES.gld,
     })
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
   })
 
   it('notes hug vs through and keeps a gold KEEP line when the book is quiet', () => {
@@ -101,8 +101,8 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
     savePaperDrafts(makePaperDrafts(report))
     expect(loadPaperDrafts()?.recipes.btc.through).toBe(40)
     expect(localStorage.getItem(SETTINGS_KEY)).toBeNull()
-    expect(loadSettings().liveBets).toBe(false)
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(loadSettings()).not.toHaveProperty('liveBets')
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
   })
 
   it('refuses to apply drafts onto live cash', () => {
@@ -116,9 +116,9 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
     expect(next.tapes.btc.through).toBe(46)
     expect(next.tapes.btc.botOn).toBe(true)
     expect(next.tapes.btc.liveOn).toBe(false)
-    expect(next.liveBets).toBe(false)
+    expect(next).not.toHaveProperty('liveBets')
     expect(loadSettings().tapes.btc.through).toBe(46)
-    expect(loadSettings().liveBets).toBe(false)
+    expect(loadSettings()).not.toHaveProperty('liveBets')
     expect(GOLD_RECIPES.btc.through).toBe(40)
   })
 
@@ -302,7 +302,6 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
       { tape: 'btc' as const, side: 'up' as const, ask: 71, pnl: 0.29, status: 'settled' as const, filledAt: now - 3000, settledAt: now - 300, closeAt: now + 4 * 60_000, betId: 'c' },
     ]
     const start = hydrateSettings({
-      liveBets: false,
       tapes: { btc: { ...GOLD_RECIPES.btc, botOn: true, liveOn: false } },
     })
     const report = analyzeDesk(board({ btc: quote('btc', 76600, 76500) }), emptyHits(), bets, start.tapes)
@@ -310,7 +309,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     const first = runAutoAnalyst({ settings: start, report, bets, rehab: emptyAutoState() })
     expect(first.didChange).toBe(true)
     expect(first.settings.tapes.btc.through).toBeLessThan(40)
-    expect(first.settings.liveBets).toBe(false)
+    expect(first.settings).not.toHaveProperty('liveBets')
     expect(first.settings.tapes.btc.liveOn).toBe(false)
     const again = runAutoAnalyst({ settings: first.settings, report, bets, rehab: first.rehab })
     expect(again.didChange).toBe(false)
@@ -321,14 +320,13 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     const now = 5_000_000
     const losses = [0, 1, 2].map((i) => settled('btc', -1, now - i * 1000, { kind: 'live' }))
     const armed = hydrateSettings({
-      liveBets: false,
       tapes: { btc: { ...GOLD_RECIPES.btc, botOn: true, liveOn: true } },
     })
     const report = analyzeDesk(board(), emptyHits(), losses, armed.tapes)
     const halted = runAutoAnalyst({ settings: armed, report, bets: losses, rehab: emptyAutoState(), now })
     expect(isRehabPaper(halted.rehab, 'btc')).toBe(true)
     expect(halted.settings.tapes.btc.liveOn).toBe(false)
-    expect(halted.settings.liveBets).toBe(false)
+    expect(halted.settings).not.toHaveProperty('liveBets')
     expect(halted.rehab.tapes.btc?.liveWasOn).toBe(true)
     expect(REHAB_PAPER_RUNS).toBe(12)
 
@@ -347,7 +345,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     expect(isRehabPaper(done.rehab, 'btc')).toBe(false)
     expect(done.rehab.tapes.btc?.status).toBe('restored')
     expect(done.settings.tapes.btc.liveOn).toBe(true)
-    expect(done.settings.liveBets).toBe(false)
+    expect(done.settings).not.toHaveProperty('liveBets')
   })
 
   it('does not restore live cash when the 12 paper runs miss 83%', () => {
@@ -376,7 +374,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     })
     expect(isRehabPaper(stay.rehab, 'ng')).toBe(true)
     expect(stay.settings.tapes.ng.liveOn).toBe(false)
-    expect(stay.settings.liveBets).toBe(false)
+    expect(stay.settings).not.toHaveProperty('liveBets')
   })
 
   it('halts live cash from real Kalshi losses — Soft FAIL unlock during HALT', () => {

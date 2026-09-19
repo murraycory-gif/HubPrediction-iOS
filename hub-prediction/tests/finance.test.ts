@@ -10,6 +10,8 @@ import {
   financeSendsOrders,
   liveArmGate,
   liveBotCall,
+  openDeskFillOnTicker,
+  syncTicketsIntoBook,
   tapeBotNote,
   liveCashFloor,
   liveSendGate,
@@ -59,8 +61,8 @@ describe('finance Soft KEEP', () => {
     expect(hitFloorGate(3, 0).ok).toBe(true)
     expect(hitFloorGate(20, 4).ok).toBe(true)
     expect(hitFloorGate(20, 5).ok).toBe(false)
-    expect(hydrateSettings(null).liveBets).toBe(false)
-    expect(DEFAULT_SETTINGS.liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('liveBets')
   })
 
   it('Soft FAIL ghost BOT BOUGHT and ARMING ids', () => {
@@ -303,7 +305,7 @@ describe('finance Soft KEEP', () => {
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}').betsFilter).toEqual(['btc'])
     expect(applyBetsFilter(persisted, 'ng').betsFilter).toEqual(['btc', 'ng'])
     expect(loadSettings().betsFilter).toEqual(['btc', 'ng'])
-    expect(loadSettings().liveBets).toBe(false)
+    expect(loadSettings()).not.toHaveProperty('liveBets')
     expect(loadSettings().tapes.btc.armFromMin).toBe(8)
   })
 
@@ -378,7 +380,7 @@ describe('finance Soft KEEP', () => {
     expect(ng?.spent).toBeCloseTo(0.8)
     expect(cu?.status).toBe('open')
     expect(cu?.side).toBe('up')
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
     expect(btc?.kind).toBe('hist')
     expect(ng?.kind).toBe('hist')
     expect(cu?.kind).toBe('hist')
@@ -603,12 +605,13 @@ describe('liveBotCall instant Kalshi post', () => {
     expect(liveBotCall(ready)).toBe('live')
     expect(liveBotCall({ ...ready, liveCash: false })).toBe('paper')
     expect(liveBotCall({ ...ready, rehabPaper: true })).toBe('paper')
-    expect(liveBotCall({ ...ready, fresh: false })).toBe('paper')
-    expect(liveBotCall({ ...ready, fresh: undefined })).toBe('paper')
+    expect(liveBotCall({ ...ready, fresh: false })).toBe('live')
+    expect(liveBotCall({ ...ready, fresh: undefined })).toBe('live')
     expect(liveBotCall({ ...ready, lean: 'sit' })).toBe('sit')
     expect(liveBotCall({ ...ready, hitOk: false })).toBe('sit')
     expect(liveBotCall({ ...ready, tradingActive: false })).toBe('sit')
     expect(liveBotCall({ ...ready, botOn: false })).toBe('sit')
+    expect(liveBotCall({ ...ready, liveCash: true } as typeof ready & { liveBets: boolean })).toBe('live')
   })
 
   it('tapeBotNote names Live cash paper vs live — Soft FAIL master Live copy', () => {
@@ -636,7 +639,7 @@ describe('MODE LIVE is this-desk V2 only — Soft FAIL kalshi:* as LIVE', () => 
   const emptyHits = { tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } } }
 
   it('Live OFF hydrate settlements → HIST, not LIVE, and do not walk cash P&L', () => {
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
     const raw = hydrateFinance({
       killed: false,
       paperStartedAt: 1,
@@ -711,5 +714,54 @@ describe('MODE LIVE is this-desk V2 only — Soft FAIL kalshi:* as LIVE', () => 
     expect(run[booked.bet.betId]).toBeCloseTo(500.48)
     expect(last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits).placed).toBeCloseTo(booked.bet.spent)
     expect(last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits).pnl).toBeCloseTo(0.48)
+  })
+
+  it('paper deskfill books beside HIST open and shows MODE PAPER / cash N/A', () => {
+    const histOpen = {
+      betId: 'kalshi:KXCOPPER15M-OPEN',
+      tape: 'cu' as const,
+      ticker: 'KXCOPPER15M-TODAY',
+      clock: '15m',
+      closeAt: Date.now() + 60_000,
+      side: 'down' as const,
+      count: 1,
+      ask: 50,
+      spent: 19,
+      orderId: 'pos-cu-open-hist',
+      status: 'open' as const,
+      pnl: null,
+      filledAt: 1,
+      settledAt: null,
+      kind: 'hist' as const,
+    }
+    const start = hydrateFinance({ killed: false, paperStartedAt: 1, bets: [histOpen] })
+    expect(openDeskFillOnTicker(start, 'KXCOPPER15M-TODAY')).toBe(false)
+    const booked = bookFill(start, {
+      tape: 'cu',
+      ticker: 'KXCOPPER15M-TODAY',
+      clock: '15m',
+      closeAt: Date.now() + 60_000,
+      side: 'down',
+      count: 1,
+      ask: 40,
+      orderId: 'deskfill-cu-f8bmwqhq',
+    })
+    expect(booked.ok).toBe(true)
+    if (!booked.ok) return
+    expect(booked.bet.kind).toBe('paper')
+    expect(betKind(booked.bet)).toBe('paper')
+    expect(cashAfterEachBet(booked.state.bets, 293.37)[booked.bet.betId]).toBeNull()
+    const synced = syncTicketsIntoBook(start, [
+      {
+        tape: 'cu',
+        ticker: 'KXCOPPER15M-TODAY',
+        side: 'down',
+        orderId: 'deskfill-cu-f8bmwqhq',
+        contracts: 1,
+        beat: 6.7,
+        filledAt: Date.now(),
+      },
+    ], () => ({ clock: '15m', closeAt: Date.now() + 60_000, ask: 40 }))
+    expect(synced.bets.some((b) => b.orderId === 'deskfill-cu-f8bmwqhq' && betKind(b) === 'paper')).toBe(true)
   })
 })

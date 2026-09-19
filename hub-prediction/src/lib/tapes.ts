@@ -489,8 +489,6 @@ export function windowMsForClock(clock: string) {
 }
 
 export type DeskSettings = {
-  /** Soft FAIL leftover. Master Live switch is gone — hydrate always false. */
-  liveBets: boolean
   tapes: Record<TapeId, TapeRecipe>
   betsFilter: TapeId[]
   clocks: Record<TapeId, TapeClock>
@@ -519,7 +517,6 @@ export const GOLD_RECIPES: Record<TapeId, TapeRecipe> = {
 }
 
 export const DEFAULT_SETTINGS: DeskSettings = {
-  liveBets: false,
   tapes: {
     btc: { ...GOLD_RECIPES.btc },
     ng: { ...GOLD_RECIPES.ng },
@@ -623,7 +620,6 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     tapes[id] = next
   }
   return {
-    liveBets: false,
     tapes,
     betsFilter: hydrateBetsFilter((o as { betsFilter?: unknown }).betsFilter),
     clocks: hydrateClocks((o as { clocks?: unknown }).clocks),
@@ -670,11 +666,6 @@ export function patchTape(settings: DeskSettings, id: TapeId, patch: Partial<Tap
   })
 }
 
-/** Soft FAIL leftover. Master Live cannot persist ON. */
-export function setLiveBets(settings: DeskSettings, _liveBets?: boolean): DeskSettings {
-  return saveSettings({ ...settings, liveBets: false })
-}
-
 export function setTapeClock(settings: DeskSettings, id: TapeId, clock: TapeClock): DeskSettings {
   return saveSettings({
     ...settings,
@@ -708,7 +699,7 @@ export function disarmAllBots(settings: DeskSettings): DeskSettings {
   for (const id of TAPE_IDS) {
     tapes[id] = { ...tapes[id], botOn: false }
   }
-  return saveSettings({ ...settings, liveBets: false, togglesPicked: true, tapes })
+  return saveSettings({ ...settings, togglesPicked: true, tapes })
 }
 
 export function remainingMinutes(closeAt: number, now = Date.now()) {
@@ -755,7 +746,7 @@ export function tabIsOpen() {
   return document.hidden === false && document.visibilityState === 'visible'
 }
 
-/** Tape bot + tape live cash. Soft FAIL master liveBets. Bot ON + live cash OFF = PAPER. */
+/** Tape bot + tape live cash. Soft FAIL master liveBets. Bot ON + Live cash ON posts. */
 export function cashGates(settings: DeskSettings, tape: TapeId) {
   const bot = settings.tapes[tape].botOn === true
   const liveCash = settings.tapes[tape].liveOn === true

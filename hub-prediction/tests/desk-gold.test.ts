@@ -62,14 +62,14 @@ describe('defaults Soft FAIL Live / bots ON', () => {
     }
     savePaperDrafts(makePaperDrafts(analyzeDesk(null, hits)))
     expect(loadSettings().tapes.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69 })
-    expect(loadSettings().liveBets).toBe(false)
+    expect(loadSettings()).not.toHaveProperty('liveBets')
   })
 
   it('boots live bets off, bots on, live-cash off', () => {
     const s = hydrateSettings(null)
-    expect(s.liveBets).toBe(false)
-    expect(DEFAULT_SETTINGS.liveBets).toBe(false)
-    expect(hydrateSettings({ liveBets: true }).liveBets).toBe(false)
+    expect(s).not.toHaveProperty('liveBets')
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('liveBets')
+    expect(hydrateSettings({ liveBets: true })).not.toHaveProperty('liveBets')
     for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
       expect(s.tapes[id].botOn).toBe(true)
       expect(s.tapes[id].liveOn).toBe(false)
@@ -84,7 +84,7 @@ describe('defaults Soft FAIL Live / bots ON', () => {
     expect(s.tapes.ng.armFromMin).toBe(10)
     expect(s.tapes.ng.armToMin).toBe(0.45)
     expect(s.tapes.ng.through).toBeCloseTo(0.003)
-    expect(s.liveBets).toBe(false)
+    expect(s).not.toHaveProperty('liveBets')
     const wild = hydrateSettings({
       tapes: { btc: { armFromMin: 1, through: 99, centLo: 10 } },
     })
@@ -96,7 +96,7 @@ describe('defaults Soft FAIL Live / bots ON', () => {
 
   it('does not turn live on just because a stored blob omitted the flag', () => {
     const s = hydrateSettings({ tapes: { btc: { contracts: 7 } } })
-    expect(s.liveBets).toBe(false)
+    expect(s).not.toHaveProperty('liveBets')
     expect(s.tapes.btc.liveOn).toBe(false)
     expect(s.tapes.btc.botOn).toBe(true)
     expect(s.tapes.btc.contracts).toBe(7)
@@ -138,7 +138,6 @@ describe('settings persist', () => {
 
   it('saveSettings does not reset recipes on refresh', () => {
     saveSettings({
-      liveBets: false,
       tapes: {
         ...DEFAULT_SETTINGS.tapes,
         ng: { ...GOLD_RECIPES.ng, contracts: 4, botOn: true },
@@ -149,7 +148,7 @@ describe('settings persist', () => {
     const again = loadSettings()
     expect(again.tapes.ng.contracts).toBe(4)
     expect(again.tapes.ng.botOn).toBe(true)
-    expect(again.liveBets).toBe(false)
+    expect(again).not.toHaveProperty('liveBets')
   })
 
   it('keeps Bot OFF and Live cash ON after reload when the user picked them', () => {
@@ -164,7 +163,7 @@ describe('settings persist', () => {
     expect(again.tapes.ng.botOn).toBe(false)
     expect(again.tapes.ng.liveOn).toBe(false)
     expect(again.tapes.cu.botOn).toBe(true)
-    expect(again.liveBets).toBe(false)
+    expect(again).not.toHaveProperty('liveBets')
   })
 
   it('persists per-tape 5m / 15m / 1h clocks — 15m gold default', () => {
@@ -182,7 +181,7 @@ describe('settings persist', () => {
     expect(saved.tapes.btc.armFromMin).toBe(8)
     expect(saved.tapes.btc.through).toBe(40)
     expect(loadSettings().clocks.btc).toBe('5m')
-    expect(hydrateSettings(loadSettings()).liveBets).toBe(false)
+    expect(hydrateSettings(loadSettings())).not.toHaveProperty('liveBets')
     expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69 })
   })
 })
@@ -382,9 +381,9 @@ describe('arm / pulse / send tab', () => {
   it('cash gates are Bot + Live cash; Soft FAIL master liveBets', () => {
     const s = hydrateSettings(null)
     expect(cashGates(s, 'btc').ok).toBe(false)
-    expect(cashGates({ ...s, liveBets: false, tapes: { ...s.tapes, gld: { ...s.tapes.gld, botOn: true, liveOn: false } } }, 'gld').ok).toBe(false)
-    expect(cashGates({ ...s, liveBets: false, tapes: { ...s.tapes, btc: { ...s.tapes.btc, botOn: true, liveOn: true } } }, 'btc').ok).toBe(true)
-    expect(cashGates({ ...s, liveBets: true, tapes: { ...s.tapes, ng: { ...s.tapes.ng, botOn: false, liveOn: true } } }, 'ng').ok).toBe(false)
+    expect(cashGates({ ...s, tapes: { ...s.tapes, gld: { ...s.tapes.gld, botOn: true, liveOn: false } } }, 'gld').ok).toBe(false)
+    expect(cashGates({ ...s, tapes: { ...s.tapes, btc: { ...s.tapes.btc, botOn: true, liveOn: true } } }, 'btc').ok).toBe(true)
+    expect(cashGates({ ...s, tapes: { ...s.tapes, ng: { ...s.tapes.ng, botOn: false, liveOn: true } } }, 'ng').ok).toBe(false)
   })
 
   it('pulse is quiet without a live ticket', () => {
@@ -539,7 +538,7 @@ describe('gold race path', () => {
     )
     expect(ev[0]?.spent).toBeCloseTo(0.72)
     expect(ev[0]?.pnl).toBeCloseTo(0.28)
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
   })
 
   it('NOW is green below TO BEAT and red above — Kalshi chips LIVE/5M/15M/1H', () => {
@@ -557,7 +556,7 @@ describe('gold race path', () => {
     const kept = setTapeChart(hydrateSettings(null), 'btc', '15m')
     expect(kept.charts.btc).toBe('15m')
     expect(kept.charts.ng).toBe('live')
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
     expect(GOLD_RECIPES.btc.centLo).toBe(69)
     expect(formatBetWindow(Date.parse('2026-09-18T16:45:00-05:00'), 15 * 60_000)).toBe('Sep 18, 4:30–4:45 PM CDT')
     expect(formatBetWindow(Date.parse('2026-09-18T12:11:00-05:00'), 15 * 60_000)).toBe('Sep 18, 11:56 AM–12:11 PM CDT')
@@ -568,13 +567,14 @@ describe('bets log one scrollbar', () => {
   it('wrap is the only scroller — themed thin bars, CASH not under the thumb', async () => {
     const css = await readFile(new URL('../public/desk.css', import.meta.url), 'utf8')
     const dash = await readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8')
-    expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?overflow-x:\s*auto/)
+    expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?overflow-x:\s*hidden/)
     expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?overflow-y:\s*auto/)
-    expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?scrollbar-gutter:\s*stable/)
+    expect(css).not.toMatch(/\.bets-log-wrap \{[\s\S]*?scrollbar-gutter:\s*stable/)
     expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?scrollbar-width:\s*thin/)
     expect(css).toMatch(/\.bets-log-wrap::-webkit-scrollbar \{[\s\S]*?width:\s*6px/)
     expect(css).toMatch(/\.bets-log \{[\s\S]*?overflow:\s*visible/)
     expect(css).not.toMatch(/\.bets-log \{[\s\S]*?overflow-y:\s*auto/)
+    expect(css).not.toMatch(/min-width:\s*50rem/)
     expect(css).not.toMatch(/min-width:\s*58rem/)
     expect(css).toMatch(/\.bets-log-scroll/)
     expect(dash).toMatch(/bets-log-scroll/)
@@ -618,10 +618,9 @@ describe('Kalshi-settled 24h latch', () => {
 
   it('keeps a stored bot ON and live-cash OFF unless stored true', () => {
     const s = hydrateSettings({
-      liveBets: false,
       tapes: { btc: { contracts: 2, botOn: true } },
     })
-    expect(s.liveBets).toBe(false)
+    expect(s).not.toHaveProperty('liveBets')
     expect(s.tapes.btc.botOn).toBe(true)
     expect(s.tapes.btc.liveOn).toBe(false)
   })
@@ -662,7 +661,7 @@ describe('Kalshi-settled 24h latch', () => {
     })
     expect(desk.cash.cash).toBe(200)
     expect(desk.hits.tapes.ng.w).toBe(1)
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
   })
 
   it('P&L vs deposits reads cents deposits and first deposit time', () => {
@@ -686,7 +685,7 @@ describe('Kalshi-settled 24h latch', () => {
     expect(official.cash.deposits).toBe(760)
     expect(official.cash.pnl).toBe(-497)
     expect(desk.cash.firstDepositAt).toBeGreaterThan(0)
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
     expect(GOLD_RECIPES.btc.centLo).toBe(69)
   })
 
@@ -730,7 +729,7 @@ describe('Kalshi-settled 24h latch', () => {
     expect(strip.l).toBe(1)
     expect(strip.placed).toBeCloseTo(1.12)
     expect(strip.pnl).toBeCloseTo(-0.12)
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
   })
 
   it('drops settlements older than 24h', () => {

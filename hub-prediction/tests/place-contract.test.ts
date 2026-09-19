@@ -58,8 +58,8 @@ describe('placeContract V2 Soft KEEP', () => {
 
   it('does not flip Live/bots ON or retune recipes', () => {
     const s = hydrateSettings(null)
-    expect(s.liveBets).toBe(false)
-    expect(hydrateSettings({ liveBets: true }).liveBets).toBe(false)
+    expect(s).not.toHaveProperty('liveBets')
+    expect(hydrateSettings({ liveBets: true })).not.toHaveProperty('liveBets')
     expect(cashGates(s, 'btc').ok).toBe(false)
     expect(livePlaceGate({ botOn: true, liveOn: true, hasKeys: true }).ok).toBe(true)
     expect(livePlaceGate({ botOn: false, liveOn: true, hasKeys: true }).ok).toBe(false)
@@ -69,7 +69,7 @@ describe('placeContract V2 Soft KEEP', () => {
     expect(hostLivePlaceGate({ settings: factory, tape: 'btc', clientBotOn: true, clientLiveOn: true, hasKeys: true }).ok).toBe(false)
     expect(
       hostLivePlaceGate({
-        settings: { ...factory, liveBets: true, tapes: { ...factory.tapes, btc: { ...factory.tapes.btc, botOn: true, liveOn: true } } },
+        settings: { ...factory, tapes: { ...factory.tapes, btc: { ...factory.tapes.btc, botOn: true, liveOn: true } } },
         tape: 'btc',
         clientBotOn: true,
         clientLiveOn: true,

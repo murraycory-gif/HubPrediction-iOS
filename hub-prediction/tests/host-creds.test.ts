@@ -52,7 +52,7 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
     const creds = loadKalshiHostCreds()
     expect(creds?.keyId).toBe('host-env-key')
     expect(creds?.pem).toMatch(/BEGIN (?:RSA )?PRIVATE KEY/)
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
   })
 
   it('reads gitignored .secrets files via KALSHI_SECRETS_DIR', async () => {
@@ -74,7 +74,7 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
   it('returns null without host files — cash stays — , Live stays OFF', () => {
     clearEnv()
     expect(loadKalshiHostCreds()).toBeNull()
-    expect(hydrateSettings(null).liveBets).toBe(false)
+    expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
     expect(hydrateSettings(null).tapes.btc.liveOn).toBe(false)
   })
 

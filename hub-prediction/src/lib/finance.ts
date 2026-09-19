@@ -444,6 +444,11 @@ export function openOnTicker(state: FinanceState, ticker: string) {
   return state.bets.some((b) => b.ticker === ticker && b.status === 'open')
 }
 
+/** HIST imports do not occupy the desk-fill slot. Paper deskfill still books beside them. */
+export function openDeskFillOnTicker(state: FinanceState, ticker: string) {
+  return state.bets.some((b) => b.ticker === ticker && b.status === 'open' && betKind(b) !== 'hist')
+}
+
 export type Gate = { ok: true } | { ok: false; reason: string }
 
 export function liveArmGate(
@@ -466,7 +471,7 @@ export function liveArmGate(
   return { ok: true }
 }
 
-/** Instant bot call: live POSTs now, paper stays local, sit does not send. Soft FAIL master liveBets. */
+/** Instant bot call. Bot ON + Live cash ON → live POST. Soft FAIL liveBets. Soft FAIL paper when Live cash ON. */
 export function liveBotCall(opts: {
   tabOpen: boolean
   killed: boolean
@@ -491,9 +496,12 @@ export function liveBotCall(opts: {
   ) {
     return 'sit'
   }
-  if (opts.rehabPaper || opts.liveCash !== true || opts.fresh !== true) return 'paper'
-  if (!opts.hitOk) return 'sit'
-  return 'live'
+  if (opts.rehabPaper) return 'paper'
+  if (opts.liveCash === true) {
+    if (!opts.hitOk) return 'sit'
+    return 'live'
+  }
+  return 'paper'
 }
 
 /** Why this tape is sitting / paper / live — Live cash ON is not silent. Soft FAIL master Live copy. */
@@ -602,7 +610,7 @@ export function bookFill(
   if (!isRealOrderId(input.orderId)) {
     return { ok: false, state, reason: 'Soft FAIL ghost BOT BOUGHT — no real order id' }
   }
-  if (openOnTicker(state, input.ticker)) {
+  if (openDeskFillOnTicker(state, input.ticker)) {
     return { ok: false, state, reason: 'One ticket/clock — already booked' }
   }
   const spent = ticketCost(input.count, input.ask)
@@ -631,7 +639,8 @@ export function syncTicketsIntoBook(state: FinanceState, tickets: DeskTicket[], 
   let next = state
   for (const t of tickets) {
     if (!isRealOrderId(t.orderId)) continue
-    if (next.bets.some((b) => b.orderId === t.orderId || (b.ticker === t.ticker && b.status === 'open'))) continue
+    if (next.bets.some((b) => b.orderId === t.orderId)) continue
+    if (openDeskFillOnTicker(next, t.ticker)) continue
     const meta = clockOf(t)
     const booked = bookFill(next, {
       tape: t.tape,

@@ -21,7 +21,7 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     const dir = await mkdtemp(join(tmpdir(), 'hub-desk-state-'))
     process.env.HUB_DESK_STATE_FILE = join(dir, 'desk-state.json')
     const first = loadSettings()
-    expect(first.liveBets).toBe(false)
+    expect(first).not.toHaveProperty('liveBets')
     expect(first.tapes.btc.liveOn).toBe(false)
     const armed = patchTape(first, 'btc', { liveOn: true, botOn: true })
     expect(armed.tapes.btc.liveOn).toBe(true)
@@ -35,7 +35,7 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     expect(again.tapes.btc.liveOn).toBe(true)
     expect(again.tapes.btc.botOn).toBe(true)
     expect(again.tapes.btc.through).toBe(GOLD_RECIPES.btc.through)
-    expect(again.liveBets).toBe(false)
+    expect(again).not.toHaveProperty('liveBets')
     expect(GOLD_RECIPES.btc.liveOn).toBe(false)
     await rm(dir, { recursive: true, force: true })
   })
@@ -98,7 +98,7 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     localStorage.clear()
     applyHostDeskState(readDeskState())
     expect(loadSettings().tapes.btc.liveOn).toBe(true)
-    expect(loadSettings().liveBets).toBe(false)
+    expect(loadSettings()).not.toHaveProperty('liveBets')
     await rm(dir, { recursive: true, force: true })
   })
 
@@ -122,7 +122,7 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     localStorage.clear()
     applyHostDeskState(readDeskState())
     expect(loadSettings().tapes.ng.liveOn).toBe(true)
-    expect(loadSettings().liveBets).toBe(false)
+    expect(loadSettings()).not.toHaveProperty('liveBets')
     expect(hydrateFinance(loadFinance()).bets.some((b) => b.orderId === 'deskfill-cu-update1' && b.kind === 'paper')).toBe(
       true,
     )

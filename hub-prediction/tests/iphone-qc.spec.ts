@@ -16,6 +16,10 @@ async function assertNoMasterLive(page: Page) {
   await expect(page.getByTestId('live-banner')).toHaveCount(0)
   await expect(page.getByTestId('confirm-live')).toHaveCount(0)
   await expect(page.locator('body')).not.toContainText('master Live OFF · paper only')
+  await expect(page.getByTestId('desk-head')).not.toContainText('Live OFF')
+  await expect(page.getByTestId('desk-head').getByRole('button')).toHaveCount(0)
+  await expect(page.getByTestId('under-desk').getByTestId('settings-toggle')).toBeVisible()
+  await expect(page.getByTestId('desk-head').getByTestId('settings-toggle')).toHaveCount(0)
 }
 
 async function assertCashColumnClear(page: Page) {
@@ -408,7 +412,7 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.locator('.bets-log-head')).toContainText('MODE')
   await expect(page.locator('.bets-log-head')).toContainText('CASH')
   await expect(page.locator('.bets-log-scroll')).toBeVisible()
-  await expect(page.locator('.bets-log-wrap')).toHaveCSS('overflow-x', 'auto')
+  await expect(page.locator('.bets-log-wrap')).toHaveCSS('overflow-x', 'hidden')
   await expect(page.getByTestId('bets-log')).toHaveCSS('overflow-x', 'visible')
   await assertCashColumnClear(page)
   if (await page.locator('[data-kind="live"]').count()) {
@@ -879,4 +883,64 @@ test('LIVE chart has a continuous series, not one NOW dot', async ({ page }) => 
   expect(commands.length).toBeGreaterThan(2)
   await page.locator('[data-testid="race-btc"]').screenshot({ path: '/opt/cursor/artifacts/screenshots/btc-live-chart.png' })
   await assertNoMasterLive(page)
+})
+
+test('phone desk: paper deskfill shows in BETS as MODE PAPER / CASH N/A — no master Live', async ({ page }) => {
+  const now = Date.now()
+  await page.addInitScript(
+    ([ts]) => {
+      localStorage.setItem(
+        'hub.desk.tickets.v1',
+        JSON.stringify([
+          {
+            tape: 'cu',
+            ticker: 'KXCOPPER15M-PAPERQA',
+            side: 'down',
+            orderId: 'deskfill-cu-f8bmwqhq',
+            contracts: 1,
+            beat: 6.7,
+            filledAt: ts,
+          },
+        ]),
+      )
+      localStorage.setItem(
+        'hub.desk.finance.v1',
+        JSON.stringify({
+          killed: false,
+          paperStartedAt: ts,
+          bets: [
+            {
+              betId: 'kalshi:KXCOPPER15M-HISTOPEN',
+              tape: 'cu',
+              ticker: 'KXCOPPER15M-PAPERQA',
+              clock: '15m',
+              closeAt: ts + 60_000,
+              side: 'up',
+              count: 1,
+              ask: 50,
+              spent: 19,
+              orderId: 'pos-cu-hist-open',
+              status: 'open',
+              pnl: null,
+              filledAt: ts - 1000,
+              settledAt: null,
+              kind: 'hist',
+            },
+          ],
+        }),
+      )
+    },
+    [now],
+  )
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  if ((await page.getByTestId('bets-filter-all').getAttribute('aria-pressed')) !== 'true') {
+    await page.getByTestId('bets-filter-all').click()
+  }
+  await expect(page.locator('[data-order-id="deskfill-cu-f8bmwqhq"]')).toHaveCount(1)
+  await expect(page.locator('[data-order-id="deskfill-cu-f8bmwqhq"] [data-testid="bets-mode"]')).toHaveText('PAPER')
+  await expect(page.locator('[data-order-id="deskfill-cu-f8bmwqhq"] [data-testid="bets-cash"]')).toHaveText(/N\/A/)
+  await assertNoMasterLive(page)
+  await assertCashColumnClear(page)
 })

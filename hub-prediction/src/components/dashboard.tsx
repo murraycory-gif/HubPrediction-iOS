@@ -349,8 +349,25 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     setBook((prev) => settleBook(prev, recent))
   }, [settledQuery.data, tickets])
 
+  useEffect(() => {
+    setBook((prev) =>
+      syncTicketsIntoBook(prev, tickets, (t) => {
+        const q = heldBoard.current?.tapes[t.tape]
+        return {
+          clock: q?.clockId || q?.clock || '',
+          closeAt: q?.closeAt || 0,
+          ask: (t.side === 'down' ? q?.noAsk : q?.yesAsk) ?? 50,
+        }
+      }),
+    )
+  }, [tickets])
+
   function sendPaper(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
     if (!tabIsOpen() || !quote.ticker) return
+    if (cashGates(settings, tape).ok && !isRehabPaper(rehab, tape)) {
+      void sendLive(tape, side, quote)
+      return
+    }
     const ticket = makePaperTicket({
       tape,
       ticker: quote.ticker,
@@ -550,16 +567,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
           </div>
           <div className="rain" data-testid="rain" aria-hidden="true" />
-          <div className="brand-actions">
-            <button
-              type="button"
-              className="chip-btn glyph-plate"
-              data-testid="settings-toggle"
-              onClick={() => setSettingsOpen((v) => !v)}
-            >
-              {settingsOpen ? 'Hide' : 'Settings'}
-            </button>
-          </div>
         </div>
         <div className="stat-row scoreboard-row" data-testid="scoreboard">
           <Stat
@@ -677,6 +684,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             onClick={() => setFinanceOpen((v) => !v)}
           >
             {financeOpen ? 'Hide Finance' : 'Finance'}
+          </button>
+          <button
+            type="button"
+            className="chip-btn tap"
+            data-testid="settings-toggle"
+            onClick={() => setSettingsOpen((v) => !v)}
+          >
+            {settingsOpen ? 'Hide Settings' : 'Settings'}
           </button>
         </div>
         {analystOpen ? (
@@ -1172,7 +1187,7 @@ function Bets24Strip({
               const modeClass = mode === 'live' ? 'mode-live' : mode === 'hist' ? 'mode-hist' : 'mode-paper'
               const modeLabel = mode === 'hist' ? 'HIST' : mode === 'live' ? 'LIVE' : 'PAPER'
               return (
-                <li key={b.betId} className="bets-log-row" data-kind={mode}>
+                <li key={b.betId} className="bets-log-row" data-kind={mode} data-order-id={b.orderId}>
                   <span>{b.tape.toUpperCase()}</span>
                   <span data-testid="bets-window" className="bets-window" title={windowLabel}>
                     {windowLabel}
