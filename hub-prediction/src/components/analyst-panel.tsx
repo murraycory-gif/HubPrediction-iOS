@@ -60,7 +60,7 @@ export function AnalystPanel({
       <p className="hud-label">Analyst · {HIT_FLOOR}% win-ratio goal · drafts</p>
       <p className="settings-note" data-testid="analyst-lock">
         Each tape has its own desk chief. Analyst proposes paper drafts only. Accept writes a recipe after
-        the retune gate. Soft FAIL auto-apply into Live recipes. More than two losses halt that desk for
+        the retune gate. Live recipes stay until you Accept. More than two losses halt that desk for
         paper rehab — Live cash stays as you left it. Paper-test {REHAB_PAPER_RUNS} consistent runs.
       </p>
       <div className="analyst-grid">

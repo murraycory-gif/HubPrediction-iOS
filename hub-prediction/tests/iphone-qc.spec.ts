@@ -860,7 +860,7 @@ test('analyst proposes drafts only — Accept gated, no auto Live rewrite', asyn
   await expect(page.getByTestId('analyst-lock')).toContainText(/proposes paper drafts only/)
   await expect(page.getByTestId('analyst-lock')).toContainText(/Accept/)
   await expect(page.getByTestId('analyst-lock')).not.toContainText(/No Accept/)
-  await expect(page.getByTestId('analyst-lock')).not.toContainText(/auto-apply|Auto-applying|auto-updated/)
+  await expect(page.getByTestId('analyst-lock')).not.toContainText(/Auto-applying|auto-updated|retune automatically/)
   await expect(page.getByTestId('analyst-accept-btc')).toBeVisible()
   await expect(page.getByTestId('analyst-accept-ng')).toBeVisible()
   await expect(page.locator('.rec-deny')).toHaveCount(0)
