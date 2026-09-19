@@ -224,8 +224,9 @@ test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ pag
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
   await allowLiveArm(page)
-  const closeAt = Date.now() + 5 * 60_000
-  await page.evaluate((at) => {
+  const closeAt = Date.now() + 6 * 60_000
+  const ticker = `KXBTC15M-PRINT70-${closeAt}`
+  await page.evaluate(({ at, ticker }) => {
     const w = window as Window & {
       __HUB_PLACE_CALLS?: unknown[]
       __HUB_PLACE?: (p: unknown) => Promise<unknown>
@@ -245,7 +246,7 @@ test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ pag
     }
     w.__HUB_TEST_LIVE_QUOTE = {
       btc: {
-        ticker: 'KXBTC15M-PRINT70',
+        ticker,
         clock: '15m',
         clockId: '15m',
         closeAt: at,
@@ -262,7 +263,7 @@ test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ pag
         ],
       },
     }
-  }, closeAt)
+  }, { at: closeAt, ticker })
   await setToggle(page, 'bot-btc', true)
   await setToggle(page, 'live-cash-btc', true)
   await page.getByTestId('contracts-btc').fill('20')
@@ -299,7 +300,7 @@ test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ pag
     }
     return w.__HUB_PLACE_CALLS?.[0] ?? null
   })
-  expect(placed?.ticker).toBe('KXBTC15M-PRINT70')
+  expect(placed?.ticker).toBe(ticker)
   expect(placed?.yesAsk).toBe(70)
   expect(placed?.liveOn).toBe(true)
   expect(placed?.count).toBeGreaterThanOrEqual(1)
