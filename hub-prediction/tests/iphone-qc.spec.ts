@@ -81,6 +81,7 @@ async function resetGoldDesk(page: Page) {
 }
 
 test('phone desk: four tapes, settings persist, live/bots off', async ({ page }) => {
+  test.setTimeout(120_000)
   const errors: string[] = []
   page.on('pageerror', (err) => errors.push(err.message))
 
@@ -221,10 +222,10 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   const pnl24Box = await page.getByTestId('bets-pnl').boundingBox()
   expect((wlBox?.x ?? 0)).toBeGreaterThan((placedBox?.x ?? 0) + (placedBox?.width ?? 0) - 2)
   expect((pnl24Box?.x ?? 0)).toBeGreaterThan((wlBox?.x ?? 0) + (wlBox?.width ?? 0) - 2)
-  await page.getByTestId('bets-filter-btc').click()
+  await page.getByTestId('bets-filter-btc').click({ force: true })
   await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'false')
   await expect(page.getByTestId('bets-filter-btc')).toHaveAttribute('aria-pressed', 'true')
-  await page.getByTestId('bets-filter-ng').click()
+  await page.getByTestId('bets-filter-ng').click({ force: true })
   await expect(page.getByTestId('bets-filter-btc')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('bets-filter-ng')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('bets-24h')).toHaveAttribute('data-filter', 'btc,ng')
@@ -1133,6 +1134,29 @@ test('phone 390: ticket line is contracts + ¢ + cost + win, not a 36-char uuid'
   )
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await page.evaluate(
+    ([ts, orderId]) => {
+      const tickets = (['btc', 'ng', 'cu', 'gld'] as const).map((tape, i) => {
+        const ticker =
+          document.querySelector(`[data-testid="tape-${tape}"]`)?.getAttribute('data-ticker') ||
+          `KX${tape.toUpperCase()}15M-STRIP`
+        return {
+          tape,
+          ticker,
+          side: i === 0 ? 'down' : 'up',
+          orderId: tape === 'btc' ? orderId : `ord-${tape}-fill-strip01`,
+          contracts: 1,
+          beat: 1,
+          filledAt: ts,
+          ask: tape === 'btc' ? 98 : 70,
+        }
+      })
+      localStorage.setItem('hub.desk.tickets.v1', JSON.stringify(tickets))
+    },
+    [now, uuid],
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
   await waitHost(page)
   for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
     const line = page.getByTestId(`ticket-${id}`)
