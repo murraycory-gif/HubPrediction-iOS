@@ -226,41 +226,49 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       return writeChain
     }
     setHostDeskWriter(writeHost)
+    const markReady = () => setHostReady(true)
+    const readyTimer = window.setTimeout(markReady, 4000)
+    const flushHost = async () => {
+      setHostDeskWriter(writeHost)
+      const local = loadSettings()
+      try {
+        await writeHost({
+          settings: settingsReadyToPush(local) ? local : undefined,
+          tickets: loadTickets(),
+          finance: loadFinance(),
+          chief: loadChief(),
+        })
+      } catch {
+        /* host write miss — Soft FAIL blocking the desk */
+      }
+    }
     void getDeskState({ data: { t: Date.now() } })
       .then(async (host) => {
-        if (host && applyHostDeskState(host)) {
-          setSettings(loadSettings())
-          setChief(loadChief())
-          const hostTickets = loadTickets()
-          setTickets(hostTickets)
-          setBook(
-            syncTicketsIntoBook(loadFinance(), hostTickets, () => ({
-              clock: '',
-              closeAt: 0,
-              ask: 50,
-            })),
-          )
+        try {
+          if (host && applyHostDeskState(host)) {
+            setSettings(loadSettings())
+            setChief(loadChief())
+            const hostTickets = loadTickets()
+            setTickets(hostTickets)
+            setBook(
+              syncTicketsIntoBook(loadFinance(), hostTickets, () => ({
+                clock: '',
+                closeAt: 0,
+                ask: 50,
+              })),
+            )
+          }
+        } catch {
+          /* host apply miss */
         }
-        setHostDeskWriter(writeHost)
-        const local = loadSettings()
-        await writeHost({
-          settings: settingsReadyToPush(local) ? local : undefined,
-          tickets: loadTickets(),
-          finance: loadFinance(),
-          chief: loadChief(),
-        })
-        setHostReady(true)
+        await flushHost()
+        window.clearTimeout(readyTimer)
+        markReady()
       })
       .catch(async () => {
-        setHostDeskWriter(writeHost)
-        const local = loadSettings()
-        await writeHost({
-          settings: settingsReadyToPush(local) ? local : undefined,
-          tickets: loadTickets(),
-          finance: loadFinance(),
-          chief: loadChief(),
-        })
-        setHostReady(true)
+        await flushHost()
+        window.clearTimeout(readyTimer)
+        markReady()
       })
     void getKalshiBalance()
       .then((r) => applyCashAndSettlements(r))
@@ -272,7 +280,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       .catch(() => {
         /* settlements follow cash — latch stays */
       })
-    return () => setHostDeskWriter(null)
+    return () => {
+      window.clearTimeout(readyTimer)
+      setHostDeskWriter(null)
+    }
   }, [])
 
   useEffect(() => {
