@@ -1452,17 +1452,17 @@ function TapeRow({
           <p className="mark-label beat-k" data-testid={`beat-label-${id}`}>
             TO BEAT
           </p>
-          <p className="tape-num" data-testid={`beat-value-${id}`}>
+          <p className="tape-num" data-testid={`beat-value-${id}`} suppressHydrationWarning>
             {formatLive(id, beat || null)}
           </p>
           <p className="mark-sub">{shownQuote?.clock || '—'}</p>
         </div>
         <div className="mark-now live-read glyph-plate" data-testid={`live-plate-${id}`}>
           <p className="mark-label">NOW</p>
-          <p className={`tape-num${tone ? ` tone-${tone}` : ''}`} data-testid={`live-${id}`}>
+          <p className={`tape-num${tone ? ` tone-${tone}` : ''}`} data-testid={`live-${id}`} suppressHydrationWarning>
             {formatLive(id, shownLive)}
           </p>
-          <p className={`mark-sub now-delta${tone ? ` tone-${tone}` : ''}`} data-testid={`now-delta-${id}`}>
+          <p className={`mark-sub now-delta${tone ? ` tone-${tone}` : ''}`} data-testid={`now-delta-${id}`} suppressHydrationWarning>
             {formatNowDelta(id, shownLive, beat)}
           </p>
         </div>
@@ -1504,7 +1504,7 @@ function TapeRow({
       <div className="tape-reads">
         <div>
           <p className="hud-label">WE THINK</p>
-          <p className="tape-think" data-testid={`we-think-${id}`}>
+          <p className="tape-think" data-testid={`we-think-${id}`} suppressHydrationWarning>
             {formatWeThink(id, think.live, think.ahead)}
           </p>
         </div>
