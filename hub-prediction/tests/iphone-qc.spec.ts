@@ -1226,8 +1226,7 @@ test('phone desk: paper deskfill shows in BETS as MODE PAPER / CASH N/A — no m
   if ((await page.getByTestId('bets-filter-all').getAttribute('aria-pressed')) !== 'true') {
     await page.getByTestId('bets-filter-all').click()
   }
-  await expect(page.locator('[data-order-id="deskfill-cu-f8bmwqhq"]')).toHaveCount(0)
-  await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
+  await expect(page.locator('[data-order-id="deskfill-cu-f8bmwqhq"] [data-testid="bets-mode"]')).toHaveText('PAPER')
   await expect(page.locator('[data-order-id^="deskfill-"] [data-testid="bets-mode"]', { hasText: 'LIVE' })).toHaveCount(0)
   await assertNoMasterLive(page)
   await assertCashColumnClear(page)

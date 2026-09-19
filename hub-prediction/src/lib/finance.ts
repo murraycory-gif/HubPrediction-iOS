@@ -353,12 +353,12 @@ function isDeskfillGhost(b: { orderId?: unknown; betId?: unknown }) {
   return /^deskfill-/i.test(ord) || /^deskfill-/i.test(bet)
 }
 
-/** This desk booked it. Soft FAIL imported Kalshi hist and deskfill ghosts in the 24H table. */
+/** This desk booked it. Paper deskfill and LIVE Kalshi. Hist / imported settlements stay out. */
 export function isDeskBookedBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
-  if (isDeskfillGhost(b) || isPaperOrderId(b.orderId)) return false
   if (isImportedKalshiRow(b) || isHistBet(b)) return false
+  if (isPaperBet(b) || isPaperOrderId(b.orderId)) return true
   if (isLiveBet(b) && isDeskfillGhost(b)) return false
-  return isPaperBet(b) || isLiveBet(b)
+  return isLiveBet(b)
 }
 
 export type DeskBetRow = {

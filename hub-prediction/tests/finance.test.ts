@@ -115,8 +115,9 @@ describe('finance Soft KEEP', () => {
       },
       ghostHits,
     )
-    expect(ghostStrip.rows).toEqual([])
-    expect(ghostStrip.placed).toBe(0)
+    expect(ghostStrip.rows).toHaveLength(1)
+    expect(ghostStrip.rows[0]?.kind === 'paper' || betKind(ghostStrip.rows[0]!) === 'paper').toBe(true)
+    expect(ghostStrip.placed).toBeCloseTo(0.72)
     expect(bookFill(s, {
       tape: 'btc', ticker: 'KXBTC15M-1', clock: '9:15 PM', closeAt: 1, side: 'up', count: 1, ask: 72, orderId: 'deskfill-btc-ghost01',
     }).ok).toBe(true)
@@ -671,18 +672,18 @@ describe('finance Soft KEEP', () => {
     }
     const all = last24hBets(live, hits, now)
     expect(all.w).toBe(1)
-    expect(all.l).toBe(0)
-    expect(all.placed).toBeCloseTo(10)
-    expect(all.pnl).toBeCloseTo(5)
-    expect(all.rows.some((b) => /^deskfill-/i.test(String(b.orderId)))).toBe(false)
+    expect(all.l).toBe(1)
+    expect(all.placed).toBeCloseTo(10 + withPaper.bets[0]!.spent)
+    expect(all.pnl).toBeCloseTo(-3)
+    expect(all.rows.some((b) => /^deskfill-/i.test(String(b.orderId)))).toBe(true)
     expect(all.rows.some((b) => b.kind === 'live')).toBe(true)
     expect(bookRealizedPnl(live)).toBeCloseTo(5)
     expect(chasingLosses(withPaper, now)).toBe(false)
     const cu = last24hBets(live, hits, now, ['cu'])
     expect(cu.w).toBe(0)
-    expect(cu.l).toBe(0)
-    expect(cu.placed).toBe(0)
-    expect(cu.pnl).toBe(0)
+    expect(cu.l).toBe(1)
+    expect(cu.placed).toBeCloseTo(withPaper.bets[0]!.spent)
+    expect(cu.pnl).toBeCloseTo(-8)
     const hydrated = hydrateFinance(live)
     expect(hydrated.bets.find((b) => b.orderId.startsWith('deskfill-'))?.kind).toBe('paper')
     expect(betClockLabel({ clock: '15m', ticker: 'KXCOPPER15M-PAPER' })).toBe('15m')
@@ -1118,10 +1119,11 @@ describe('MODE LIVE is this-desk V2 only — Soft FAIL kalshi:* as LIVE', () => 
     const run = cashAfterEachBet([settled], 505)
     expect(run[booked.bet.betId]).toBeNull()
     const paperStrip = last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits)
-    expect(paperStrip.placed).toBe(0)
-    expect(paperStrip.pnl).toBe(0)
-    expect(paperStrip.rows).toEqual([])
-    expect(stripDeskRows([settled]).every((b) => !/^deskfill-/i.test(String(b.orderId)))).toBe(true)
+    expect(paperStrip.placed).toBeCloseTo(booked.bet.spent)
+    expect(paperStrip.pnl).toBeCloseTo(-8)
+    expect(paperStrip.rows).toHaveLength(1)
+    expect(paperStrip.rows[0]?.orderId).toMatch(/^deskfill-/)
+    expect(stripDeskRows([settled]).some((b) => /^deskfill-/i.test(String(b.orderId)))).toBe(true)
   })
 
   it('mocked placeContract order_id → MODE LIVE and cash walks', () => {
