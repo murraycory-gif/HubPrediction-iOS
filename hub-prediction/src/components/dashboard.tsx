@@ -187,7 +187,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     setCash(next.cash)
     setHits(next.hits)
     setHostCreds(r.hostCreds === true)
-    if (r.settlements != null || r.fills != null || r.positions != null || r.orders != null) {
+    if (
+      (r.settlements != null || r.fills != null || r.positions != null || r.orders != null) &&
+      (window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 !== true
+    ) {
       setBook((prev) =>
         applyKalshiBook(prev, {
           cash: r.cash,
@@ -284,9 +287,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         if (!applied && !newer) return
         setSettings(loadSettings())
         setChief(loadChief())
+        if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
         const hostTickets = loadTickets()
         setTickets(hostTickets)
-        if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
         setBook(
           syncTicketsIntoBook(loadFinance(), hostTickets, () => ({
             clock: '',
@@ -479,12 +482,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const recent = settled.filter((s) => !s.closeAt || s.closeAt >= Date.now() - 24 * 60 * 60 * 1000)
     const ev = eventsFromTickets(tickets, recent)
     if (ev.length) setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
+    if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
     setBook((prev) => collapseClockBets(settleBook(prev, recent)))
   }, [settledQuery.data, tickets])
 
   useEffect(() => {
     const payload = settleQuery.data
     if (!payload) return
+    if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
     setBook((prev) => applyClockSettle(prev, payload))
     if (payload.cash != null || payload.settlements != null || payload.orders != null || payload.fills != null) {
       applyCashAndSettlements(payload)
@@ -498,6 +503,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }, [settleNeed.tickers.join('|')])
 
   useEffect(() => {
+    if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
     setBook((prev) =>
       syncTicketsIntoBook(prev, tickets, (t) => {
         const q = heldBoard.current?.tapes[t.tape]
