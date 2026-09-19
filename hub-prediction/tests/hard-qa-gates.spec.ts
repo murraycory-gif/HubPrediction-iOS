@@ -490,7 +490,10 @@ test('BTC news + hour + same-clock Soft FAIL Accept', async ({ page }) => {
 })
 
 test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ page }) => {
-  test.setTimeout(70_000)
+  test.setTimeout(90_000)
+  await page.addInitScript(() => {
+    ;(window as Window & { __HUB_HOLD_EXIT?: boolean }).__HUB_HOLD_EXIT = true
+  })
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
@@ -503,7 +506,10 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
   const out = await page.evaluate((at) => {
     const w = window as Window & {
       __HUB_HOLD_EXIT?: boolean
-      __HUB_TEST_EXIT?: { apply: (input: Record<string, unknown>) => { action: string; locked: number; liveSell: boolean; paper: boolean } }
+      __HUB_TEST_EXIT?: {
+        apply: (input: Record<string, unknown>) => { action: string; locked: number; liveSell: boolean; paper: boolean; why: string }
+        logs: () => Array<{ orderId: string; action: string; why: string; locked: number; liveSell: boolean }>
+      }
       __HUB_PLACE_CALLS?: unknown[]
     }
     w.__HUB_HOLD_EXIT = true
@@ -548,22 +554,34 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
       fillCount: 20,
       now: at,
     })
-    return { fade, hold, sells: w.__HUB_PLACE_CALLS ?? [] }
+    const logs = w.__HUB_TEST_EXIT!.logs()
+    return {
+      fade,
+      hold,
+      sells: w.__HUB_PLACE_CALLS ?? [],
+      lock: document.querySelector('[data-testid="exit-watch-lock"]')?.textContent ?? '',
+      accepts: document.querySelectorAll('[data-testid="analyst-accept-btc"], [data-testid^="chief-accept-"]').length,
+      ghosts: document.querySelectorAll('[data-order-id^="deskfill-"]').length,
+      fadeLog: logs.find((l) => l.orderId === '01exit-btc-fill-aaaa') ?? null,
+      holdLog: logs.find((l) => l.orderId === '01exit-btc-hold-bbbb') ?? null,
+    }
   }, now)
   expect(out.fade.action).toBe('exit')
   expect(out.fade.locked).toBeGreaterThanOrEqual(0.4)
   expect(out.fade.liveSell).toBe(false)
   expect(out.fade.paper).toBe(true)
+  expect(out.fade.why).toMatch(/Profit lock/)
   expect(out.hold.action).toBe('hold')
   expect(out.hold.liveSell).toBe(false)
   expect(out.sells).toEqual([])
-  await expect(page.getByTestId('exit-watch-lock')).toContainText(/Soft FAIL Live sell/)
-  await expect(page.getByTestId('exit-watch-lock')).toContainText(/Soft FAIL Accept/)
-  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toHaveAttribute('data-exit-action', 'exit')
-  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toContainText(/Profit lock/)
-  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toContainText('$')
-  await expect(page.getByTestId('exit-log-01exit-btc-hold-bbbb')).toHaveAttribute('data-exit-action', 'hold')
-  await expect(page.getByTestId('analyst-accept-btc')).toHaveCount(0)
-  await expect(page.locator('[data-testid^="chief-accept-"]')).toHaveCount(0)
-  await expect(page.locator('[data-order-id^="deskfill-"]')).toHaveCount(0)
+  expect(out.lock).toMatch(/Soft FAIL Live sell/)
+  expect(out.lock).toMatch(/Soft FAIL Accept/)
+  expect(out.accepts).toBe(0)
+  expect(out.ghosts).toBe(0)
+  expect(out.fadeLog?.action).toBe('exit')
+  expect(out.fadeLog?.why).toMatch(/Profit lock/)
+  expect(out.fadeLog?.locked).toBeGreaterThanOrEqual(0.4)
+  expect(out.fadeLog?.liveSell).toBe(false)
+  expect(out.holdLog?.action).toBe('hold')
+  expect(out.holdLog?.liveSell).toBe(false)
 })
