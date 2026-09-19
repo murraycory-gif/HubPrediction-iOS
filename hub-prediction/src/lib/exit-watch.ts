@@ -20,6 +20,8 @@ export const BUFFER_SALVAGE_USD = 12
 export const VELOCITY_USD_PER_SEC = 0.8
 /** After-fee P&L ≥ $0.40 → profit-lock EXIT at best bid when armed. */
 export const MIN_LOCK_USD = 0.4
+/** EXIT decision loop. Soft FAIL binding this to the 100ms UI clock / print poll. */
+export const EXIT_SCAN_MS = 400
 
 export type ExitWatchAction = 'exit' | 'hold'
 
@@ -367,6 +369,19 @@ export function recentExitLogs(logs: ExitWatchLog[], n = 8) {
     if (out.length >= n) break
   }
   return out
+}
+
+export function sameExitLogs(a: ExitWatchLog[], b: ExitWatchLog[]) {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  return a.every(
+    (row, i) =>
+      row.orderId === b[i].orderId &&
+      row.action === b[i].action &&
+      row.why === b[i].why &&
+      row.locked === b[i].locked &&
+      row.at === b[i].at,
+  )
 }
 
 export function formatExitLocked(locked: number) {

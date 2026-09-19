@@ -585,3 +585,41 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
   expect(out.holdLog?.action).toBe('hold')
   expect(out.holdLog?.liveSell).toBe(false)
 })
+
+test('live tick + prints keep moving; stale banner then recover', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await expect
+    .poll(async () => page.evaluate(() => Boolean((window as Window & { __HUB_TEST_FEED?: unknown }).__HUB_TEST_FEED)), {
+      timeout: 20_000,
+    })
+    .toBe(true)
+  const before = await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_TEST_FEED?: { tickAt: () => number; printFetches: () => number }
+    }
+    return { tick: w.__HUB_TEST_FEED!.tickAt(), fetches: w.__HUB_TEST_FEED!.printFetches() }
+  })
+  await page.waitForTimeout(3_200)
+  const after = await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_TEST_FEED?: { tickAt: () => number; printFetches: () => number }
+    }
+    return { tick: w.__HUB_TEST_FEED!.tickAt(), fetches: w.__HUB_TEST_FEED!.printFetches() }
+  })
+  expect(after.tick - before.tick).toBeGreaterThanOrEqual(2_500)
+  expect(after.fetches).toBeGreaterThan(before.fetches)
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-desk-tick', '100')
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-print-ms', '100')
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-exit-scan', '400')
+  await page.evaluate(() => {
+    ;(window as Window & { __HUB_TEST_FEED?: { forceStale: (on?: boolean) => void } }).__HUB_TEST_FEED!.forceStale(true)
+  })
+  await expect(page.getByTestId('feed-stale')).toBeVisible()
+  await page.evaluate(() => {
+    ;(window as Window & { __HUB_TEST_FEED?: { forceStale: (on?: boolean) => void } }).__HUB_TEST_FEED!.forceStale(false)
+  })
+  await expect(page.getByTestId('feed-stale')).toHaveCount(0)
+})

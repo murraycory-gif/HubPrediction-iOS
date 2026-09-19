@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getClockSettle, getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiBook, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
 import { applyHostDeskState, hostSettingsNewer, SETTINGS_DEBOUNCE_MS, SETTINGS_LATCH_MS } from '../lib/desk-hydrate'
-import { DESK_TICK_MS, useDeskTick } from '../lib/desk-tick'
+import { DESK_TICK_MS, FEED_STALE_MS, lastDeskTickAt, subscribeDeskTick, useDeskTick } from '../lib/desk-tick'
 import { setHostDeskWriter } from '../lib/desk-persist'
 import {
   TAPE_IDS,
@@ -136,6 +136,7 @@ import {
 } from '../lib/desk-chief'
 import { applyClockSettle, balanceLatchMs, clocksNeedingSettle, readTestClockSettle } from '../lib/settle-latch'
 import {
+  EXIT_SCAN_MS,
   EXIT_WATCH_LIVE,
   applyExitDecision,
   decideExitWatch,
@@ -143,6 +144,7 @@ import {
   latestExitFor,
   loadExitLogs,
   recentExitLogs,
+  sameExitLogs,
   type ExitWatchDecision,
   type ExitWatchInput,
   type ExitWatchLog,
@@ -169,7 +171,15 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
   const [exitLogs, setExitLogs] = useState<ExitWatchLog[]>(() => loadExitLogs())
   const [heavyReady, setHeavyReady] = useState(false)
+  const [forceFeedStale, setForceFeedStale] = useState(false)
   const sentRef = useRef<Record<string, SendClaim>>({})
+  const printFetches = useRef(0)
+  const ticketsRef = useRef(tickets)
+  const bookRef = useRef(book)
+  const boardRef = useRef<DeskBoard | null>(null)
+  const holdSaveTimer = useRef(0)
+  ticketsRef.current = tickets
+  bookRef.current = book
   const clientOrderRef = useRef<Record<string, string>>({})
   const lastLocalWrite = useRef(0)
   const wall = useDeskTick()
@@ -383,7 +393,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const next = latchDeskBoard(boardQuery.data ?? seedBoard, heldBoard.current)
     if (next) {
       heldBoard.current = next
-      saveHeldBoard(next)
+      if (typeof window !== 'undefined') {
+        if (holdSaveTimer.current) window.clearTimeout(holdSaveTimer.current)
+        holdSaveTimer.current = window.setTimeout(() => {
+          saveHeldBoard(heldBoard.current)
+        }, 2000)
+      }
     }
     return next ?? heldBoard.current
   }, [boardQuery.data, seedBoard])
@@ -424,13 +439,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const printsQuery = useQuery({
     queryKey: ['live-prints', liveEvents, settings.charts, settings.clocks],
     queryFn: async () => {
+      printFetches.current += 1
       try {
         return await getLivePrints({ data: { events: liveEvents, charts: settings.charts, clocks: settings.clocks } })
       } catch {
         return printsHold.current ?? { tapes: { btc: null, ng: null, cu: null, gld: null, wti: null, slv: null }, fetchedAt: 0 }
       }
     },
-    enabled: Object.values(liveEvents).some(Boolean),
+    enabled: hostReady,
     refetchInterval: LIVE_PRINT_MS,
     refetchIntervalInBackground: true,
     placeholderData: keepPreviousData,
@@ -441,6 +457,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   if (printsQuery.data) printsHold.current = printsQuery.data
 
   const board = mergeLiveOntoBoard(structure, printsQuery.data ?? printsHold.current) ?? structure
+  boardRef.current = board
 
   async function refreshCash() {
     try {
@@ -464,6 +481,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   }
 
   const cashLatch = balanceLatchMs(book.bets, board, wall)
+  const printAt = printsQuery.dataUpdatedAt || printsHold.current?.fetchedAt || 0
+  const feedStale =
+    forceFeedStale ||
+    (hostReady && printAt > 0 && wall - printAt > FEED_STALE_MS)
   const cashQuery = useQuery({
     queryKey: ['kalshi-balance'],
     queryFn: () => getKalshiBalance(),
@@ -777,7 +798,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   function runExitWatch(input: ExitWatchInput) {
     const decision = decideExitWatch(input)
     const next = applyExitDecision(loadExitLogs(), decision)
-    setExitLogs(next)
+    setExitLogs((prev) => (sameExitLogs(prev, next) ? prev : next))
     if (decision.action === 'exit' && !EXIT_WATCH_LIVE) {
       setMsg(decision.why)
     }
@@ -789,11 +810,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       return []
     }
     const out: ExitWatchDecision[] = []
-    for (const t of tickets) {
+    const openTickets = ticketsRef.current
+    const openBook = bookRef.current
+    const openBoard = boardRef.current
+    for (const t of openTickets) {
       if (!isRealOrderId(t.orderId) || isPaperOrderId(t.orderId)) continue
-      const booked = book.bets.find((b) => b.orderId === t.orderId && b.status === 'open' && isLiveBet(b))
+      const booked = openBook.bets.find((b) => b.orderId === t.orderId && b.status === 'open' && isLiveBet(b))
       if (!booked) continue
-      const quote = readTestLiveQuote(t.tape) ?? board?.tapes[t.tape]
+      const quote = readTestLiveQuote(t.tape) ?? openBoard?.tapes[t.tape]
       if (!quote || !Number.isFinite(quote.live) || !Number.isFinite(quote.beat)) continue
       out.push(
         runExitWatch({
@@ -816,6 +840,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     }
     return out
   }
+  const runExitWatchRef = useRef(runExitWatch)
+  const scanExitWatchRef = useRef(scanExitWatch)
+  runExitWatchRef.current = runExitWatch
+  scanExitWatchRef.current = scanExitWatch
 
   useEffect(() => {
     const w = window as Window & {
@@ -857,8 +885,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         over?.intel ?? {
           btc: buildTapeIntel({
             id: 'btc',
-            points: board?.tapes.btc?.points,
-            closeAt: board?.tapes.btc?.closeAt,
+            points: boardRef.current?.tapes.btc?.points,
+            closeAt: boardRef.current?.tapes.btc?.closeAt,
           }),
         },
       now: over?.now,
@@ -894,7 +922,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       window.clearTimeout(start)
       if (iv) window.clearInterval(iv)
     }
-  }, [hostReady, book, cash.cash, cash.deposits, board, rehab])
+  }, [hostReady])
 
   useEffect(() => {
     const w = window as Window & {
@@ -933,7 +961,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       delete w.__HUB_APPLY_BOOK
       delete w.__HUB_TEST_BETS
     }
-  })
+  }, [])
 
   useLayoutEffect(() => {
     const w = window as Window & {
@@ -943,14 +971,36 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         logs: () => ExitWatchLog[]
         live: boolean
       }
+      __HUB_TEST_FEED?: {
+        tickAt: () => number
+        printFetches: () => number
+        printUpdatedAt: () => number
+        stale: () => boolean
+        forceStale: (on?: boolean) => void
+        refetchPrints: () => void
+      }
     }
     w.__HUB_TEST_EXIT = {
-      apply: (input) => runExitWatch(input),
-      scan: () => scanExitWatch(),
+      apply: (input) => runExitWatchRef.current(input),
+      scan: () => scanExitWatchRef.current(),
       logs: () => loadExitLogs(),
       live: EXIT_WATCH_LIVE,
     }
-  })
+    w.__HUB_TEST_FEED = {
+      tickAt: () => lastDeskTickAt(),
+      printFetches: () => printFetches.current,
+      printUpdatedAt: () => 0,
+      stale: () => Boolean((document.querySelector('[data-testid="feed-stale"]') as HTMLElement | null)?.dataset.stale),
+      forceStale: (on = true) => setForceFeedStale(on),
+      refetchPrints: () => {
+        /* filled after printsQuery exists — overwritten below */
+      },
+    }
+    return () => {
+      delete w.__HUB_TEST_EXIT
+      delete w.__HUB_TEST_FEED
+    }
+  }, [])
 
   useEffect(() => {
     if (!hostReady || !tabIsOpen() || book.killed) return
@@ -1006,8 +1056,45 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   useEffect(() => {
     if (!hostReady) return
-    scanExitWatch(wall)
-  }, [hostReady, wall, tickets, book.bets, board])
+    let last = 0
+    return subscribeDeskTick((now) => {
+      if (now - last < EXIT_SCAN_MS) return
+      last = now
+      scanExitWatchRef.current(now)
+    })
+  }, [hostReady])
+
+  useEffect(() => {
+    if (!feedStale || forceFeedStale) return
+    const id = window.setTimeout(() => {
+      void boardQuery.refetch()
+      void printsQuery.refetch()
+    }, 250)
+    return () => window.clearTimeout(id)
+  }, [feedStale, forceFeedStale, boardQuery.refetch, printsQuery.refetch])
+
+  useEffect(() => {
+    const w = window as Window & {
+      __HUB_TEST_FEED?: {
+        tickAt: () => number
+        printFetches: () => number
+        printUpdatedAt: () => number
+        stale: () => boolean
+        forceStale: (on?: boolean) => void
+        refetchPrints: () => void
+      }
+    }
+    w.__HUB_TEST_FEED = {
+      tickAt: () => lastDeskTickAt(),
+      printFetches: () => printFetches.current,
+      printUpdatedAt: () => printsQuery.dataUpdatedAt,
+      stale: () => feedStale,
+      forceStale: (on = true) => setForceFeedStale(on),
+      refetchPrints: () => {
+        void printsQuery.refetch()
+      },
+    }
+  })
 
   useEffect(() => {
     if (!hostReady || book.killed) return
@@ -1055,7 +1142,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   )
 
   return (
-    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0} data-book-latch={BOOK_LATCH_MS} data-settings-latch={SETTINGS_LATCH_MS}>
+    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-feed-stale={feedStale ? '1' : '0'} data-exit-scan={EXIT_SCAN_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0} data-book-latch={BOOK_LATCH_MS} data-settings-latch={SETTINGS_LATCH_MS}>
       <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">
@@ -1077,6 +1164,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           />
           <Stat label="KALSHI CASH" value={formatCash(cash.cash)} testId="kalshi-cash" />
         </div>
+        {feedStale ? (
+          <p className="feed-stale" data-testid="feed-stale" data-stale="1">
+            FEED STALE — live prints or desk tick lagged. Recovering poll. Soft FAIL frozen NOW.
+          </p>
+        ) : (
+          <p hidden data-testid="feed-ok" data-stale="0" />
+        )}
       </header>
 
       <main className="desk-main">

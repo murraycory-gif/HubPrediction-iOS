@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   BUFFER_SALVAGE_USD,
   BUFFER_USD,
+  EXIT_SCAN_MS,
   EXIT_WATCH_LIVE,
   MIN_LOCK_USD,
   VELOCITY_USD_PER_SEC,
   applyExitDecision,
+  sameExitLogs,
   contractBidCents,
   decideExitWatch,
   distanceToBeat,
@@ -54,6 +56,8 @@ describe('EXIT WATCH paper', () => {
     expect(BUFFER_SALVAGE_USD).toBe(12)
     expect(VELOCITY_USD_PER_SEC).toBe(0.8)
     expect(MIN_LOCK_USD).toBe(0.4)
+    expect(EXIT_SCAN_MS).toBe(400)
+    expect(EXIT_SCAN_MS).toBeGreaterThan(100)
   })
 
   it('distance + velocity + projected cross', () => {
@@ -172,5 +176,6 @@ describe('EXIT WATCH paper', () => {
     const ghost = decideExitWatch(fill({ orderId: 'deskfill-btc-x' }))
     expect(applyExitDecision([], { ...ghost, action: 'exit', orderId: 'deskfill-btc-x' }, now)).toEqual([])
     expect(recentExitLogs(once)[0]?.orderId).toBe('01exit-btc-fill-aaaa')
+    expect(sameExitLogs(once, applyExitDecision(once, d, now + 1000))).toBe(true)
   })
 })

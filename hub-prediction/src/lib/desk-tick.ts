@@ -2,18 +2,31 @@ import { useEffect, useState } from 'react'
 
 /** One desk clock. Soft FAIL a rAF loop per tape / chart / timer. Soft FAIL 1Hz. */
 export const DESK_TICK_MS = 100
+/** Visible FEED STALE if prints or the desk clock stop past this. */
+export const FEED_STALE_MS = 2_500
 
 type TickFn = (now: number) => void
 
 const listeners = new Set<TickFn>()
 let timer: ReturnType<typeof setInterval> | null = null
+let lastTickAt = 0
 
 function start() {
   if (timer != null) return
   timer = setInterval(() => {
     const now = Date.now()
+    lastTickAt = now
     for (const fn of listeners) fn(now)
   }, DESK_TICK_MS)
+}
+
+export function lastDeskTickAt() {
+  return lastTickAt
+}
+
+export function deskTickAge(now = Date.now()) {
+  if (!lastTickAt) return 0
+  return now - lastTickAt
 }
 
 function stop() {

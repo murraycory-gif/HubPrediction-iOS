@@ -243,6 +243,19 @@ body {
   overflow-wrap: anywhere;
 }
 
+.feed-stale {
+  position: relative;
+  z-index: 3;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid #c45a12;
+  background: #3a1c08;
+  color: #ffb36a;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+
 .bets-24h {
   position: relative;
   z-index: 1;
