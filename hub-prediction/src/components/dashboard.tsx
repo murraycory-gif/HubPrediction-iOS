@@ -1234,19 +1234,13 @@ function TapeRow({
             onInput={(e) => queueContracts(Number((e.target as HTMLInputElement).value))}
             onBlur={() => saveContracts()}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') saveContracts()
+              if (e.key === 'Enter') {
+                saveContracts()
+                ;(e.target as HTMLInputElement).blur()
+              }
             }}
           />
         </label>
-        <button
-          type="button"
-          className="chip-btn tap glyph-plate"
-          data-testid={`save-${id}`}
-          disabled={recipeLocked}
-          onClick={() => saveContracts()}
-        >
-          Save
-        </button>
       </div>
     </article>
   )
