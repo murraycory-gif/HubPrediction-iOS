@@ -881,7 +881,7 @@ test('Live cash ON toggle runs liveArmGate — Soft FAIL enable if !ok', async (
   })
   await page.locator('label').filter({ has: page.getByTestId('live-cash-btc') }).click({ force: true })
   await expect(page.getByTestId('live-cash-btc')).not.toBeChecked()
-  await expect(page.getByTestId('desk-msg')).toContainText('LIVE needs keys')
+  await expect(page.getByTestId('desk-msg')).toContainText(/LIVE needs keys/)
   await allowLiveArm(page)
   await setToggle(page, 'live-cash-btc', true)
   await expect(page.getByTestId('live-cash-btc')).toBeChecked()

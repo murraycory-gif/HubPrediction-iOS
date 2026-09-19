@@ -704,7 +704,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     if (!next.didChange) return
     setSettings(next.settings)
     setRehab(next.rehab)
-    if (next.msg) setMsg(next.msg)
+    if (next.msg && !/Accept to apply/.test(next.msg)) setMsg(next.msg)
   }, [hostReady, board, book.bets, book.killed, hits, rehab, settings])
 
   const hitFrom = cash.firstDepositAt ?? 0
