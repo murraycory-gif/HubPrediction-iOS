@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 
 const FIRST_PAINT_MS = 2000
@@ -18,6 +20,26 @@ async function setToggle(page: Page, testId: string, on: boolean) {
   if ((await box.isChecked()) === on) return
   await page.locator('label').filter({ has: box }).click({ force: true })
   await expect(box).toBeChecked({ checked: on })
+}
+
+function seedHostBtc20() {
+  const file = resolve('.secrets/desk-state.json')
+  const raw = JSON.parse(readFileSync(file, 'utf8')) as {
+    settings?: {
+      savedAt?: number
+      togglesAt?: number
+      togglesPicked?: boolean
+      tapes?: Record<string, { contracts?: number }>
+    }
+  }
+  const now = Date.now()
+  raw.settings = raw.settings ?? {}
+  raw.settings.tapes = raw.settings.tapes ?? {}
+  raw.settings.tapes.btc = { ...(raw.settings.tapes.btc ?? {}), contracts: 20 }
+  raw.settings.savedAt = now
+  raw.settings.togglesAt = now
+  raw.settings.togglesPicked = true
+  writeFileSync(file, JSON.stringify(raw))
 }
 
 test('HARD QA 4 first paint + live numbers under budget', async ({ page }) => {
@@ -125,6 +147,7 @@ test('two clients: BTC 20 on A is host book — B and reload stay 20', async ({ 
   const a = await aCtx.newPage()
   const b = await bCtx.newPage()
   try {
+    seedHostBtc20()
     await a.goto('/', { waitUntil: 'domcontentloaded' })
     await waitHost(a)
     await allowLiveArm(a)
@@ -246,6 +269,14 @@ test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ pag
   await page.getByTestId('contracts-btc').blur()
   await setToggle(page, 'bot-btc', false)
   await setToggle(page, 'bot-btc', true)
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const w = window as Window & { __HUB_TEST_SEND?: unknown; __HUB_PLACE?: unknown }
+        return Boolean(w.__HUB_TEST_SEND && w.__HUB_PLACE && (w as { __HUB_TEST_LIVE_QUOTE?: { btc?: unknown } }).__HUB_TEST_LIVE_QUOTE?.btc)
+      }),
+    )
+    .toBe(true)
   await page.evaluate(async () => {
     const w = window as Window & {
       __HUB_TEST_SEND?: (tape: string, side: string, quote: unknown) => Promise<void>
