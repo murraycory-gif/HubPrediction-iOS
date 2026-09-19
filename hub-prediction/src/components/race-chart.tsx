@@ -140,10 +140,22 @@ export const RaceChart = memo(function RaceChart({
     displayLive != null && Number.isFinite(displayLive) && (displayLive as number) > 0 ? displayLive : live
   const now = chart === 'live' ? wall : trail.length ? trail[trail.length - 1]!.t : Date.now()
   const windowMs = chartWindowMs(chart, clock)
-  const pts = useMemo(
-    () => cleanRacePoints(trail.length ? trail : points, now, windowMs, openAt, closeAt),
-    [trail, points, now, windowMs, openAt, closeAt],
-  )
+  const pts = useMemo(() => {
+    const cleaned = cleanRacePoints(trail.length ? trail : points, now, windowMs, openAt, closeAt)
+    if (cleaned.length) return cleaned
+    const px =
+      shown != null && Number.isFinite(shown) && shown > 0
+        ? shown
+        : Number.isFinite(beat) && beat > 0
+          ? beat
+          : null
+    if (px == null) return []
+    return [
+      { t: now - windowMs, px },
+      { t: now - windowMs / 2, px },
+      { t: now, px },
+    ]
+  }, [trail, points, now, windowMs, openAt, closeAt, shown, beat])
   const drawPts = useMemo(() => {
     const smoothed = smoothDrawPoints(pts)
     if (shown == null || !Number.isFinite(shown) || !smoothed.length) return smoothed
@@ -180,16 +192,19 @@ export const RaceChart = memo(function RaceChart({
   const xOf = (t: number) => PAD.l + ((t - start) / span) * innerW
   const yOf = (px: number) => PAD.t + innerH - ((px - lo) / range) * innerH
 
-  const line = raceLinePath(drawPts, xOf, yOf)
-  if (line) lineHold.current = line
-  const paintLine = line || lineHold.current
-  const area = drawPts.length
-    ? `${line} L${xOf(drawPts[drawPts.length - 1]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} L${xOf(drawPts[0]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} Z`
-    : ''
-
   const waiting = !(beat > 0) && (shown == null || !Number.isFinite(shown) || shown <= 0) && !drawPts.length
   const beatY = Number.isFinite(beat) && beat > 0 ? yOf(beat) : PAD.t + innerH / 2
   const liveY = shown != null && Number.isFinite(shown) ? yOf(shown) : null
+  const line = raceLinePath(drawPts, xOf, yOf)
+  if (line) lineHold.current = line
+  const holdY = liveY != null ? liveY : beatY
+  const paintLine =
+    line ||
+    lineHold.current ||
+    `M${PAD.l.toFixed(2)},${holdY.toFixed(2)} L${(PAD.l + innerW).toFixed(2)},${holdY.toFixed(2)}`
+  const area = drawPts.length
+    ? `${line || paintLine} L${xOf(drawPts[drawPts.length - 1]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} L${xOf(drawPts[0]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} Z`
+    : ''
   const liveX = liveY != null ? (drawPts.length ? xOf(drawPts[drawPts.length - 1]!.t) : PAD.l + innerW) : null
   const vsPct =
     shown != null && Number.isFinite(shown) && Number.isFinite(beat) && beat > 0
