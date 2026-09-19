@@ -280,7 +280,7 @@ describe('QC2 wires', () => {
     expect(exitSrc).toMatch(/Soft FAIL salvage above/)
     const financeUi = await readFile(new URL('../src/components/finance-panel.tsx', import.meta.url), 'utf8')
     expect(financeUi).toMatch(/EXIT WATCH paper/)
-    expect(dash).toMatch(/readTestLiveQuote\(id\) \?\? board\?\.tapes\[id\]/)
+    expect(dash).toMatch(/readTestLiveQuote\(id\) \?\? boardNow\?\.tapes\[id\]/)
     expect(tabIsOpen()).toBe(true)
 
     Object.defineProperty(globalThis, 'document', {
