@@ -149,6 +149,7 @@ test('HARD QA 6 persist Live cash/contracts + WTI/Silver paper only', async ({ b
     await expect(desk.getByTestId('live-cash-slv')).not.toBeChecked()
     await expect(desk.getByTestId('live-cash-wti')).toBeDisabled()
     await expect(desk.getByTestId('live-cash-slv')).toBeDisabled()
+    await desk.getByTestId('tape-wti').scrollIntoViewIfNeeded()
     await desk.locator('label').filter({ has: desk.getByTestId('live-cash-wti') }).click({ force: true })
     await expect(desk.getByTestId('live-cash-wti')).not.toBeChecked()
     await expect(desk.getByTestId('desk-msg')).toContainText(/paper desk|Soft FAIL Live/i)

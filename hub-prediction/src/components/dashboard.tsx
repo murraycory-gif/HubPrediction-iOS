@@ -1501,6 +1501,9 @@ function TapeRow({
           className={`toggle tap glyph-plate ${rehabPaper ? 'toggle-halt' : recipe.liveOn ? 'toggle-hot' : ''}`}
           data-testid={`live-cash-box-${id}`}
           data-halt={rehabPaper ? '1' : '0'}
+          onClick={() => {
+            if (!tapeAllowsLive(id)) onTape({ liveOn: true })
+          }}
         >
           <input
             type="checkbox"
