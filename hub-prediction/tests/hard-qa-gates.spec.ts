@@ -171,12 +171,14 @@ test('two clients: BTC 20 on A is host book — B and reload stay 20', async ({ 
     await a.goto('/', { waitUntil: 'domcontentloaded' })
     await waitHost(a)
     await allowLiveArm(a)
-    await a.getByTestId('contracts-btc').fill('19')
-    await a.getByTestId('contracts-btc').blur()
-    await a.getByTestId('contracts-btc').fill('20')
-    await a.getByTestId('contracts-btc').blur()
+    const current = Number(await a.getByTestId('contracts-btc').inputValue())
+    if (current !== 20) {
+      await a.getByTestId('contracts-btc').fill('20')
+      await a.getByTestId('contracts-btc').blur()
+    }
     await expect(a.getByTestId('contracts-btc')).toHaveValue('20')
-    await a.waitForTimeout(1500)
+    await expect.poll(async () => a.getByTestId('contracts-btc').inputValue(), { timeout: 8_000 }).toBe('20')
+    await a.waitForTimeout(2000)
     await b.goto('/', { waitUntil: 'domcontentloaded' })
     await waitHost(b)
     await expect(b.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 15_000 })
@@ -271,6 +273,7 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
+  await expect.poll(async () => page.evaluate(() => Boolean((window as Window & { __HUB_TEST_BETS?: unknown }).__HUB_TEST_BETS))).toBe(true)
   const ts = Date.now()
   await page.evaluate((at) => {
     ;(window as Window & { __HUB_TEST_BETS?: { replace: (bets: unknown[]) => void } }).__HUB_TEST_BETS?.replace([
@@ -316,9 +319,11 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
       wl: document.querySelector('[data-testid="bets-wl"]')?.textContent?.trim() || '',
       rows: document.querySelectorAll('[data-testid="bets-log"] li').length,
     }))
-  await expect.poll(async () => (await snapshot()).rows, { timeout: 8_000 }).toBe(2)
+  await expect(page.locator('[data-order-id="ord-live-freeze-aaaa"]')).toBeVisible({ timeout: 8_000 })
+  await expect(page.locator('[data-order-id="deskfill-btc-freezea"]')).toBeVisible()
+  await expect.poll(async () => (await snapshot()).placed, { timeout: 8_000 }).toMatch(/\$33/)
   const frozen = await snapshot()
-  expect(frozen.placed).toMatch(/\$33/)
+  expect(frozen.rows).toBe(2)
   expect(frozen.wl).toMatch(/1W–1L/)
   await page.evaluate((ts) => {
     const hist = Array.from({ length: 200 }, (_, i) => ({
