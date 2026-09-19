@@ -767,7 +767,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   function runExitWatch(input: ExitWatchInput) {
     const decision = decideExitWatch(input)
-    setExitLogs((prev) => applyExitDecision(prev, decision))
+    const next = applyExitDecision(loadExitLogs(), decision)
+    setExitLogs(next)
     if (decision.action === 'exit' && !EXIT_WATCH_LIVE) {
       setMsg(decision.why)
     }
