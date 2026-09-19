@@ -502,6 +502,28 @@ describe('analyst auto 80% + 3-loss paper rehab', () => {
   it('HIT_FLOOR 80 is the same sit/rehab goal on BTC NG CU GLD', () => {
     expect(HIT_FLOOR).toBe(80)
     expect(TAPE_IDS).toEqual(['btc', 'ng', 'cu', 'gld'])
+    const now = Date.now()
+    const hits = emptyHits()
+    const coldBets = TAPE_IDS.flatMap((id) =>
+      [0, 1, 2, 3].map((i) => ({
+        tape: id,
+        side: 'up' as const,
+        ask: 72,
+        pnl: -1,
+        status: 'settled' as const,
+        filledAt: now - (i + 1) * 1000,
+        settledAt: now - (i + 1) * 400,
+        closeAt: now + 4 * 60_000,
+      })),
+    )
+    for (const id of TAPE_IDS) hits.tapes[id] = { w: 1, l: 6 }
+    const cold = analyzeDesk(board(), hits, coldBets)
+    for (const id of TAPE_IDS) {
+      const sit = cold.tapes.find((t) => t.id === id)
+      expect(sit?.changed).toBe(false)
+      expect(sit?.proposed).toMatch(/80%/)
+      expect(sit?.proposed).not.toMatch(/83%/)
+    }
     for (const id of TAPE_IDS) {
       const restored = rehabCopy(
         {

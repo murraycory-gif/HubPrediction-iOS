@@ -156,9 +156,9 @@ describe('Kalshi book MODE — missing PAPER, present LIVE, cash = balance', () 
       hostCreds: true,
     }, now)
     const row = present.bets.find((b) => b.ticker === raw.ticker)
-    expect(row?.kind).toBe('live')
-    expect(betKind(row!)).toBe('live')
-    expect(cashAfterEachBet(present.bets, 293.63)[row!.betId]).toBeCloseTo(293.63)
+    expect(row?.kind).toBe('hist')
+    expect(betKind(row!)).toBe('hist')
+    expect(cashAfterEachBet(present.bets, 293.63)[row!.betId]).toBeNull()
   })
 
   it('BETS is Kalshi book ∪ desk paper extras', () => {
@@ -183,6 +183,26 @@ describe('Kalshi book MODE — missing PAPER, present LIVE, cash = balance', () 
       now,
     )
     expect(next.bets.some((b) => b.orderId === 'deskfill-btc-paper01' && b.kind === 'paper')).toBe(true)
-    expect(next.bets.some((b) => b.ticker === 'KXBTC15M-ONBOOK' && b.kind === 'live')).toBe(true)
+    expect(next.bets.some((b) => b.ticker === 'KXBTC15M-ONBOOK')).toBe(false)
+  })
+
+  it('UUID desk ticket missing from Kalshi order ids is PAPER — Soft FAIL ticker-only LIVE', () => {
+    const ghost = deskLive({
+      orderId: '01a0b7af-7b30-701f-8eb6-fa1303b858ad',
+      ticker: 'KXBTC15M-BOOK',
+      kind: 'live',
+    })
+    const payload = {
+      cash: 293.93,
+      fills: { fills: [{ ticker: 'KXBTC15M-BOOK', order_id: 'ord-other-fill-99' }] },
+      settlements: { settlements: [] },
+      orders: { orders: [] },
+      fetchedAt: now,
+      hostCreds: true,
+    }
+    expect(onKalshiBook(ghost, indexKalshiBook(payload))).toBe(false)
+    const next = applyKalshiBook({ ...emptyFinance(), bets: [ghost] }, payload, now)
+    expect(next.bets[0]?.kind).toBe('paper')
+    expect(classifyBookMode(ghost, indexKalshiBook(payload))).toBe('paper')
   })
 })

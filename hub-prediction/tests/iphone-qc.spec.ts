@@ -219,7 +219,7 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   for (const id of ['btc', 'ng', 'cu', 'gld']) {
     await expect(page.getByTestId(`tape-${id}`)).toBeVisible()
     await expect(page.getByTestId(`status-${id}`)).toHaveText(/WAIT|UP|DOWN|WIN|LOSS/)
-    await expect(page.getByTestId(`hit-${id}`)).toContainText(/Hit percent/i)
+    await expect(page.getByTestId(`hit-${id}`)).toContainText(/Hit · 80% goal/)
     await expect(page.getByTestId(`wl-${id}`)).toContainText(/W–L|W-L|\d+W/)
     await expect(page.getByTestId(`bot-${id}`)).toBeChecked()
     await expect(page.getByTestId(`race-${id}`)).toBeVisible()
@@ -829,6 +829,9 @@ test('hit goal is 80% — Soft FAIL leftover 83%', async ({ page }) => {
   await expect(page.getByTestId('settings')).toContainText(/toward 80%/)
   await expect(page.getByTestId('settings')).not.toContainText('83%')
   for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+    await expect(page.getByTestId(`hit-${id}`)).toContainText(/Hit · 80% goal/)
+    await expect(page.getByTestId(`hit-${id}`)).not.toContainText('83% goal')
+    await expect(page.getByTestId(`analyst-${id}`)).toContainText(/80%/)
     await expect(page.getByTestId(`analyst-${id}`)).not.toContainText('83% goal')
   }
 })
@@ -1578,4 +1581,160 @@ test('tradingActive true + forced STALE stays countdown — no CLOSED flash for 
   await page.waitForTimeout(800)
   await expect(page.getByTestId('close-clock-btc')).toHaveAttribute('data-clock-kind', 'closed')
   await expect(page.getByTestId('close-clock-btc')).toContainText('CLOSED')
+})
+
+test('Last 24H strip stays on LIVE + today paper — Soft FAIL hist dump flicker', async ({ page }) => {
+  const now = Date.now()
+  await page.addInitScript(
+    ([ts]) => {
+      const hist = Array.from({ length: 80 }, (_, i) => ({
+        betId: `kalshi:KXBTC15M-H${i}`,
+        tape: 'btc',
+        ticker: `KXBTC15M-H${i}`,
+        clock: '15m',
+        closeAt: ts,
+        side: 'up',
+        count: 1,
+        ask: 50,
+        spent: 50,
+        orderId: `settled-KXBTC15M-H${i}`,
+        status: 'settled',
+        pnl: 0.5,
+        filledAt: ts - i * 1000,
+        settledAt: ts - i * 1000,
+        kind: 'hist',
+      }))
+      localStorage.setItem(
+        'hub.desk.finance.v1',
+        JSON.stringify({
+          killed: false,
+          paperStartedAt: ts,
+          bets: [
+            {
+              betId: 'bet_ord-live-strip',
+              tape: 'btc',
+              ticker: 'KXBTC15M-LIVESTRIP',
+              clock: '15m',
+              closeAt: ts,
+              side: 'up',
+              count: 1,
+              ask: 70,
+              spent: 25,
+              orderId: 'ord-live-strip-aaaa',
+              status: 'settled',
+              pnl: 10,
+              filledAt: ts - 1000,
+              settledAt: ts,
+              kind: 'live',
+            },
+            {
+              betId: 'bet_deskfill-btc-today',
+              tape: 'btc',
+              ticker: 'KXBTC15M-PAPERTODAY',
+              clock: '15m',
+              closeAt: ts,
+              side: 'down',
+              count: 1,
+              ask: 40,
+              spent: 8,
+              orderId: 'deskfill-btc-today01',
+              status: 'settled',
+              pnl: -8,
+              filledAt: ts - 500,
+              settledAt: ts,
+              kind: 'paper',
+            },
+            ...hist,
+          ],
+        }),
+      )
+      localStorage.setItem(
+        'hub.desk.cash.v1',
+        JSON.stringify({ cash: 293.93, deposits: 760, pnl: -466.07, firstDepositAt: ts - 200 * 86_400_000, asOf: ts }),
+      )
+    },
+    [now],
+  )
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  const placed = page.getByTestId('bets-placed')
+  const wl = page.getByTestId('bets-wl')
+  const pnl = page.getByTestId('bets-pnl')
+  await expect(placed).toContainText('$25')
+  await expect(placed).not.toContainText('11,784')
+  await expect(wl).toContainText('1W–0L')
+  await expect(wl).not.toContainText('255W')
+  await expect(pnl).not.toContainText('−$466')
+  await expect(pnl).not.toContainText('-$466')
+  const first = {
+    placed: (await placed.innerText()).trim(),
+    wl: (await wl.innerText()).trim(),
+    pnl: (await pnl.innerText()).trim(),
+  }
+  await page.waitForTimeout(2500)
+  expect((await placed.innerText()).trim()).toBe(first.placed)
+  expect((await wl.innerText()).trim()).toBe(first.wl)
+  expect((await pnl.innerText()).trim()).toBe(first.pnl)
+  await expect(page.locator('[data-testid="bets-mode"]', { hasText: 'HIST' })).toHaveCount(0)
+  await expect(page.locator('[data-order-id="deskfill-btc-today01"] [data-testid="bets-mode"]')).toHaveText('PAPER')
+  await expect(page.locator('[data-order-id="ord-live-strip-aaaa"] [data-testid="bets-mode"]')).toHaveText('LIVE')
+})
+
+test('Live ON place fail Soft FAIL deskfill LIVE — success needs real Kalshi order id', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await allowLiveArm(page)
+  await setToggle(page, 'live-cash-btc', true)
+  const quote = {
+    ticker: 'KXBTC15M-GHOSTQA',
+    clock: '15m',
+    clockId: '15m',
+    closeAt: Date.now() + 8 * 60_000,
+    tradingActive: true,
+    live: 80040,
+    beat: 80000,
+    yesAsk: 70,
+    noAsk: 30,
+    fetchedAt: Date.now(),
+    points: [
+      { t: Date.now() - 8000, px: 80020 },
+      { t: Date.now() - 4000, px: 80030 },
+      { t: Date.now(), px: 80040 },
+    ],
+  }
+  await page.evaluate(async (q) => {
+    const w = window as Window & {
+      __HUB_PLACE?: (p: unknown) => Promise<unknown>
+      __HUB_TEST_SEND?: (tape: string, side: string, quote: unknown) => Promise<void>
+    }
+    w.__HUB_PLACE = async () => {
+      throw new Error('Kalshi reject — IOC miss')
+    }
+    await w.__HUB_TEST_SEND?.('btc', 'up', q)
+  }, quote)
+  await expect(page.getByTestId('desk-msg')).toContainText(/Kalshi reject|IOC miss|no order id|not sent/)
+  await expect(page.getByTestId('ticket-btc')).toContainText('No ticket this clock')
+  await expect(page.getByTestId('banner-btc')).not.toContainText('LIVE')
+  await expect(page.locator('[data-order-id^="deskfill-btc-"] [data-testid="bets-mode"]', { hasText: 'LIVE' })).toHaveCount(0)
+  await expect(page.getByTestId('status-btc')).toHaveText(/WAIT|CLOSED|UP|DOWN|WIN|LOSS/)
+  await expect(page.getByTestId('status-btc')).not.toHaveText('UP')
+
+  await page.evaluate(async (q) => {
+    const w = window as Window & {
+      __HUB_PLACE?: (p: unknown) => Promise<unknown>
+      __HUB_TEST_SEND?: (tape: string, side: string, quote: unknown) => Promise<void>
+    }
+    w.__HUB_PLACE = async () => ({
+      order: { order_id: '01a0b7af-7b30-701f-8eb6-fa1303b858ad', status: 'executed', fill_count: 1 },
+    })
+    await w.__HUB_TEST_SEND?.('btc', 'up', q)
+  }, quote)
+  await expect(page.getByTestId('ticket-btc')).toContainText(/70¢|cost/)
+  await expect(page.getByTestId('ticket-id-btc')).toHaveText('LIVE')
+  await expect(page.locator('[data-order-id="01a0b7af-7b30-701f-8eb6-fa1303b858ad"] [data-testid="bets-mode"]')).toHaveText(
+    'LIVE',
+  )
+  await expect(page.getByTestId('status-btc')).toHaveText('UP')
 })

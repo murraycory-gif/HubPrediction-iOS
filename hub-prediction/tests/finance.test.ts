@@ -25,7 +25,10 @@ import {
   paperCashFloor,
   pnlVsDeposits,
   chasingLosses,
+  isPaperOrderId,
+  isPaperOrderId,
   last24hBets,
+  stripDeskRows,
   tapeHitCell,
   betClockLabel,
   hydrateFinance,
@@ -79,6 +82,15 @@ describe('finance Soft KEEP', () => {
     expect(bookFill(s, {
       tape: 'btc', ticker: 'KXBTC15M-1', clock: '9:15 PM', closeAt: 1, side: 'up', count: 1, ask: 72, orderId: '',
     }).ok).toBe(false)
+    expect(isPaperOrderId('deskfill-btc-ghost01')).toBe(true)
+    expect(betKind({ orderId: 'deskfill-btc-ghost01', kind: 'live' })).toBe('paper')
+    expect(bookFill(s, {
+      tape: 'btc', ticker: 'KXBTC15M-1', clock: '9:15 PM', closeAt: 1, side: 'up', count: 1, ask: 72, orderId: 'deskfill-btc-ghost01',
+    }).ok).toBe(true)
+    const paper = bookFill(s, {
+      tape: 'btc', ticker: 'KXBTC15M-1', clock: '9:15 PM', closeAt: 1, side: 'up', count: 1, ask: 72, orderId: 'deskfill-btc-ghost01',
+    })
+    expect(paper.ok && paper.bet.kind === 'paper').toBe(true)
     const ok = bookFill(s, {
       tape: 'btc', ticker: 'KXBTC15M-1', clock: '9:15 PM', closeAt: 1, side: 'up', count: 1, ask: 72, orderId: 'ord-real-12345',
     })
@@ -271,13 +283,13 @@ describe('finance Soft KEEP', () => {
     expect(sinceDeposit.placed).toBeCloseTo(10.71)
     const strip = last24hBets(state, hits, now)
     expect(strip.placed).toBeCloseTo(0.72)
-    expect(strip.w).toBe(4)
-    expect(strip.l).toBe(2)
+    expect(strip.w).toBe(1)
+    expect(strip.l).toBe(0)
     expect(strip.pnl).toBeCloseTo(0.28)
     const btc = last24hBets(state, hits, now, ['btc'])
     expect(btc.placed).toBeCloseTo(0.72)
-    expect(btc.w).toBe(3)
-    expect(btc.l).toBe(1)
+    expect(btc.w).toBe(1)
+    expect(btc.l).toBe(0)
     expect(btc.pnl).toBeCloseTo(0.28)
     const ng = last24hBets(state, hits, now, ['ng'])
     expect(ng.placed).toBe(0)
@@ -285,8 +297,37 @@ describe('finance Soft KEEP', () => {
     expect(ng.l).toBe(0)
     expect(ng.pnl).toBe(0)
     const both = last24hBets(state, hits, now, ['btc', 'gld'])
-    expect(both.w).toBe(4)
-    expect(both.l).toBe(2)
+    expect(both.w).toBe(1)
+    expect(both.l).toBe(0)
+    const histDump = {
+      ...state,
+      bets: [
+        ...state.bets,
+        ...Array.from({ length: 200 }, (_, i) => ({
+          betId: `kalshi:KXBTC15M-H${i}`,
+          tape: 'btc' as const,
+          ticker: `KXBTC15M-H${i}`,
+          clock: '15m',
+          closeAt: now,
+          side: 'up' as const,
+          count: 1,
+          ask: 50,
+          spent: 50,
+          orderId: `settled-KXBTC15M-H${i}`,
+          status: 'settled' as const,
+          pnl: 0.5,
+          filledAt: now,
+          settledAt: now,
+          kind: 'hist' as const,
+        })),
+      ],
+    }
+    const dumped = last24hBets(histDump, hits, now)
+    expect(dumped.placed).toBeCloseTo(strip.placed)
+    expect(dumped.w).toBe(strip.w)
+    expect(dumped.l).toBe(strip.l)
+    expect(stripDeskRows(histDump.bets).every((b) => b.kind !== 'hist')).toBe(true)
+    expect(stripDeskRows(histDump.bets).some((b) => b.orderId === 'ord-win-12345')).toBe(true)
   })
 
   it('Last 24H bets tape filter splits placed / W–L / P&L', () => {
@@ -432,22 +473,10 @@ describe('finance Soft KEEP', () => {
         ],
       },
     }, now)
-    const btc = next.bets.find((b) => b.ticker === 'KXBTC15M-HIST')
-    const ng = next.bets.find((b) => b.ticker === 'KXNATGAS15M-OPEN')
-    const cu = next.bets.find((b) => b.ticker === 'KXCOPPER15M-LIVE')
-    expect(btc?.status).toBe('settled')
-    expect(btc?.side).toBe('up')
-    expect(btc?.pnl).toBeCloseTo(0.28)
-    expect(btc?.spent).toBeCloseTo(0.72)
-    expect(ng?.status).toBe('open')
-    expect(ng?.side).toBe('down')
-    expect(ng?.spent).toBeCloseTo(0.8)
-    expect(cu?.status).toBe('open')
-    expect(cu?.side).toBe('up')
+    expect(next.bets.find((b) => b.ticker === 'KXBTC15M-HIST')).toBeUndefined()
+    expect(next.bets.find((b) => b.ticker === 'KXNATGAS15M-OPEN')).toBeUndefined()
+    expect(next.bets.find((b) => b.ticker === 'KXCOPPER15M-LIVE')).toBeUndefined()
     expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
-    expect(btc?.kind).toBe('hist')
-    expect(ng?.kind).toBe('hist')
-    expect(cu?.kind).toBe('hist')
   })
 
   it('splits paper TTL from Kalshi settle W–L — live-only P&L and placed', () => {
@@ -609,12 +638,12 @@ describe('finance Soft KEEP', () => {
       now,
     )
     expect(keptOld.bets.some((b) => b.ticker === 'KXBTC15M-OLDKEEP')).toBe(true)
-    expect(keptOld.bets.some((b) => b.ticker === 'KXCOPPER15M-NEW')).toBe(true)
+    expect(keptOld.bets.some((b) => b.ticker === 'KXCOPPER15M-NEW')).toBe(false)
     const emptyLatch = { tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } } }
     expect(tapeHitCell('btc', emptyLatch, live.bets, now)).toEqual({ w: 1, l: 0 })
     expect(tapeHitCell('btc', { tapes: { ...emptyLatch.tapes, btc: { w: 3, l: 1 } } }, live.bets, now)).toEqual({
-      w: 3,
-      l: 1,
+      w: 1,
+      l: 0,
     })
     const staleGld = { tapes: { ...emptyLatch.tapes, gld: { w: 0, l: 2 } }, events: [] as Array<{ tape: 'gld'; ticker: string; win: boolean; at: number }> }
     const gldBook = [
@@ -673,7 +702,7 @@ describe('finance Soft KEEP', () => {
         ],
         now,
       ),
-    ).toEqual({ w: 0, l: 2 })
+    ).toEqual({ w: 0, l: 0 })
     expect(betKind({ betId: 'bet_ord-real-12345', orderId: 'ord-real-12345', kind: 'live' })).toBe('live')
     const importedCash = cashAfterEachBet(
       [
@@ -741,7 +770,7 @@ describe('liveBotCall instant Kalshi post', () => {
     expect(liveBotCall({ ...ready, liveCash: true } as typeof ready & { liveBets: boolean })).toBe('live')
     expect(paperFillAllowed({ liveCash: true, rehabPaper: false, stale: false }).ok).toBe(false)
     expect(paperFillAllowed({ liveCash: true, rehabPaper: true, stale: false }).ok).toBe(true)
-    expect(paperFillAllowed({ liveCash: true, rehabPaper: false, stale: true }).ok).toBe(true)
+    expect(paperFillAllowed({ liveCash: true, rehabPaper: false, stale: true }).ok).toBe(false)
     expect(paperFillAllowed({ liveCash: false, rehabPaper: false, stale: false }).ok).toBe(true)
   })
 

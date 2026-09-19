@@ -885,12 +885,22 @@ export type DeskTicket = {
   ask?: number
 }
 
+export function isPaperOrderId(id: unknown) {
+  return typeof id === 'string' && /^deskfill-/i.test(id.trim())
+}
+
+/** Kalshi order id only. Soft FAIL deskfill / ARMING as a live fill. */
 export function isRealOrderId(id: unknown): id is string {
   if (typeof id !== 'string') return false
   const s = id.trim()
   if (s.length < 8) return false
-  if (/^(arm|armed|arming|paper|local|fake|pending|wait)/i.test(s)) return false
+  if (isPaperOrderId(s)) return false
+  if (/^(arm|armed|arming|paper|local|fake|pending|wait|deskfill)/i.test(s)) return false
   return true
+}
+
+export function isKeptTicketId(id: unknown): id is string {
+  return isPaperOrderId(id) || isRealOrderId(id)
 }
 
 /** Local paper fill. Soft FAIL Live POST. Id must not start with paper/arm. */
@@ -917,7 +927,7 @@ export function makeTicket(input: {
   filledAt?: number
   ask?: number
 }): DeskTicket | null {
-  if (!isRealOrderId(input.orderId)) return null
+  if (!isKeptTicketId(input.orderId)) return null
   if (input.side !== 'up' && input.side !== 'down') return null
   if (!input.ticker) return null
   const ask = Number(input.ask)
@@ -986,14 +996,14 @@ export function loadTickets(): DeskTicket[] {
     const raw = ls.getItem(TICKETS_KEY)
     const list = raw ? (JSON.parse(raw) as DeskTicket[]) : []
     if (!Array.isArray(list)) return []
-    return list.filter((t) => t && isRealOrderId(t.orderId) && (t.side === 'up' || t.side === 'down'))
+    return list.filter((t) => t && isKeptTicketId(t.orderId) && (t.side === 'up' || t.side === 'down'))
   } catch {
     return []
   }
 }
 
 export function saveTickets(tickets: DeskTicket[]) {
-  const next = tickets.filter((t) => isRealOrderId(t.orderId))
+  const next = tickets.filter((t) => isKeptTicketId(t.orderId))
   const ls = deskStorage()
   if (!ls) return next
   try {
@@ -1611,6 +1621,18 @@ export function formatWeThink(id: TapeId, live: number | null, ahead: number | n
   return `${formatLive(id, live)} / ${formatLive(id, ahead)}`
 }
 
+function placeFillCount(raw: unknown) {
+  const bag = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  const order = bag?.order && typeof bag.order === 'object' ? (bag.order as Record<string, unknown>) : bag
+  if (!order) return 0
+  for (const key of ['fill_count', 'fill_count_fp', 'filled_count', 'count_fp']) {
+    const n = Number(order[key])
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  const fills = order.fills ?? bag?.fills
+  return Array.isArray(fills) ? fills.length : 0
+}
+
 export function extractOrderId(raw: unknown): string | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
@@ -1625,6 +1647,19 @@ export function extractOrderId(raw: unknown): string | null {
     }
   }
   return null
+}
+
+/** 200 + Kalshi order id. Soft FAIL canceled IOC / deskfill as BOT BOUGHT. */
+export function confirmedPlaceOrderId(raw: unknown): string | null {
+  const id = extractOrderId(raw)
+  if (!id || isPaperOrderId(id)) return null
+  const bag = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  const order = bag?.order && typeof bag.order === 'object' ? (bag.order as Record<string, unknown>) : bag
+  const status = String(order?.status ?? bag?.status ?? '').toLowerCase()
+  if (status === 'canceled' || status === 'cancelled' || status === 'not_filled') {
+    if (placeFillCount(raw) <= 0) return null
+  }
+  return id
 }
 
 export function pulseTone(ticket: DeskTicket | undefined, live: number | null): 'quiet' | 'green' | 'red' {

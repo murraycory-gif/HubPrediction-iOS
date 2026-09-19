@@ -169,6 +169,7 @@ export const placeKalshi = createServerFn({ method: 'POST' })
       tape?: TapeId
       botOn?: boolean
       liveOn?: boolean
+      clientOrderId?: string
     }) => d,
   )
   .handler(async ({ data }) => {
@@ -198,6 +199,7 @@ export const placeKalshi = createServerFn({ method: 'POST' })
       noAsk: data.noAsk,
       keyId: creds.keyId,
       pem: creds.pem,
+      clientOrderId: data.clientOrderId,
     })
   })
 

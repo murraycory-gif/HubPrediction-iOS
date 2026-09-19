@@ -151,9 +151,9 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
     expect(hydrateCashFromKalshi({ cash: 293.63, deposits: { deposits: [{ amount_dollars: 760 }] } }).cash.cash).toBe(293.63)
     expect(desk.hits.tapes.btc.w).toBe(1)
     const strip = last24hBets(emptyFinance(), desk.hits, now)
-    expect(strip.w).toBe(1)
-    expect(strip.placed).toBeCloseTo(0.69)
-    expect(strip.pnl).toBeCloseTo(0.31)
+    expect(strip.w).toBe(0)
+    expect(strip.placed).toBe(0)
+    expect(strip.pnl).toBe(0)
     expect(eventsFromKalshiSettlements({ settlements: [] })).toEqual([])
     const nested = rowsFromKalshiPage(
       { data: { settlements: [{ ticker: 'KXGOLD15M-NEST' }], cursor: 'next-1' } },

@@ -86,9 +86,6 @@ export function onKalshiBook(
   const orderId = String(b.orderId ?? '').trim()
   if (orderId && book.orderIds.has(orderId)) return true
   const ticker = String(b.ticker ?? '').trim()
-  if (ticker && book.tickers.has(ticker) && isRealOrderId(orderId) && !/^deskfill-/i.test(orderId)) {
-    return true
-  }
   if (ticker && book.tickers.has(ticker) && isImportedKalshiRow(b)) return true
   return false
 }
@@ -99,14 +96,13 @@ export function classifyBookMode(
   book: KalshiBookIndex | null | undefined,
 ): BetKind {
   if (isPaperOrderId(b.orderId) || (typeof b.betId === 'string' && /^paper:/i.test(b.betId))) return 'paper'
+  if (isImportedKalshiRow(b) || b.kind === 'hist') return 'hist'
   if (!book || !book.fetchedAt) {
-    if (isImportedKalshiRow(b) || b.kind === 'hist') return 'hist'
     if (b.kind === 'paper') return 'paper'
     if (b.kind === 'live') return 'live'
     return 'paper'
   }
   if (onKalshiBook(b, book)) return 'live'
-  if (isImportedKalshiRow(b)) return 'hist'
   return 'paper'
 }
 
@@ -123,7 +119,7 @@ export function applyKalshiBook(state: FinanceState, payload: KalshiBookPayload,
       settlements: payload.settlements,
       positions: payload.positions,
       orders: payload.orders,
-      fromMs: 0,
+      fromMs: now - 24 * 60 * 60 * 1000,
     },
     now,
   )
