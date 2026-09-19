@@ -1235,6 +1235,9 @@ button {
   .tape {
     max-width: 100%;
   }
+  .desk-head {
+    position: static;
+  }
   .tape {
     overflow-x: hidden;
   }
