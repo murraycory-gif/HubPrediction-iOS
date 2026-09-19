@@ -26,9 +26,10 @@ afterEach(() => {
 })
 
 describe('HARD QA 1–10', () => {
-  it('1 header wordmark is HUB / PREDICTIONS not HUBPREDICTIONS', async () => {
-    expect('HUB / PREDICTIONS').toMatch(/HUB\s\/\sPREDICTIONS/)
-    expect('HUB / PREDICTIONS').not.toBe('HUBPREDICTIONS')
+  it('1 header wordmark is HUB Predictions, not slash or mashed', async () => {
+    expect('HUB Predictions').toBe('HUB Predictions')
+    expect('HUB Predictions').not.toBe('HUBPREDICTIONS')
+    expect('HUB Predictions').not.toMatch(/HUB\s*\/\s*PREDICTIONS/)
     expect(TAPE_IDS).toEqual(['btc', 'ng', 'cu', 'gld'])
     const dash = await import('node:fs/promises').then((fs) =>
       fs.readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8'),
@@ -36,13 +37,20 @@ describe('HARD QA 1–10', () => {
     const css = await import('node:fs/promises').then((fs) =>
       fs.readFile(new URL('../public/desk.css', import.meta.url), 'utf8'),
     )
+    expect(dash).toMatch(/data-testid="desk-title">HUB Predictions</)
+    expect(dash).not.toMatch(/HUB \/ PREDICTIONS/)
+    expect(dash).not.toMatch(/data-testid="kalshi-link"/)
+    expect(dash).not.toMatch(/Kalshi keys on this PC/)
     expect(dash).not.toMatch(/rain-col/)
     expect(dash).not.toMatch(/010011010111001001101001011100100110/)
     expect(css).toMatch(/\.desk-head::before/)
     expect(css).toMatch(/content:\s*none/)
     expect(css).toMatch(/grid-template-columns:\s*repeat\(3/)
     expect(css).toMatch(/\.scoreboard-row \.stat \{[\s\S]*flex-direction:\s*column/)
+    expect(css).toMatch(/\.scoreboard-row \.hud-label \{[\s\S]*font-size:\s*12px/)
     expect(css).toMatch(/\.brand-bar \{[\s\S]*overflow:\s*hidden/)
+    expect(css).toMatch(/\.brand-bar \{[\s\S]*align-items:\s*center/)
+    expect(css).toMatch(/\.desk-head h1 \{[\s\S]*text-align:\s*center/)
     expect(css).toMatch(/\.glyph-plate/)
     expect(css).toMatch(/\.beat-k/)
     expect(css).toMatch(/\.contracts-label/)

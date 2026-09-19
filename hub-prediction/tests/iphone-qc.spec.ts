@@ -17,9 +17,57 @@ async function assertNoMasterLive(page: Page) {
   await expect(page.getByTestId('confirm-live')).toHaveCount(0)
   await expect(page.locator('body')).not.toContainText('master Live OFF · paper only')
   await expect(page.getByTestId('desk-head')).not.toContainText('Live OFF')
+  await expect(page.getByTestId('desk-head')).not.toContainText(/Kalshi keys/i)
   await expect(page.getByTestId('desk-head').getByRole('button')).toHaveCount(0)
   await expect(page.getByTestId('under-desk').getByTestId('settings-toggle')).toBeVisible()
   await expect(page.getByTestId('desk-head').getByTestId('settings-toggle')).toHaveCount(0)
+}
+
+async function assertHeaderClean(page: Page) {
+  const title = page.getByTestId('desk-title')
+  await expect(title).toHaveText('HUB Predictions')
+  await expect(title).not.toHaveText(/HUB\s*\/\s*PREDICTIONS|HUBEB|PREDICTTIONS|HUBPREDICTIONS/)
+  await expect(page.getByTestId('kalshi-link')).toHaveCount(0)
+  const head = page.getByTestId('desk-head')
+  await expect(head).not.toContainText(/Kalshi keys/i)
+  await expect(head).not.toContainText(/keys on this PC/i)
+  await expect(head).not.toContainText(/host keys missing/i)
+  await expect(page.getByTestId('pnl-label')).toHaveText('P&L')
+  await expect(page.getByTestId('ttl-label')).toHaveText('TTL 24H')
+  await expect(page.getByTestId('kalshi-cash-label')).toHaveText('KALSHI CASH')
+  const layout = await page.evaluate(() => {
+    const headEl = document.querySelector('[data-testid="desk-head"]') as HTMLElement
+    const titleEl = document.querySelector('[data-testid="desk-title"]') as HTMLElement
+    const hr = headEl.getBoundingClientRect()
+    const tr = titleEl.getBoundingClientRect()
+    const labels = (['pnl', 'ttl', 'kalshi-cash'] as const).map((id) => {
+      const lab = document.querySelector(`[data-testid="${id}-label"]`) as HTMLElement
+      const val = document.querySelector(`[data-testid="${id}-value"]`) as HTMLElement
+      const stat = document.querySelector(`[data-testid="${id}"]`) as HTMLElement
+      return {
+        id,
+        text: (lab.textContent || '').trim(),
+        fontSize: parseFloat(getComputedStyle(lab).fontSize),
+        labelBottom: lab.getBoundingClientRect().bottom,
+        valueTop: val.getBoundingClientRect().top,
+        flexDir: getComputedStyle(stat).flexDirection,
+      }
+    })
+    return {
+      titleCenter: (tr.left + tr.right) / 2,
+      headCenter: (hr.left + hr.right) / 2,
+      titleColor: getComputedStyle(titleEl).color,
+      labels,
+    }
+  })
+  expect(Math.abs(layout.titleCenter - layout.headCenter)).toBeLessThan(24)
+  expect(layout.titleColor).toMatch(/rgb\(\s*0\s*,\s*229\s*,\s*122\s*\)|#00e57a/i)
+  for (const lab of layout.labels) {
+    expect(lab.fontSize).toBeGreaterThanOrEqual(11)
+    expect(lab.labelBottom).toBeLessThanOrEqual(lab.valueTop + 1)
+    expect(lab.flexDir).toBe('column')
+  }
+  expect(layout.labels.map((l) => l.text)).toEqual(['P&L', 'TTL 24H', 'KALSHI CASH'])
 }
 
 async function assertCashColumnClear(page: Page) {
@@ -88,8 +136,9 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
+  await expect(page.getByTestId('desk-title')).toHaveText('HUB Predictions')
   await resetGoldDesk(page)
+  await assertHeaderClean(page)
   await expect(page.getByTestId('desk-title')).not.toHaveText(/HUBEB|PREDICTTIONS|HUBPREDICTIONS/)
   await expect(page.locator('.rain-col')).toHaveCount(0)
   await expect(page.getByTestId('rain')).toBeEmpty()
@@ -141,8 +190,8 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
       livePlate: opaque(live),
     }
   })
-  expect(plates.titleText).toBe('HUB / PREDICTIONS')
-  expect(plates.titleText).not.toMatch(/HUBEB|PREDICTTIONS|HUBPREDICTIONS/)
+  expect(plates.titleText).toBe('HUB Predictions')
+  expect(plates.titleText).not.toMatch(/HUBEB|PREDICTTIONS|HUBPREDICTIONS|HUB\s*\/\s*PREDICTIONS/)
   expect(plates.beatText).toBe('TO BEAT')
   expect(plates.beatText).not.toMatch(/BEATET/)
   expect(plates.rainHitsBeat).toBe(false)
@@ -541,7 +590,7 @@ test('phone desk: MAXIMUM QC every tap — no master Live; Live cash OFF is pape
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
+  await expect(page.getByTestId('desk-title')).toHaveText('HUB Predictions')
   await expect(page.getByTestId('pulse')).toHaveCount(0)
   await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
   await expect(page.getByTestId('bets-24h')).toBeVisible()
@@ -687,7 +736,7 @@ test('phone desk: boot first-paints from host creds — no Safari PEM, Live stay
   await assertNoMasterLive(page)
   await waitHost(page)
   await resetGoldDesk(page)
-  await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
+  await expect(page.getByTestId('desk-title')).toHaveText('HUB Predictions')
   await expect(page.getByTestId('desk-title')).not.toHaveText(/HUBEB|PREDICTTIONS/)
   await expect(page.getByTestId('beat-label-btc')).toHaveText('TO BEAT')
   await expect(page.getByTestId('beat-label-btc')).not.toHaveText(/BEATET/)
@@ -702,8 +751,9 @@ test('phone desk: boot first-paints from host creds — no Safari PEM, Live stay
 test('desktop desk: rain stays behind wordmark and BEAT/LIVE plates — Live OFF', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
-  await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
+  await expect(page.getByTestId('desk-title')).toHaveText('HUB Predictions')
   await expect(page.getByTestId('desk-title')).not.toHaveText(/HUBEB|PREDICTTIONS|HUBPREDICTIONS/)
+  await assertHeaderClean(page)
   await assertNoMasterLive(page)
   await expect(page.locator('.rain-col')).toHaveCount(0)
   await expect(page.getByTestId('bets-filter-all')).toHaveText('All')
@@ -752,6 +802,43 @@ test('desktop desk: rain stays behind wordmark and BEAT/LIVE plates — Live OFF
   expect(iso.rainBottom).toBeLessThan(iso.beatTop)
   await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/desk-desktop-isolated.png', fullPage: false })
   await assertNoMasterLive(page)
+})
+
+test('header: HUB Predictions centered, no keys chrome, readable labels — 390', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await assertHeaderClean(page)
+  const stacked = await page.evaluate(() => {
+    const pnl = (document.querySelector('[data-testid="pnl"]') as HTMLElement).getBoundingClientRect()
+    const ttl = (document.querySelector('[data-testid="ttl"]') as HTMLElement).getBoundingClientRect()
+    const cash = (document.querySelector('[data-testid="kalshi-cash"]') as HTMLElement).getBoundingClientRect()
+    return { pnlTop: pnl.top, ttlTop: ttl.top, cashTop: cash.top }
+  })
+  expect(stacked.ttlTop).toBeGreaterThan(stacked.pnlTop + 8)
+  expect(stacked.cashTop).toBeGreaterThan(stacked.ttlTop + 8)
+})
+
+test('header: HUB Predictions centered, no keys chrome, readable labels — desktop', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await assertHeaderClean(page)
+  const row = await page.evaluate(() => {
+    const pnl = (document.querySelector('[data-testid="pnl"]') as HTMLElement).getBoundingClientRect()
+    const ttl = (document.querySelector('[data-testid="ttl"]') as HTMLElement).getBoundingClientRect()
+    const cash = (document.querySelector('[data-testid="kalshi-cash"]') as HTMLElement).getBoundingClientRect()
+    return {
+      pnlLeft: pnl.left,
+      ttlLeft: ttl.left,
+      cashLeft: cash.left,
+      pnlTop: pnl.top,
+      ttlTop: ttl.top,
+      cashTop: cash.top,
+    }
+  })
+  expect(row.ttlLeft).toBeGreaterThan(row.pnlLeft + 40)
+  expect(row.cashLeft).toBeGreaterThan(row.ttlLeft + 40)
+  expect(Math.abs(row.ttlTop - row.pnlTop)).toBeLessThan(8)
+  expect(Math.abs(row.cashTop - row.pnlTop)).toBeLessThan(8)
 })
 
 test('Live cash ON survives reload; no master Live switch', async ({ page }) => {

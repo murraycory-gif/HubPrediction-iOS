@@ -49,7 +49,7 @@ body {
   padding: 0 12px 10px;
 }
 
-/* Soft FAIL 692676d: ::before full-bleed rain painted over HUB / PREDICTIONS. */
+/* Soft FAIL 692676d: ::before full-bleed rain painted over HUB Predictions. */
 .desk-head::before,
 .desk-head::after,
 .desk::before,
@@ -65,10 +65,11 @@ body {
   isolation: isolate;
   overflow: hidden;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 10px;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 4px;
   min-height: 40px;
   padding-top: env(safe-area-inset-top, 0px);
 }
@@ -76,10 +77,12 @@ body {
 .rain {
   position: relative;
   z-index: 0;
-  flex: 1 1 48px;
+  flex: 0 0 8px;
   align-self: stretch;
-  min-width: 32px;
-  min-height: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 8px;
+  height: 8px;
   pointer-events: none;
   opacity: 0.16;
   overflow: hidden;
@@ -107,17 +110,21 @@ body {
   position: relative;
   z-index: 3;
   isolation: isolate;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  width: 100%;
+  display: flex;
+  justify-content: center;
   min-width: 0;
   background: #020403;
   mix-blend-mode: normal;
-  padding: 4px 12px 4px 0;
+  padding: 4px 12px;
 }
 
 .desk-head h1 {
   position: relative;
   z-index: 3;
-  margin: 0;
+  width: fit-content;
+  margin: 0 auto;
   font-family: var(--mono);
   font-size: clamp(17px, 4.4vw, 22px);
   letter-spacing: 0.1em;
@@ -128,7 +135,8 @@ body {
   background-clip: padding-box;
   -webkit-font-smoothing: antialiased;
   white-space: nowrap;
-  padding: 2px 6px 2px 0;
+  text-align: center;
+  padding: 2px 6px;
 }
 
 .glyph-plate {
@@ -214,7 +222,7 @@ body {
 }
 
 .scoreboard-row .hud-label {
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   line-height: 1.2;
   white-space: normal;
@@ -1197,12 +1205,15 @@ button {
 
 @media (min-width: 1100px) {
   .wordmark {
-    padding: 6px 14px 6px 0;
+    padding: 6px 14px;
   }
   .desk-head h1 {
     font-size: 22px;
     letter-spacing: 0.12em;
-    padding: 3px 8px 3px 0;
+    padding: 3px 8px;
+  }
+  .scoreboard-row .hud-label {
+    font-size: 13px;
   }
   .tape-grid {
     grid-template-columns: 1fr 1fr;
@@ -1300,14 +1311,19 @@ button {
     font-size: 22px;
   }
   .wordmark {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
+    width: 100%;
   }
   .rain {
-    flex: 1 1 100%;
+    flex: 0 0 6px;
+    width: 100%;
     min-width: 0;
     min-height: 6px;
     height: 6px;
     opacity: 0.1;
+  }
+  .scoreboard-row .hud-label {
+    font-size: 13px;
   }
   .toggle,
   .chip-btn,
@@ -1320,7 +1336,8 @@ button {
   .desk-head h1 {
     letter-spacing: 0.06em;
     font-size: 18px;
-    white-space: normal;
+    white-space: nowrap;
+    text-align: center;
   }
   .brand-actions {
     flex: 1 1 100%;

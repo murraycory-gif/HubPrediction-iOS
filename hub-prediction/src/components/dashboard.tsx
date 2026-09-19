@@ -709,7 +709,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">
-            <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
+            <h1 data-testid="desk-title">HUB Predictions</h1>
           </div>
           <div className="rain" data-testid="rain" aria-hidden="true" />
         </div>
@@ -727,11 +727,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           />
           <Stat label="KALSHI CASH" value={formatCash(cash.cash)} testId="kalshi-cash" />
         </div>
-        <p className="settings-note" data-testid="kalshi-link">
-          {hostCreds
-            ? 'Kalshi keys on this PC — Bot ON + Live cash ON posts to Kalshi.'
-            : 'Kalshi host keys missing on this PC — Live POST cannot run. Cash latch stays.'}
-        </p>
       </header>
 
       <main className="desk-main">
