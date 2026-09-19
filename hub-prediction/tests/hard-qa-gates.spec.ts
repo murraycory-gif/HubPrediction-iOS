@@ -74,8 +74,8 @@ test('HARD QA 2+3+5 strip / fill / DOWN rest — no ghost LIVE', async ({ page }
     openMarkets: 1,
     live: 80040,
     beat: 80000,
-    yesAsk: 70,
-    noAsk: 30,
+    yesAsk: 31,
+    noAsk: 70,
     fetchedAt: Date.now(),
     points: [
       { t: Date.now() - 8000, px: 80020 },
@@ -131,15 +131,18 @@ test('HARD QA 6 persist Live cash/contracts + WTI/Silver paper only', async ({ b
     await waitHost(hand)
     await allowLiveArm(desk)
     await setToggle(desk, 'live-cash-btc', true)
-    await desk.getByTestId('contracts-btc').fill('6')
+    const current = Number(await desk.getByTestId('contracts-btc').inputValue())
+    const next = String(((Number.isFinite(current) ? current : 1) % 20) + 1)
+    await desk.getByTestId('contracts-btc').fill(next)
     await desk.getByTestId('contracts-btc').blur()
+    await expect(desk.getByTestId('contracts-btc')).toHaveValue(next)
     await expect(desk.getByTestId('live-cash-btc')).toBeChecked()
     await expect(hand.getByTestId('live-cash-btc')).toBeChecked({ timeout: 8_000 })
-    await expect(hand.getByTestId('contracts-btc')).toHaveValue('6', { timeout: 8_000 })
+    await expect(hand.getByTestId('contracts-btc')).toHaveValue(next, { timeout: 8_000 })
     await desk.reload({ waitUntil: 'domcontentloaded' })
     await waitHost(desk)
     await expect(desk.getByTestId('live-cash-btc')).toBeChecked()
-    await expect(desk.getByTestId('contracts-btc')).toHaveValue('6')
+    await expect(desk.getByTestId('contracts-btc')).toHaveValue(next)
     await expect(desk.getByTestId('tape-wti')).toBeVisible()
     await expect(desk.getByTestId('tape-slv')).toBeVisible()
     await expect(desk.getByTestId('live-cash-wti')).not.toBeChecked()
