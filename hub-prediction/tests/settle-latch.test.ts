@@ -156,6 +156,20 @@ describe('clock-close settle latch Soft FAIL reload drip', () => {
     expect(claimSend(map, 'cu:KXCOPPER15M-1', now + 800)).toBe('send')
   })
 
+  it('claimSend 4 IOC misses Soft FAIL permanent skip — 8s cooldown sends again', () => {
+    const map: Record<string, { at: number; tries: number; filled?: string; pending?: boolean }> = {}
+    const now = 9_000_000
+    const key = 'btc:KXBTC15M-26SEP191245-45'
+    for (let i = 0; i < 4; i += 1) {
+      expect(claimSend(map, key, now + i * 200)).toBe('send')
+      releaseClaim(map, key, now + i * 200)
+    }
+    const last = now + 3 * 200
+    expect(claimSend(map, key, last + 900)).toBe('skip')
+    expect(claimSend(map, key, last + 7_999)).toBe('skip')
+    expect(claimSend(map, key, last + 8_000)).toBe('send')
+  })
+
   it('desk settle path Soft FAIL location.reload and Soft FAIL 20s-only drip', async () => {
     const dash = await readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8')
     expect(dash).toMatch(/getClockSettle/)

@@ -312,6 +312,148 @@ test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ pag
   await expect(page.getByTestId('desk-msg')).not.toContainText(/Sit —|After-fee EV|lock-in sit/i)
 })
 
+test('BTC liveOn sit→send: in-arm 70¢ lean-up Soft FAIL sit (bot loop, not TEST_SEND)', async ({ page }) => {
+  test.setTimeout(45_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await allowLiveArm(page)
+  const closeAt = Date.now() + 6 * 60_000
+  const ticker = `KXBTC15M-SITSEND-${closeAt}`
+  await page.evaluate(({ at, ticker }) => {
+    const w = window as Window & {
+      __HUB_PLACE_CALLS?: unknown[]
+      __HUB_PLACE?: (p: unknown) => Promise<unknown>
+      __HUB_TEST_LIVE_QUOTE?: Record<string, unknown>
+    }
+    w.__HUB_PLACE_CALLS = []
+    w.__HUB_PLACE = async (p) => {
+      w.__HUB_PLACE_CALLS!.push(p)
+      return {
+        order: {
+          order_id: '01print-btc-sit-send',
+          status: 'executed',
+          fill_count: 20,
+          fill_count_fp: '20.00',
+        },
+      }
+    }
+    w.__HUB_TEST_LIVE_QUOTE = {
+      btc: {
+        ticker,
+        clock: '15m',
+        clockId: '15m',
+        closeAt: at,
+        tradingActive: true,
+        openMarkets: 1,
+        live: 80080,
+        beat: 80000,
+        yesAsk: 70,
+        noAsk: 31,
+        fetchedAt: Date.now(),
+        points: [
+          { t: Date.now() - 4000, px: 80040 },
+          { t: Date.now(), px: 80080 },
+        ],
+      },
+    }
+  }, { at: closeAt, ticker })
+  await setToggle(page, 'bot-btc', true)
+  await setToggle(page, 'live-cash-btc', true)
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const w = window as Window & { __HUB_TEST_BOTS?: { scan: () => void }; __HUB_PLACE_CALLS?: unknown[] }
+        w.__HUB_TEST_BOTS?.scan()
+        return w.__HUB_PLACE_CALLS?.length ?? 0
+      }),
+    { timeout: 12_000 },
+    )
+    .toBeGreaterThan(0)
+  const placed = await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_PLACE_CALLS?: Array<{ count?: number; side?: string; yesAsk?: number; ticker?: string; liveOn?: boolean }>
+    }
+    return w.__HUB_PLACE_CALLS?.[0] ?? null
+  })
+  expect(placed?.ticker).toBe(ticker)
+  expect(placed?.yesAsk).toBe(70)
+  expect(placed?.liveOn).toBe(true)
+  expect(placed?.count).toBeGreaterThanOrEqual(1)
+  const msg = (await page.getByTestId('desk-msg').textContent()) ?? ''
+  expect(msg).not.toMatch(/After-fee EV|lock-in|Clock spend|paper 48h/)
+})
+
+test('BTC liveOn arm-cross: out of arm sits, in-arm tick posts', async ({ page }) => {
+  test.setTimeout(45_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await allowLiveArm(page)
+  const outAt = Date.now() + 10 * 60_000
+  const inAt = Date.now() + 6 * 60_000
+  const ticker = `KXBTC15M-ARMCROSS-${inAt}`
+  await page.evaluate(({ at, ticker }) => {
+    const w = window as Window & {
+      __HUB_PLACE_CALLS?: unknown[]
+      __HUB_PLACE?: (p: unknown) => Promise<unknown>
+      __HUB_TEST_LIVE_QUOTE?: Record<string, unknown>
+    }
+    w.__HUB_PLACE_CALLS = []
+    w.__HUB_PLACE = async (p) => {
+      w.__HUB_PLACE_CALLS!.push(p)
+      return {
+        order: {
+          order_id: '01print-btc-arm-cross',
+          status: 'executed',
+          fill_count: 8,
+        },
+      }
+    }
+    w.__HUB_TEST_LIVE_QUOTE = {
+      btc: {
+        ticker,
+        clock: '15m',
+        clockId: '15m',
+        closeAt: at,
+        tradingActive: true,
+        openMarkets: 1,
+        live: 80080,
+        beat: 80000,
+        yesAsk: 70,
+        noAsk: 31,
+        fetchedAt: Date.now(),
+      },
+    }
+  }, { at: outAt, ticker })
+  await setToggle(page, 'bot-btc', true)
+  await setToggle(page, 'live-cash-btc', true)
+  await page.evaluate(() => {
+    const w = window as Window & { __HUB_TEST_BOTS?: { scan: () => void } }
+    w.__HUB_TEST_BOTS?.scan()
+  })
+  await page.waitForTimeout(400)
+  const before = await page.evaluate(() => {
+    const w = window as Window & { __HUB_PLACE_CALLS?: unknown[] }
+    return w.__HUB_PLACE_CALLS?.length ?? 0
+  })
+  expect(before).toBe(0)
+  await page.evaluate((at) => {
+    const w = window as Window & { __HUB_TEST_LIVE_QUOTE?: { btc?: { closeAt?: number } } }
+    if (w.__HUB_TEST_LIVE_QUOTE?.btc) w.__HUB_TEST_LIVE_QUOTE.btc.closeAt = at
+  }, inAt)
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const w = window as Window & { __HUB_TEST_BOTS?: { scan: () => void }; __HUB_PLACE_CALLS?: unknown[] }
+        w.__HUB_TEST_BOTS?.scan()
+        return w.__HUB_PLACE_CALLS?.length ?? 0
+      }),
+    { timeout: 12_000 },
+    )
+    .toBeGreaterThan(0)
+})
+
 test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page }) => {
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1280, height: 800 })

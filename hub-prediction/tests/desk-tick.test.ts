@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DESK_TICK_MS, FEED_STALE_MS, lastDeskTickAt, subscribeDeskTick } from '../src/lib/desk-tick'
 import { EXIT_SCAN_MS } from '../src/lib/exit-watch'
+import { BOT_SCAN_MS } from '../src/lib/tapes'
 
 describe('desk tick vs EXIT scan', () => {
   it('UI clock stays 100ms and EXIT scan is slower', () => {
     expect(DESK_TICK_MS).toBe(100)
     expect(EXIT_SCAN_MS).toBe(400)
+    expect(BOT_SCAN_MS).toBe(1000)
     expect(FEED_STALE_MS).toBe(2500)
     expect(EXIT_SCAN_MS).toBeGreaterThan(DESK_TICK_MS)
+    expect(BOT_SCAN_MS).toBeGreaterThan(EXIT_SCAN_MS)
   })
 
   it('tick bus advances while a throttled EXIT scan runs', async () => {

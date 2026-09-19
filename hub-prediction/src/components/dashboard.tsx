@@ -27,8 +27,10 @@ import {
   saveHeldBoard,
   mergeLiveOntoBoard,
   askInBand,
+  BOT_SCAN_MS,
   cashGates,
   claimSend,
+  claimSendBlock,
   clampContracts,
   disarmAllBots,
   eventsFromTickets,
@@ -97,6 +99,7 @@ import {
   tapeHitCell,
   tapeBotNote,
   liveBotCall,
+  liveTapeDecision,
   paperFillAllowed,
   isLiveBet,
   liveSendGate,
@@ -177,9 +180,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const ticketsRef = useRef(tickets)
   const bookRef = useRef(book)
   const boardRef = useRef<DeskBoard | null>(null)
+  const settingsRef = useRef(settings)
+  const rehabRef = useRef(rehab)
   const holdSaveTimer = useRef(0)
   ticketsRef.current = tickets
   bookRef.current = book
+  settingsRef.current = settings
+  rehabRef.current = rehab
   const clientOrderRef = useRef<Record<string, string>>({})
   const lastLocalWrite = useRef(0)
   const wall = useDeskTick()
@@ -1002,57 +1009,91 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     }
   }, [])
 
-  useEffect(() => {
+  function tryLiveBots() {
     if (!hostReady || !tabIsOpen() || book.killed) return
     const stored = loadSettings()
+    const boardNow = boardRef.current
+    const settingsNow = settingsRef.current
+    const ticketsNow = ticketsRef.current
+    const bookNow = bookRef.current
+    const rehabNow = rehabRef.current
     for (const id of TAPE_IDS) {
-      const quote = readTestLiveQuote(id) ?? board?.tapes[id]
-      const recipe = settings.tapes[id]
+      const quote = readTestLiveQuote(id) ?? boardNow?.tapes[id]
+      const recipe = settingsNow.tapes[id]
       const botOn = stored.tapes[id].botOn === true || recipe.botOn === true
       const liveCash = stored.tapes[id].liveOn === true || recipe.liveOn === true
       if (!quote?.ticker || !botOn) continue
       if (quote.tradingActive === false) continue
       const liveGate = trueLiveGate({
         quote,
-        kalshiLive: printsQuery.data?.tapes[id]?.live,
+        kalshiLive: printsHold.current?.tapes[id]?.live,
       })
-      const have = ticketFor(tickets, id, quote.ticker)
-      if (have && isRealOrderId(have.orderId)) continue
-      if (!inArmWindow(recipe, quote.closeAt)) continue
-      const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe })
-      if (lean === 'sit') continue
-      const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
-      if (liveCash) {
-        if (!askAllowedByGold(id, ask)) continue
-      } else if (!askInBand(ask, recipe)) {
-        continue
-      }
-      const key = `${id}:${quote.ticker}`
-      const paperRehab = isRehabPaper(rehab, id)
-      const recent = recentLiveTapeWL(book.bets, id, 12)
-      const call = liveBotCall({
-        tabOpen: true,
-        killed: book.killed,
+      const have = ticketFor(ticketsNow, id, quote.ticker)
+      const recent = recentLiveTapeWL(bookNow.bets, id, 12)
+      const decision = liveTapeDecision({
+        id,
+        quote,
+        recipe,
         botOn,
         liveCash,
-        rehabPaper: paperRehab,
-        tradingActive: quoteIsLiveClock(quote),
-        inArm: true,
-        askOk: true,
-        lean,
+        haveRealOrder: Boolean(have && isRealOrderId(have.orderId)),
+        killed: bookNow.killed,
+        tabOpen: true,
+        rehabPaper: isRehabPaper(rehabNow, id),
         hitOk: hitFloorGate(recent.w, recent.l).ok,
         fresh: liveGate.ok,
         stale: liveGate.stale,
       })
-      if (call === 'sit') continue
-      if (claimSend(sentRef.current, key) !== 'send') continue
-      if (call === 'paper') {
-        sendPaper(id, lean, quote)
+      if (decision.action === 'sit') continue
+      const key = `${id}:${quote.ticker}`
+      if (claimSend(sentRef.current, key) !== 'send') {
+        if (liveCash && claimSendBlock(sentRef.current, key) === 'cooldown') {
+          setMsg(`${TAPE_META[id].label} Sit — send cooldown (IOC miss, retry 8s)`)
+        }
         continue
       }
-      void sendLive(id, lean, quote)
+      if (decision.call === 'paper') {
+        sendPaper(id, decision.lean, quote)
+        continue
+      }
+      void sendLive(id, decision.lean, quote)
     }
+  }
+  const tryLiveBotsRef = useRef(tryLiveBots)
+  tryLiveBotsRef.current = tryLiveBots
+
+  useEffect(() => {
+    const w = window as Window & {
+      __HUB_TEST_BOTS?: {
+        scan: () => void
+        liveBotCall: typeof liveBotCall
+        liveTapeDecision: typeof liveTapeDecision
+      }
+    }
+    w.__HUB_TEST_BOTS = {
+      scan: () => tryLiveBotsRef.current(),
+      liveBotCall,
+      liveTapeDecision,
+    }
+    return () => {
+      delete w.__HUB_TEST_BOTS
+    }
+  })
+
+  useEffect(() => {
+    if (!hostReady || !tabIsOpen() || book.killed) return
+    tryLiveBots()
   }, [hostReady, board, printsQuery.dataUpdatedAt, settings, tickets, book, hits, rehab])
+
+  useEffect(() => {
+    if (!hostReady) return
+    let last = 0
+    return subscribeDeskTick((now) => {
+      if (now - last < BOT_SCAN_MS) return
+      last = now
+      tryLiveBotsRef.current()
+    })
+  }, [hostReady])
 
   useEffect(() => {
     if (!hostReady) return

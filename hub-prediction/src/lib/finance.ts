@@ -5,7 +5,10 @@ import {
   GOLD_RECIPES,
   TAPE_IDS,
   TAPE_META,
+  askInBand,
+  inArmWindow,
   tapeAllowsLive,
+  tapeLean,
   eventsFromKalshiSettlements,
   hydrateBetsFilter,
   isPaperOrderId,
@@ -664,6 +667,79 @@ export function liveBotCall(opts: {
   }
   if (stale && opts.tradingActive !== true) return 'paper'
   return 'paper'
+}
+
+export type LiveTapeDecision =
+  | { action: 'send'; call: 'live' | 'paper'; lean: 'up' | 'down'; ask: number }
+  | { action: 'sit'; reason: string }
+
+/**
+ * Sit → send for one tape. Already-Live + inArm + ask in band + lean up/down → send.
+ * Soft FAIL feeEV / paper48h / lock-in here (those live in liveSendGate, skipped when liveOn).
+ */
+export function liveTapeDecision(opts: {
+  id: TapeId
+  quote:
+    | {
+        ticker?: string
+        closeAt?: number
+        tradingActive?: boolean
+        live?: number | null
+        beat?: number
+        yesAsk?: number
+        noAsk?: number
+      }
+    | null
+    | undefined
+  recipe: TapeRecipe
+  botOn: boolean
+  liveCash: boolean
+  haveRealOrder?: boolean
+  killed?: boolean
+  tabOpen?: boolean
+  rehabPaper?: boolean
+  hitOk?: boolean
+  fresh?: boolean
+  stale?: boolean
+  now?: number
+}): LiveTapeDecision {
+  if (opts.tabOpen === false) return { action: 'sit', reason: 'Sit — tab hidden' }
+  if (opts.killed) return { action: 'sit', reason: 'KILL on — Place blocked until cleared' }
+  if (!opts.botOn) return { action: 'sit', reason: 'Bot OFF' }
+  const quote = opts.quote
+  if (!quote?.ticker) return { action: 'sit', reason: 'Sit — no ticker' }
+  if (quote.tradingActive === false) return { action: 'sit', reason: 'Kalshi window closed — sit' }
+  if (opts.haveRealOrder) return { action: 'sit', reason: 'Sit — one ticket this clock' }
+  if (!quote.closeAt || !inArmWindow(opts.recipe, quote.closeAt, opts.now)) {
+    return { action: 'sit', reason: `Sit — arm ${opts.recipe.armFromMin}–${opts.recipe.armToMin} min` }
+  }
+  const lean = tapeLean({
+    id: opts.id,
+    live: quote.live ?? null,
+    beat: quote.beat ?? 0,
+    recipe: opts.recipe,
+  })
+  if (lean === 'sit') return { action: 'sit', reason: 'Sit — no through / hug' }
+  const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
+  const askOk =
+    ask != null && Number.isFinite(ask) && (opts.liveCash ? askAllowedByGold(opts.id, ask) : askInBand(ask, opts.recipe))
+  if (!askOk) return { action: 'sit', reason: 'Sit — ask out of band' }
+  const call = liveBotCall({
+    tabOpen: opts.tabOpen !== false,
+    killed: opts.killed === true,
+    botOn: opts.botOn,
+    liveCash: opts.liveCash,
+    rehabPaper: opts.rehabPaper === true,
+    tradingActive: quote.tradingActive !== false,
+    inArm: true,
+    askOk: true,
+    lean,
+    hitOk: opts.hitOk !== false,
+    fresh: opts.fresh,
+    stale: opts.stale,
+  })
+  if (call === 'sit') return { action: 'sit', reason: 'Sit — liveBotCall' }
+  return { action: 'send', call, lean, ask: ask as number }
 }
 
 /** Why this tape is sitting / paper / live — Live cash ON is not silent. Soft FAIL master Live copy. */

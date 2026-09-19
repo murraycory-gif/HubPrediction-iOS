@@ -137,6 +137,10 @@ describe('QC2 wires', () => {
     const tapesSrc = await readFile(new URL('../src/lib/tapes.ts', import.meta.url), 'utf8')
     expect(tapesSrc).toMatch(/export const LIVE_PRINT_MS = 100/)
     expect(tapesSrc).toMatch(/export const BOARD_STRUCTURE_MS = 400/)
+    expect(tapesSrc).toMatch(/export const BOT_SCAN_MS = 1000/)
+    expect(tapesSrc).toMatch(/export const CLAIM_COOLDOWN_MS = 8000/)
+    expect(tapesSrc).toMatch(/if \(c && now - c\.at >= CLAIM_COOLDOWN_MS\) delete map\[key\]/)
+    expect(tapesSrc.indexOf('now - c.at >= CLAIM_COOLDOWN_MS')).toBeLessThan(tapesSrc.indexOf('prev.tries >= CLAIM_MAX_TRIES'))
     expect(tapesSrc).not.toMatch(/liveBets:/)
     expect(tapesSrc).not.toMatch(/setLiveBets/)
     expect(tapesSrc).toMatch(/clientLiveOn === true \|\| recipe\.liveOn === true/)
@@ -400,6 +404,25 @@ describe('QC2 wires', () => {
       'cu:KXCOPPER15M-QC',
       'gld:KXGOLD15M-QC',
     ])
+  })
+
+  it('claimSend 4 tries + 8s cooldown Soft FAIL clock-wide skip', async () => {
+    const { releaseClaim, CLAIM_COOLDOWN_MS, BOT_SCAN_MS } = await import('../src/lib/tapes')
+    const map: Record<string, { at: number; tries: number; filled?: string; pending?: boolean }> = {}
+    const now = 4_000_000
+    const key = 'btc:KXBTC15M-SIT-SEND'
+    for (let i = 0; i < 4; i += 1) {
+      expect(claimSend(map, key, now + i)).toBe('send')
+      releaseClaim(map, key, now + i)
+    }
+    expect(claimSend(map, key, now + 3 + 10)).toBe('skip')
+    expect(claimSend(map, key, now + 3 + CLAIM_COOLDOWN_MS)).toBe('send')
+    expect(BOT_SCAN_MS).toBe(1000)
+    const dash = await readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8')
+    expect(dash).toMatch(/function tryLiveBots/)
+    expect(dash).toMatch(/liveTapeDecision/)
+    expect(dash).toMatch(/BOT_SCAN_MS/)
+    expect(dash).toMatch(/claimSendBlock/)
   })
 
   it('ticket only with a real order_id — Soft FAIL ARMING fake fill', () => {

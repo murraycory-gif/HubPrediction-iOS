@@ -886,16 +886,22 @@ export function hostLivePlaceGate(opts: {
 
 export type SendClaim = { at: number; tries: number; filled?: string; pending?: boolean }
 
-/** One in-flight POST per ticker. Soft FAIL 4 CU ghosts. IOC miss can retry after release, cap 4. */
+/** Re-enter the bot loop on the tick bus so in-arm crossing Soft FAIL depends on board identity. */
+export const BOT_SCAN_MS = 1000
+/** After 4 IOC misses, wait this long then Soft FAIL permanent skip for the rest of the clock. */
+export const CLAIM_COOLDOWN_MS = 8000
+export const CLAIM_MAX_TRIES = 4
+
+/** One in-flight POST per ticker. Soft FAIL 4 CU ghosts. IOC miss retries after CLAIM_COOLDOWN_MS. */
 export function claimSend(map: Record<string, SendClaim>, key: string, now = Date.now()): 'send' | 'skip' {
   const c = map[key]
   if (c?.filled) return 'skip'
   if (c?.pending) return 'skip'
-  if (c && c.tries >= 4) return 'skip'
-  if (c && now - c.at >= 8000 && !c.pending) delete map[key]
+  if (c && now - c.at >= CLAIM_COOLDOWN_MS) delete map[key]
   const prev = map[key]
+  if (prev && prev.tries >= CLAIM_MAX_TRIES) return 'skip'
   const tries = (prev?.tries ?? 0) + 1
-  if (tries > 4) {
+  if (tries > CLAIM_MAX_TRIES) {
     delete map[key]
     return 'skip'
   }
@@ -903,14 +909,27 @@ export function claimSend(map: Record<string, SendClaim>, key: string, now = Dat
   return 'send'
 }
 
+/** Why claimSend skipped. Soft FAIL silent sit after 4 IOC cancels. */
+export function claimSendBlock(
+  map: Record<string, SendClaim>,
+  key: string,
+  now = Date.now(),
+): 'filled' | 'pending' | 'cooldown' | 'open' {
+  const c = map[key]
+  if (c?.filled) return 'filled'
+  if (c?.pending) return 'pending'
+  if (c && c.tries >= CLAIM_MAX_TRIES && now - c.at < CLAIM_COOLDOWN_MS) return 'cooldown'
+  return 'open'
+}
+
 export function markFilled(map: Record<string, SendClaim>, key: string, orderId: string) {
   map[key] = { at: Date.now(), tries: 4, filled: orderId, pending: true }
 }
 
-export function releaseClaim(map: Record<string, SendClaim>, key: string) {
+export function releaseClaim(map: Record<string, SendClaim>, key: string, now = Date.now()) {
   const c = map[key]
   if (!c || c.filled) return
-  map[key] = { at: Date.now(), tries: c.tries }
+  map[key] = { at: now, tries: c.tries }
 }
 
 export type DeskTicket = {
