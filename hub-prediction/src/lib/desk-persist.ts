@@ -18,9 +18,11 @@ export function settingsSavedAt(settings: unknown): number {
   return Number((settings as { savedAt?: unknown }).savedAt) || 0
 }
 
+const TOGGLE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
+
 function settingsTapes(raw: unknown) {
   if (!raw || typeof raw !== 'object') return {}
-  const tapes = (raw as { tapes?: Record<string, { liveOn?: unknown; botOn?: unknown }> }).tapes
+  const tapes = (raw as { tapes?: Record<string, { liveOn?: unknown; botOn?: unknown; contracts?: unknown }> }).tapes
   return tapes && typeof tapes === 'object' ? tapes : {}
 }
 
@@ -28,23 +30,60 @@ export function settingsHasUserLive(settings: unknown) {
   return Object.values(settingsTapes(settings)).some((t) => t?.liveOn === true)
 }
 
+export function settingsTogglesAt(settings: unknown): number {
+  if (!settings || typeof settings !== 'object') return 0
+  return Number((settings as { togglesAt?: unknown }).togglesAt) || 0
+}
+
 function incomingIsUnsavedFactory(settings: unknown) {
   if (!settings || typeof settings !== 'object') return true
   if (settingsHasUserLive(settings)) return false
-  const o = settings as { savedAt?: unknown; togglesPicked?: unknown }
-  return (Number(o.savedAt) || 0) === 0 && o.togglesPicked !== true
+  const o = settings as { savedAt?: unknown; togglesPicked?: unknown; togglesAt?: unknown }
+  return (Number(o.savedAt) || 0) === 0 && o.togglesPicked !== true && (Number(o.togglesAt) || 0) === 0
 }
 
-/** Newer savedAt wins. Soft FAIL factory liveOn:false overwriting a user pick. */
+function copyUserToggles(from: unknown, onto: unknown) {
+  if (!from || !onto || typeof from !== 'object' || typeof onto !== 'object') return onto
+  const ft = settingsTapes(from)
+  const ot = settingsTapes(onto)
+  const tapes: Record<string, unknown> = { ...ot }
+  for (const id of TOGGLE_IDS) {
+    const src = ft[id]
+    const cur = ot[id]
+    if (!src || !cur) continue
+    tapes[id] = {
+      ...cur,
+      liveOn: src.liveOn === true,
+      botOn: src.botOn === true,
+      contracts: src.contracts,
+    }
+  }
+  const src = from as { togglesAt?: unknown; togglesPicked?: unknown }
+  return {
+    ...(onto as object),
+    tapes,
+    togglesAt: Number(src.togglesAt) || settingsTogglesAt(onto),
+    togglesPicked: src.togglesPicked === true || (onto as { togglesPicked?: unknown }).togglesPicked === true,
+  }
+}
+
+/** Newer savedAt wins the blob. User Live cash / Bot / contracts follow togglesAt. */
 export function pickNewerSettings(prev: unknown, incoming: unknown) {
   if (incoming == null) return prev
   if (prev == null) return incoming
   const prevAt = settingsSavedAt(prev)
   const nextAt = settingsSavedAt(incoming)
-  if (incomingIsUnsavedFactory(incoming) && (settingsHasUserLive(prev) || prevAt > 0)) return prev
+  if (incomingIsUnsavedFactory(incoming) && (settingsHasUserLive(prev) || prevAt > 0 || settingsTogglesAt(prev) > 0)) {
+    return prev
+  }
   if (nextAt === 0 && prevAt > 0) return prev
-  if (settingsHasUserLive(prev) && !settingsHasUserLive(incoming) && incomingIsUnsavedFactory(incoming)) return prev
-  return nextAt >= prevAt ? incoming : prev
+  const winner = nextAt >= prevAt ? incoming : prev
+  const other = winner === incoming ? prev : incoming
+  const winT = settingsTogglesAt(winner)
+  const otherT = settingsTogglesAt(other)
+  if (otherT > winT) return copyUserToggles(other, winner)
+  if (otherT === winT && otherT > 0) return copyUserToggles(prev, winner)
+  return winner
 }
 
 export function unionTickets(prev: unknown, incoming: unknown) {

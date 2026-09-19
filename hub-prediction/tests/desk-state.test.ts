@@ -161,4 +161,20 @@ describe('host desk-state Soft FAIL wipe after update', () => {
     expect(loadSettings().tapes.btc.contracts).toBe(14)
     await rm(dir, { recursive: true, force: true })
   })
+
+  it('newer recipe savedAt cannot wipe host Live cash or contracts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hub-desk-toggles-'))
+    process.env.HUB_DESK_STATE_FILE = join(dir, 'desk-state.json')
+    const armed = patchTape(loadSettings(), 'cu', { liveOn: true, botOn: true, contracts: 12 })
+    writeDeskState({ settings: armed })
+    const recipe = { ...armed, savedAt: (armed.savedAt || 0) + 5_000, tapes: { ...armed.tapes, cu: { ...armed.tapes.cu, liveOn: false, contracts: 1 } } }
+    const merged = mergeHostDeskState(readDeskState()!, { settings: recipe })
+    expect((merged.settings as { tapes?: { cu?: { liveOn?: boolean; contracts?: number } } })?.tapes?.cu?.liveOn).toBe(true)
+    expect((merged.settings as { tapes?: { cu?: { contracts?: number } } })?.tapes?.cu?.contracts).toBe(12)
+    localStorage.clear()
+    applyHostDeskState(merged)
+    expect(loadSettings().tapes.cu.liveOn).toBe(true)
+    expect(loadSettings().tapes.cu.contracts).toBe(12)
+    await rm(dir, { recursive: true, force: true })
+  })
 })

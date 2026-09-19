@@ -22,7 +22,7 @@ import {
   scoreBetsVsRecipe,
   summarizeTapePath,
 } from '../src/lib/analyst'
-import { GOLD_RECIPES, SETTINGS_KEY, emptyHits, hydrateSettings, loadSettings } from '../src/lib/tapes'
+import { GOLD_RECIPES, SETTINGS_KEY, emptyHits, hydrateSettings, loadSettings, patchTape } from '../src/lib/tapes'
 import type { DeskBoard, TapeQuote } from '../src/lib/types'
 
 afterEach(() => {
@@ -120,6 +120,17 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
     expect(loadSettings().tapes.btc.through).toBe(46)
     expect(loadSettings()).not.toHaveProperty('liveBets')
     expect(GOLD_RECIPES.btc.through).toBe(40)
+  })
+
+  it('recipe auto-write keeps user Live cash ON and contracts', () => {
+    const armed = patchTape(loadSettings(), 'btc', { liveOn: true, botOn: true, contracts: 17 })
+    expect(armed.tapes.btc.liveOn).toBe(true)
+    const next = applyAnalystAccept(armed, 'btc', { ...GOLD_RECIPES.btc, through: 46, liveOn: false, contracts: 1 })
+    expect(next.tapes.btc.through).toBe(46)
+    expect(next.tapes.btc.liveOn).toBe(true)
+    expect(next.tapes.btc.contracts).toBe(17)
+    expect(loadSettings().tapes.btc.liveOn).toBe(true)
+    expect(loadSettings().tapes.btc.contracts).toBe(17)
   })
 
   it('Deny stores the rec token and does not write settings', () => {

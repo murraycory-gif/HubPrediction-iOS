@@ -173,13 +173,15 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       })),
     )
     setRehab(loadAutoState())
+    let writeChain = Promise.resolve()
     const writeHost = (patch: { settings?: unknown; tickets?: unknown; finance?: unknown; hits?: unknown }) => {
       if (patch.settings) lastLocalWrite.current = Date.now()
-      void saveDeskState({ data: patch })
+      writeChain = writeChain.catch(() => undefined).then(() => saveDeskState({ data: patch }).then(() => undefined))
+      return writeChain
     }
     setHostDeskWriter(writeHost)
     void getDeskState()
-      .then((host) => {
+      .then(async (host) => {
         if (host && applyHostDeskState(host)) {
           setSettings(loadSettings())
           const hostTickets = loadTickets()
@@ -194,17 +196,17 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         }
         setHostDeskWriter(writeHost)
         const local = loadSettings()
-        writeHost({
+        await writeHost({
           settings: settingsReadyToPush(local) ? local : undefined,
           tickets: loadTickets(),
           finance: loadFinance(),
         })
         setHostReady(true)
       })
-      .catch(() => {
+      .catch(async () => {
         setHostDeskWriter(writeHost)
         const local = loadSettings()
-        writeHost({
+        await writeHost({
           settings: settingsReadyToPush(local) ? local : undefined,
           tickets: loadTickets(),
           finance: loadFinance(),
@@ -1028,6 +1030,24 @@ function TapeRow({
   }, [recipe.contracts])
   useEffect(() => () => window.clearTimeout(saveTimer.current), [])
   useEffect(() => {
+    const flush = () => {
+      window.clearTimeout(saveTimer.current)
+      const fromDom = contractsRef.current ? Number(contractsRef.current.value) : draft
+      if (!Number.isFinite(fromDom)) return
+      const n = clampContracts(fromDom)
+      if (n === recipe.contracts) return
+      onTape({ contracts: n })
+    }
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('beforeunload', flush)
+    document.addEventListener('visibilitychange', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('beforeunload', flush)
+      document.removeEventListener('visibilitychange', flush)
+    }
+  }, [draft, recipe.contracts, onTape])
+  useEffect(() => {
     const ticker = quote?.ticker ?? ''
     if (lastTicker.current && ticker && lastTicker.current !== ticker && chart !== DEFAULT_CHART) {
       onChart(DEFAULT_CHART)
@@ -1047,7 +1067,7 @@ function TapeRow({
     const n = clampContracts(raw)
     setDraft(n)
     window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(() => saveContracts(n), SETTINGS_DEBOUNCE_MS)
+    saveTimer.current = window.setTimeout(() => saveContracts(n), 80)
   }
 
   const fillLine = ticket ? ticketFillStrip(ticket, shownQuote, booked) : ''

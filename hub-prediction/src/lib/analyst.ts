@@ -468,7 +468,6 @@ export function listDeniedRecs() {
 /** Auto recipe write — recipe only. Soft FAIL flipping Live cash. */
 export function applyAnalystAccept(settings: DeskSettings, id: TapeId, proposed: TapeRecipe): DeskSettings {
   const gold = GOLD_RECIPES[id]
-  const cur = settings.tapes[id]
   const next = clampTapeRecipe(id, proposed, gold)
   return patchTape(settings, id, {
     armFromMin: next.armFromMin,
@@ -476,9 +475,6 @@ export function applyAnalystAccept(settings: DeskSettings, id: TapeId, proposed:
     through: next.through,
     centLo: next.centLo,
     centHi: next.centHi,
-    contracts: cur.contracts,
-    botOn: cur.botOn,
-    liveOn: cur.liveOn,
   })
 }
 

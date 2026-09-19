@@ -494,9 +494,10 @@ export type DeskSettings = {
   betsFilter: TapeId[]
   clocks: Record<TapeId, TapeClock>
   charts: Record<TapeId, ChartRange>
-  /** User chose Bot / Live cash. Soft FAIL wiping those on refresh. */
+  /** User chose Bot / Live cash / contracts. Soft FAIL wiping those on refresh. */
   togglesPicked?: boolean
   savedAt?: number
+  togglesAt?: number
 }
 
 export const TAPE_META: Record<
@@ -630,13 +631,20 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     charts: hydrateChartRanges((o as { charts?: unknown }).charts),
     togglesPicked: picked,
     savedAt: Number((o as { savedAt?: unknown }).savedAt) || undefined,
+    togglesAt: Number((o as { togglesAt?: unknown }).togglesAt) || undefined,
   }
 }
 
 export function settingsReadyToPush(settings: DeskSettings) {
   if (settings.togglesPicked === true) return true
   if ((Number(settings.savedAt) || 0) > 0) return true
-  return TAPE_IDS.some((id) => settings.tapes[id].liveOn === true || settings.tapes[id].botOn === false)
+  if ((Number(settings.togglesAt) || 0) > 0) return true
+  return TAPE_IDS.some(
+    (id) =>
+      settings.tapes[id].liveOn === true ||
+      settings.tapes[id].botOn === false ||
+      settings.tapes[id].contracts !== GOLD_RECIPES[id].contracts,
+  )
 }
 
 export function loadSettings(): DeskSettings {
@@ -652,10 +660,44 @@ export function loadSettings(): DeskSettings {
   }
 }
 
-export function saveSettings(settings: DeskSettings) {
-  const next = hydrateSettings({ ...settings, savedAt: Date.now(), togglesPicked: true })
+let lastSavedAt = 0
+function nextSavedAt() {
+  const now = Date.now()
+  lastSavedAt = now > lastSavedAt ? now : lastSavedAt + 1
+  return lastSavedAt
+}
+
+function keepStoredToggles(tapes: Record<TapeId, TapeRecipe>) {
+  const stored = loadSettings()
+  if (!(Number(stored.togglesAt) || 0) && stored.togglesPicked !== true) return tapes
+  const next = { ...tapes }
+  for (const id of TAPE_IDS) {
+    next[id] = {
+      ...next[id],
+      liveOn: stored.tapes[id].liveOn,
+      botOn: stored.tapes[id].botOn,
+      contracts: stored.tapes[id].contracts,
+    }
+  }
+  return next
+}
+
+export function saveSettings(settings: DeskSettings, opts?: { touchToggles?: boolean }) {
+  const touch = opts?.touchToggles === true
+  const savedAt = nextSavedAt()
+  const tapes = touch ? settings.tapes : keepStoredToggles(settings.tapes)
+  const next = hydrateSettings({
+    ...settings,
+    tapes,
+    savedAt,
+    togglesAt: touch ? savedAt : Number(settings.togglesAt) || Number(loadSettings().togglesAt) || undefined,
+    togglesPicked: settings.togglesPicked === true || touch,
+  })
   const ls = deskStorage()
-  if (!ls) return next
+  if (!ls) {
+    pushHostDesk({ settings: next })
+    return next
+  }
   try {
     ls.setItem(SETTINGS_KEY, JSON.stringify(next))
   } catch {
@@ -666,12 +708,15 @@ export function saveSettings(settings: DeskSettings) {
 }
 
 export function patchTape(settings: DeskSettings, id: TapeId, patch: Partial<TapeRecipe>): DeskSettings {
-  const picked = settings.togglesPicked === true || 'botOn' in patch || 'liveOn' in patch
-  return saveSettings({
-    ...settings,
-    togglesPicked: picked,
-    tapes: { ...settings.tapes, [id]: { ...settings.tapes[id], ...patch } },
-  })
+  const touch = 'botOn' in patch || 'liveOn' in patch || 'contracts' in patch
+  return saveSettings(
+    {
+      ...settings,
+      togglesPicked: settings.togglesPicked === true || touch,
+      tapes: { ...settings.tapes, [id]: { ...settings.tapes[id], ...patch } },
+    },
+    { touchToggles: touch },
+  )
 }
 
 export function setTapeClock(settings: DeskSettings, id: TapeId, clock: TapeClock): DeskSettings {

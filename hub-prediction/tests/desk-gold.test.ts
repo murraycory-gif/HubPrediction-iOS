@@ -191,6 +191,17 @@ describe('settings persist', () => {
     expect(again).not.toHaveProperty('liveBets')
   })
 
+  it('clock and recipe writes keep user Live cash and contracts', () => {
+    patchTape(loadSettings(), 'btc', { liveOn: true, contracts: 17 })
+    patchTape(loadSettings(), 'ng', { liveOn: true, contracts: 8 })
+    setTapeClock(loadSettings(), 'btc', '5m')
+    expect(loadSettings().tapes.btc.liveOn).toBe(true)
+    expect(loadSettings().tapes.btc.contracts).toBe(17)
+    expect(loadSettings().tapes.ng.liveOn).toBe(true)
+    expect(loadSettings().tapes.ng.contracts).toBe(8)
+    expect(loadSettings().clocks.btc).toBe('5m')
+  })
+
   it('persists per-tape 5m / 15m / 1h clocks — 15m gold default', () => {
     const first = loadSettings()
     expect(first.clocks.btc).toBe(DEFAULT_CLOCK)
