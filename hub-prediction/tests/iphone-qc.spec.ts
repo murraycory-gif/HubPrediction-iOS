@@ -1878,12 +1878,14 @@ test('Desk Chief clock pick persists paper Soft FAIL Live flip', async ({ page }
       }
     }
     const now = Date.now()
-    const settings = JSON.parse(localStorage.getItem('hub.desk.settings.v1') || 'null') as {
-      tapes?: { gld?: { liveOn?: boolean; contracts?: number } }
-      clocks?: { gld?: string }
-    }
-    if (settings?.tapes?.gld) settings.tapes.gld.liveOn = false
-    if (settings?.clocks) settings.clocks.gld = '5m'
+    const raw = JSON.parse(localStorage.getItem('hub.desk.settings.v1') || 'null') as {
+      tapes?: Record<string, { liveOn?: boolean; botOn?: boolean; contracts?: number }>
+      clocks?: Partial<Record<string, string>>
+    } | null
+    const settings = raw && typeof raw === 'object' ? raw : { tapes: {}, clocks: {} }
+    settings.tapes = settings.tapes || {}
+    settings.tapes.gld = { ...(settings.tapes.gld || {}), liveOn: false, botOn: true, contracts: 1 }
+    settings.clocks = { btc: '15m', ng: '15m', cu: '15m', ...(settings.clocks || {}), gld: '5m' }
     return w.__HUB_TEST_CHIEF?.run({
       settings,
       book: { killed: false, paperStartedAt: now, bets: [] },
@@ -1891,6 +1893,18 @@ test('Desk Chief clock pick persists paper Soft FAIL Live flip', async ({ page }
       deposits: 760,
       quotes: { gld: { tradingActive: false, stale: true, yesAsk: 40 } },
       now,
+      prev: {
+        asOf: 0,
+        lastRunAt: 0,
+        sleeves: {},
+        progress: {},
+        proposals: [],
+        actions: [],
+        dailyPnl: 0,
+        lockIn: false,
+        cash: null,
+        cashFloor: 150,
+      },
     })
   })
   expect(result?.paperApplies.some((a) => a.tape === 'gld' && a.clock === '15m')).toBe(true)

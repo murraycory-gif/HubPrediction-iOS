@@ -729,7 +729,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   function tickChief(over?: Partial<ChiefRunInput>, opts?: { force?: boolean }) {
     const stored = loadSettings()
     const result = runDeskChief({
-      settings: over?.settings ?? stored,
+      settings: hydrateSettings(over?.settings ?? stored),
       book: over?.book ?? loadFinance(),
       cash: over?.cash ?? cash.cash,
       deposits: over?.deposits ?? cash.deposits,
