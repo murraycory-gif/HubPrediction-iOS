@@ -18,6 +18,6 @@ On the Windows PC, set `KALSHI_KEY_ID` + `KALSHI_PRIVATE_KEY` in `hub-prediction
 npm test
 ```
 
-Live bets and bots default OFF. Kalshi keys stay on the Windows host. Stable stylesheet is `/desk.css` — no hashed `/assets/index-*.css` refresh loop.
+Bots default ON. Live cash defaults OFF on each tape. Soft FAIL a master Live switch. Kalshi keys stay on the Windows host. Stable stylesheet is `/desk.css` — no hashed `/assets/index-*.css` refresh loop.
 
 On the Windows PC, first-time and later updates are in `UPDATE-HUB.txt`. Everyday pull: double-click `update-desk.bat` in the repo root.

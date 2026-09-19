@@ -743,13 +743,36 @@ body {
 
 .bets-log-wrap {
   margin-top: 10px;
+  max-height: 32rem;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
+  scrollbar-color: rgba(212, 175, 55, 0.55) transparent;
+}
+
+.bets-log-wrap::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.bets-log-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bets-log-wrap::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.45);
+  border-radius: 6px;
+}
+
+.bets-log-wrap::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .bets-log-scroll {
   min-width: 50rem;
+  padding-right: 12px;
+  box-sizing: border-box;
 }
 
 .bets-log {
@@ -758,18 +781,15 @@ body {
   padding: 0;
   display: grid;
   gap: 2px;
-  max-height: 28rem;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  overflow: visible;
 }
 
 .bets-log-row {
   display: grid;
-  grid-template-columns: 3.6rem minmax(15rem, 2.6fr) 3.2rem 3.6rem 4rem 4.4rem minmax(4.6rem, 1fr) minmax(4.8rem, 1fr) minmax(4.6rem, 1fr);
+  grid-template-columns: 3.6rem minmax(15rem, 2.6fr) 3.2rem 3.6rem 4rem 4.4rem minmax(4.6rem, 1fr) minmax(4.8rem, 1fr) minmax(5.8rem, 1fr);
   gap: 8px;
   align-items: center;
-  padding: 6px 4px;
+  padding: 6px 10px 6px 4px;
   font-family: var(--mono);
   font-size: 13px;
   color: var(--ink);
@@ -827,6 +847,10 @@ body {
 }
 
 .bets-log-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
   color: var(--mute);
   font-size: 11px;
   letter-spacing: 0.08em;

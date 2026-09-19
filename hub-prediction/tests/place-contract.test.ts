@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { V2_EVENTS_ORDERS, v2EventsOrderBody } from '../src/lib/kalshi-trade.server'
-import { GOLD_RECIPES, cashGates, extractOrderId, hydrateSettings, tabIsOpen } from '../src/lib/tapes'
+import { GOLD_RECIPES, cashGates, extractOrderId, hydrateSettings, livePlaceGate, tabIsOpen } from '../src/lib/tapes'
 
 describe('placeContract V2 Soft KEEP', () => {
   it('BUY UP is bid at yes_ask 0.xxxx with taker_at_cross', () => {
@@ -59,7 +59,12 @@ describe('placeContract V2 Soft KEEP', () => {
   it('does not flip Live/bots ON or retune recipes', () => {
     const s = hydrateSettings(null)
     expect(s.liveBets).toBe(false)
+    expect(hydrateSettings({ liveBets: true }).liveBets).toBe(false)
     expect(cashGates(s, 'btc').ok).toBe(false)
+    expect(livePlaceGate({ botOn: true, liveOn: true, hasKeys: true }).ok).toBe(true)
+    expect(livePlaceGate({ botOn: false, liveOn: true, hasKeys: true }).ok).toBe(false)
+    expect(livePlaceGate({ botOn: true, liveOn: false, hasKeys: true }).ok).toBe(false)
+    expect(livePlaceGate({ botOn: true, liveOn: true, hasKeys: false }).ok).toBe(false)
     expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })
     expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002 })
     expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002 })

@@ -68,6 +68,7 @@ describe('defaults Soft FAIL Live / bots ON', () => {
     const s = hydrateSettings(null)
     expect(s.liveBets).toBe(false)
     expect(DEFAULT_SETTINGS.liveBets).toBe(false)
+    expect(hydrateSettings({ liveBets: true }).liveBets).toBe(false)
     for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
       expect(s.tapes[id].botOn).toBe(true)
       expect(s.tapes[id].liveOn).toBe(false)
@@ -377,11 +378,12 @@ describe('arm / pulse / send tab', () => {
     expect(inArmWindow(GOLD_RECIPES.gld, now + 2 * 60_000, now)).toBe(false)
   })
 
-  it('three cash gates default OFF; bot+no live cash is PAPER', () => {
+  it('cash gates are Bot + Live cash; Soft FAIL master liveBets', () => {
     const s = hydrateSettings(null)
     expect(cashGates(s, 'btc').ok).toBe(false)
-    expect(cashGates({ ...s, liveBets: true, tapes: { ...s.tapes, gld: { ...s.tapes.gld, botOn: true, liveOn: false } } }, 'gld').ok).toBe(false)
-    expect(cashGates({ ...s, liveBets: true, tapes: { ...s.tapes, btc: { ...s.tapes.btc, botOn: true, liveOn: true } } }, 'btc').ok).toBe(true)
+    expect(cashGates({ ...s, liveBets: false, tapes: { ...s.tapes, gld: { ...s.tapes.gld, botOn: true, liveOn: false } } }, 'gld').ok).toBe(false)
+    expect(cashGates({ ...s, liveBets: false, tapes: { ...s.tapes, btc: { ...s.tapes.btc, botOn: true, liveOn: true } } }, 'btc').ok).toBe(true)
+    expect(cashGates({ ...s, liveBets: true, tapes: { ...s.tapes, ng: { ...s.tapes.ng, botOn: false, liveOn: true } } }, 'ng').ok).toBe(false)
   })
 
   it('pulse is quiet without a live ticket', () => {
@@ -552,15 +554,20 @@ describe('gold race path', () => {
 })
 
 describe('bets log one scrollbar', () => {
-  it('wrap is the only x-scroller — Soft FAIL overflow:auto on the list', async () => {
+  it('wrap is the only scroller — themed thin bars, CASH not under the thumb', async () => {
     const css = await readFile(new URL('../public/desk.css', import.meta.url), 'utf8')
     const dash = await readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8')
     expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?overflow-x:\s*auto/)
-    expect(css).toMatch(/\.bets-log \{[\s\S]*?overflow-x:\s*hidden/)
-    expect(css).toMatch(/\.bets-log \{[\s\S]*?overflow-y:\s*auto/)
+    expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?overflow-y:\s*auto/)
+    expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?scrollbar-gutter:\s*stable/)
+    expect(css).toMatch(/\.bets-log-wrap \{[\s\S]*?scrollbar-width:\s*thin/)
+    expect(css).toMatch(/\.bets-log-wrap::-webkit-scrollbar \{[\s\S]*?width:\s*6px/)
+    expect(css).toMatch(/\.bets-log \{[\s\S]*?overflow:\s*visible/)
+    expect(css).not.toMatch(/\.bets-log \{[\s\S]*?overflow-y:\s*auto/)
     expect(css).not.toMatch(/min-width:\s*58rem/)
     expect(css).toMatch(/\.bets-log-scroll/)
     expect(dash).toMatch(/bets-log-scroll/)
+    expect(dash).toMatch(/bets-cash-head/)
     expect(css).not.toMatch(/\.bets-log-row > span\.bets-window \{\s*overflow:\s*visible/)
   })
 })

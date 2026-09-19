@@ -416,6 +416,7 @@ export function windowMsForClock(clock: string) {
 }
 
 export type DeskSettings = {
+  /** Soft FAIL leftover. Master Live switch is gone — hydrate always false. */
   liveBets: boolean
   tapes: Record<TapeId, TapeRecipe>
   betsFilter: TapeId[]
@@ -549,7 +550,7 @@ export function hydrateSettings(raw: unknown): DeskSettings {
     tapes[id] = next
   }
   return {
-    liveBets: o.liveBets === true,
+    liveBets: false,
     tapes,
     betsFilter: hydrateBetsFilter((o as { betsFilter?: unknown }).betsFilter),
     clocks: hydrateClocks((o as { clocks?: unknown }).clocks),
@@ -596,8 +597,9 @@ export function patchTape(settings: DeskSettings, id: TapeId, patch: Partial<Tap
   })
 }
 
-export function setLiveBets(settings: DeskSettings, liveBets: boolean): DeskSettings {
-  return saveSettings({ ...settings, liveBets })
+/** Soft FAIL leftover. Master Live cannot persist ON. */
+export function setLiveBets(settings: DeskSettings, _liveBets?: boolean): DeskSettings {
+  return saveSettings({ ...settings, liveBets: false })
 }
 
 export function setTapeClock(settings: DeskSettings, id: TapeId, clock: TapeClock): DeskSettings {
@@ -680,12 +682,19 @@ export function tabIsOpen() {
   return document.hidden === false && document.visibilityState === 'visible'
 }
 
-/** Master Live + tape bot + tape live cash. Soft FAIL cold ON. Bot ON + live cash OFF = PAPER. */
+/** Tape bot + tape live cash. Soft FAIL master liveBets. Bot ON + live cash OFF = PAPER. */
 export function cashGates(settings: DeskSettings, tape: TapeId) {
   const bot = settings.tapes[tape].botOn === true
   const liveCash = settings.tapes[tape].liveOn === true
-  const master = settings.liveBets === true
-  return { master, bot, liveCash, ok: master && bot && liveCash }
+  return { bot, liveCash, ok: bot && liveCash }
+}
+
+/** Server + client Kalshi POST. Soft FAIL master liveBets. */
+export function livePlaceGate(opts: { botOn?: boolean; liveOn?: boolean; hasKeys?: boolean }) {
+  if (opts.botOn !== true) return { ok: false as const, reason: 'Kalshi POST needs Bot ON' }
+  if (opts.liveOn !== true) return { ok: false as const, reason: 'Kalshi POST needs Live cash ON' }
+  if (!opts.hasKeys) return { ok: false as const, reason: 'Kalshi host keys missing on Windows' }
+  return { ok: true as const }
 }
 
 export type SendClaim = { at: number; tries: number; filled?: string }

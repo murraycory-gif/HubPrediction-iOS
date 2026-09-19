@@ -51,7 +51,6 @@ import {
   patchTape,
   releaseClaim,
   saveHits,
-  setLiveBets,
   setTapeChart,
   setTapeClock,
   tabIsOpen,
@@ -84,7 +83,6 @@ import {
   tapeHitCell,
   tapeBotNote,
   liveBotCall,
-  liveArmGate,
   mergeKalshiHistoryToBook,
   liveSendGate,
   loadFinance,
@@ -114,7 +112,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [msg, setMsg] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [book, setBook] = useState<FinanceState>(() => loadFinance())
-  const [liveConfirm, setLiveConfirm] = useState(false)
   const [analystOpen, setAnalystOpen] = useState(true)
   const [financeOpen, setFinanceOpen] = useState(false)
   const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
@@ -389,9 +386,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       setMsg(
         !gates.bot
           ? `${TAPE_META[tape].label} PAPER — bot off / not sent`
-          : !gates.liveCash
-            ? `${TAPE_META[tape].label} PAPER LOCK · not sent to Kalshi`
-            : 'Live bets OFF — paper only. No ticket.',
+          : `${TAPE_META[tape].label} PAPER LOCK · Live cash OFF — paper only, not sent to Kalshi`,
       )
       return
     }
@@ -422,6 +417,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           count: settings.tapes[tape].contracts,
           yesAsk: quote.yesAsk,
           noAsk: quote.noAsk,
+          botOn: settings.tapes[tape].botOn === true,
+          liveOn: settings.tapes[tape].liveOn === true,
         },
       })
       const orderId = extractOrderId(raw)
@@ -480,7 +477,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         tabOpen: true,
         killed: book.killed,
         botOn: recipe.botOn,
-        liveBets: settings.liveBets,
         liveCash: gates.liveCash,
         rehabPaper: paperRehab,
         tradingActive: quote.tradingActive !== false,
@@ -532,21 +528,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           </div>
           <div className="rain" data-testid="rain" aria-hidden="true" />
           <div className="brand-actions">
-            <label className={`toggle glyph-plate ${settings.liveBets ? 'toggle-hot' : ''}`}>
-              <input
-                type="checkbox"
-                data-testid="live-bets"
-                checked={settings.liveBets}
-                onChange={(e) => {
-                  if (e.target.checked) setLiveConfirm(true)
-                  else {
-                    setLiveConfirm(false)
-                    setSettings(setLiveBets(settings, false))
-                  }
-                }}
-              />
-              Live {settings.liveBets ? 'ON' : 'OFF'}
-            </label>
             <button
               type="button"
               className="chip-btn glyph-plate"
@@ -573,52 +554,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         </div>
         <p className="settings-note" data-testid="kalshi-link">
           {hostCreds
-            ? 'Kalshi keys on this PC — Live + Live cash + Bot ON posts to Kalshi.'
+            ? 'Kalshi keys on this PC — Bot ON + Live cash ON posts to Kalshi.'
             : 'Kalshi host keys missing on this PC — Live POST cannot run. Cash latch stays.'}
         </p>
-        {liveConfirm ? (
-          <div className="live-banner" data-testid="live-banner">
-            <p>
-              Confirm LIVE — host keys + cash floor + Bot ON + Live cash ON on each tape you want. A fill
-              here posts to Kalshi and shows in the Kalshi app. Soft FAIL silent Paper→Live.
-            </p>
-            <button
-              type="button"
-              className="chip-btn toggle-hot"
-              data-testid="confirm-live"
-              onClick={() => {
-                void (async () => {
-                  let keys = hostCreds
-                  try {
-                    const r = await getKalshiBalance()
-                    applyCashAndSettlements(r)
-                    keys = r.hostCreds === true
-                  } catch {
-                    /* host miss */
-                  }
-                  const gate = liveArmGate(book, {
-                    cash: cash.cash,
-                    deposits: cash.deposits,
-                    hasKeys: keys,
-                  })
-                  setLiveConfirm(false)
-                  if (!gate.ok) {
-                    setSettings(setLiveBets(settings, false))
-                    setMsg(gate.reason)
-                    return
-                  }
-                  setSettings(setLiveBets(settings, true))
-                  setMsg('LIVE armed — confirm + keys + floor')
-                })()
-              }}
-            >
-              Confirm LIVE
-            </button>
-            <button type="button" className="chip-btn" data-testid="cancel-live" onClick={() => setLiveConfirm(false)}>
-              Cancel
-            </button>
-          </div>
-        ) : null}
       </header>
 
       <main className="desk-main">
@@ -633,7 +571,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               recipe={settings.tapes[id]}
               clock={settings.clocks[id]}
               chart={settings.charts?.[id] ?? DEFAULT_CHART}
-              liveBets={settings.liveBets}
               rehabPaper={isRehabPaper(rehab, id)}
               recipeLocked={chasingLosses(book) || book.killed}
               botNote={(() => {
@@ -649,7 +586,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
                 const cell = tapeHitCell(id, hits, book.bets, Date.now(), hitFrom)
                 return tapeBotNote({
                   botOn: recipe.botOn,
-                  liveBets: settings.liveBets,
                   liveCash: recipe.liveOn,
                   rehabPaper: isRehabPaper(rehab, id),
                   hostCreds,
@@ -733,7 +669,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             onKill={() => {
               setBook(engageKill(book))
               setSettings(disarmAllBots(settings))
-              setLiveConfirm(false)
               setMsg('KILL on — bots disarmed, Place blocked')
             }}
             onClearKill={() => {
@@ -749,13 +684,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           <SettingsPanel
             settings={settings}
             cashLabel={`Cash ${formatCash(cash.cash)}`}
-            onLiveBets={(on) => {
-              if (on) setLiveConfirm(true)
-              else {
-                setLiveConfirm(false)
-                setSettings(setLiveBets(settings, false))
-              }
-            }}
             recipeLocked={chasingLosses(book) || book.killed}
             onTape={(id, patch) => {
               if (book.killed && patch.botOn) {
@@ -858,7 +786,6 @@ function TapeRow({
   recipe,
   clock,
   chart,
-  liveBets,
   rehabPaper,
   recipeLocked,
   botNote,
@@ -873,7 +800,6 @@ function TapeRow({
   recipe: TapeRecipe
   clock: TapeClock
   chart: ChartRange
-  liveBets: boolean
   rehabPaper: boolean
   recipeLocked: boolean
   botNote: string
@@ -890,7 +816,7 @@ function TapeRow({
   const shownLive = useSmoothedLive(live)
   const beat = shownQuote?.beat ?? 0
   const think = weThinkPair(live, beat, shownQuote?.points ?? [])
-  const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)
+  const paper = recipe.botOn && !recipe.liveOn
   const callout = CLOCK_CALLOUT[clock]
   const tone = nowTone(shownLive, beat)
   const liveOn = shownQuote?.tradingActive === true
@@ -1196,7 +1122,7 @@ function Bets24Strip({
             <span>MODE</span>
             <span>SPENT</span>
             <span>P&L</span>
-            <span>CASH</span>
+            <span data-testid="bets-cash-head">CASH</span>
           </div>
           <ul className="bets-log" data-testid="bets-log">
             {rows.map((b) => {

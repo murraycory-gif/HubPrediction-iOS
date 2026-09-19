@@ -3,7 +3,6 @@ import { TAPE_IDS, TAPE_META } from '../lib/tapes'
 
 export function SettingsPanel(props: {
   settings: DeskSettings
-  onLiveBets: (on: boolean) => void
   onTape: (id: TapeId, patch: Partial<TapeRecipe>) => void
   onRefreshCash: () => void
   cashLabel: string
@@ -15,8 +14,9 @@ export function SettingsPanel(props: {
       <p className="settings-note">
         Bot, live cash, and contracts sit on each tape card. Factory gold is the default. Analyst auto-updates
         each tape toward 83%. Three losses in a row halt that desk’s live cash and paper-test 12 runs. For a
-        manual paper test: Bot ON, Live cash OFF, master Live OFF. Kalshi keys live on the Windows host. Soft
-        FAIL paste PEM. Soft FAIL Live POST. Soft FAIL flipping master Live from Analyst.
+        manual paper test: Bot ON, Live cash OFF. Live cash ON + Bot ON + host keys posts to Kalshi. Soft
+        FAIL paste PEM. Soft FAIL Live POST without Bot + Live cash + keys. Soft FAIL flipping Live cash from
+        Analyst.
         {props.recipeLocked ? ' KILL / chase lock still blocks silent Settings retunes.' : ''}
       </p>
 

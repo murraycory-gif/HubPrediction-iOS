@@ -10,6 +10,7 @@ import {
   financeSendsOrders,
   liveArmGate,
   liveBotCall,
+  tapeBotNote,
   liveCashFloor,
   liveSendGate,
   paper48hPassed,
@@ -588,7 +589,6 @@ describe('liveBotCall instant Kalshi post', () => {
     tabOpen: true,
     killed: false,
     botOn: true,
-    liveBets: true,
     liveCash: true,
     rehabPaper: false,
     tradingActive: true,
@@ -598,14 +598,33 @@ describe('liveBotCall instant Kalshi post', () => {
     hitOk: true,
   }
 
-  it('posts live the moment the bot calls — no extra wait', () => {
+  it('posts live from Bot + Live cash — Soft FAIL master liveBets', () => {
     expect(liveBotCall(ready)).toBe('live')
-    expect(liveBotCall({ ...ready, liveBets: false })).toBe('paper')
     expect(liveBotCall({ ...ready, liveCash: false })).toBe('paper')
     expect(liveBotCall({ ...ready, rehabPaper: true })).toBe('paper')
     expect(liveBotCall({ ...ready, lean: 'sit' })).toBe('sit')
     expect(liveBotCall({ ...ready, hitOk: false })).toBe('sit')
     expect(liveBotCall({ ...ready, tradingActive: false })).toBe('sit')
+    expect(liveBotCall({ ...ready, botOn: false })).toBe('sit')
+  })
+
+  it('tapeBotNote names Live cash paper vs live — Soft FAIL master Live copy', () => {
+    const note = {
+      botOn: true,
+      liveCash: false,
+      rehabPaper: false,
+      hostCreds: true,
+      tradingActive: true,
+      inArm: true,
+      askOk: true,
+      lean: 'up' as const,
+      hitOk: true,
+      armFromMin: 8,
+      armToMin: 3,
+    }
+    expect(tapeBotNote(note)).toBe('Live cash OFF — paper only, not sent to Kalshi')
+    expect(tapeBotNote({ ...note, liveCash: true })).toBe('Live cash ON — next through posts to Kalshi')
+    expect(tapeBotNote({ ...note, liveCash: true, hostCreds: false })).toBe('Kalshi keys missing on this PC — cannot POST')
   })
 })
 

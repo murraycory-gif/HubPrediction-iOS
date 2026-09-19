@@ -465,7 +465,7 @@ export function listDeniedRecs() {
   return loadDenied()
 }
 
-/** Auto recipe write — recipe only. Soft FAIL flipping master Live. */
+/** Auto recipe write — recipe only. Soft FAIL flipping Live cash. */
 export function applyAnalystAccept(settings: DeskSettings, id: TapeId, proposed: TapeRecipe): DeskSettings {
   const gold = GOLD_RECIPES[id]
   const cur = settings.tapes[id]
@@ -586,7 +586,7 @@ export function profitImpact(t: TapeNote, askCents?: number | null) {
   if (t.nextRecipe.through > t.currentRecipe.through) {
     return {
       headline: `Skipping hugs saves about ${missLabel} per miss`,
-      detail: `Higher through means fewer hug sends. Each avoided miss keeps about ${missLabel}. At ${HIT_FLOOR}% a clean ${ask}¢ take is still about ${evLabel}. The retune writes this tape only — master Live stays OFF.`,
+      detail: `Higher through means fewer hug sends. Each avoided miss keeps about ${missLabel}. At ${HIT_FLOOR}% a clean ${ask}¢ take is still about ${evLabel}. The retune writes this tape only — Live cash is not flipped.`,
       tone: 'up' as const,
       ev,
     }

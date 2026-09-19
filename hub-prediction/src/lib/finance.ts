@@ -466,12 +466,11 @@ export function liveArmGate(
   return { ok: true }
 }
 
-/** Instant bot call: live POSTs now, paper stays local, sit does not send. */
+/** Instant bot call: live POSTs now, paper stays local, sit does not send. Soft FAIL master liveBets. */
 export function liveBotCall(opts: {
   tabOpen: boolean
   killed: boolean
   botOn: boolean
-  liveBets: boolean
   liveCash: boolean
   rehabPaper: boolean
   tradingActive: boolean
@@ -491,15 +490,14 @@ export function liveBotCall(opts: {
   ) {
     return 'sit'
   }
-  if (opts.rehabPaper || opts.liveBets !== true || opts.liveCash !== true) return 'paper'
+  if (opts.rehabPaper || opts.liveCash !== true) return 'paper'
   if (!opts.hitOk) return 'sit'
   return 'live'
 }
 
-/** Why this tape is sitting / paper / live — shown on the desk so Live cash ON is not silent. */
+/** Why this tape is sitting / paper / live — Live cash ON is not silent. Soft FAIL master Live copy. */
 export function tapeBotNote(opts: {
   botOn: boolean
-  liveBets: boolean
   liveCash: boolean
   rehabPaper: boolean
   hostCreds: boolean
@@ -514,16 +512,13 @@ export function tapeBotNote(opts: {
   if (!opts.botOn) return 'Bot OFF'
   if (opts.rehabPaper) return 'Live cash HALT — paper rehab, not sent to Kalshi'
   if (opts.tradingActive === false) return 'Kalshi window closed — sit'
+  if (!opts.liveCash) return 'Live cash OFF — paper only, not sent to Kalshi'
   if (!opts.inArm) return `Sit — arm ${opts.armFromMin}–${opts.armToMin} min`
   if (opts.lean === 'sit') return 'Sit — no through / hug'
   if (!opts.askOk) return 'Sit — ask out of band'
   if (!opts.hitOk) return `Sit — under ${HIT_FLOOR}% goal`
-  if (opts.liveCash && !opts.liveBets) {
-    return 'Live cash ON · master Live OFF · paper only, not sent to Kalshi'
-  }
-  if (!opts.liveCash) return 'PAPER — Live cash OFF, not sent to Kalshi'
   if (!opts.hostCreds) return 'Kalshi keys missing on this PC — cannot POST'
-  return 'LIVE — next through posts to Kalshi'
+  return 'Live cash ON — next through posts to Kalshi'
 }
 
 /** Sit when the tape is under the 83% goal after enough settled results. */

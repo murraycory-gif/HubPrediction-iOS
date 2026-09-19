@@ -112,12 +112,16 @@ export const placeKalshi = createServerFn({ method: 'POST' })
       count: number
       yesAsk: number
       noAsk: number
+      botOn?: boolean
+      liveOn?: boolean
     }) => d,
   )
   .handler(async ({ data }) => {
     const { loadKalshiHostCreds, placeContract } = await import('./kalshi-trade.server')
+    const { livePlaceGate } = await import('./tapes')
     const creds = loadKalshiHostCreds()
-    if (!creds) throw new Error('Kalshi host keys missing on Windows')
+    const gate = livePlaceGate({ botOn: data.botOn, liveOn: data.liveOn, hasKeys: Boolean(creds) })
+    if (!gate.ok) throw new Error(gate.reason)
     return placeContract({ ...data, keyId: creds.keyId, pem: creds.pem })
   })
 

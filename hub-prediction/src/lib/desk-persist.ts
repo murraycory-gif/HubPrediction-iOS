@@ -1,4 +1,4 @@
-/** Host + browser persist. Soft FAIL update-desk wipe. Soft FAIL Live master ON default. */
+/** Host + browser persist. Soft FAIL update-desk wipe. Soft FAIL Live cash ON default. */
 
 export type HostDeskState = {
   asOf: number

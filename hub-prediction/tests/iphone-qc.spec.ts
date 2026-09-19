@@ -11,6 +11,53 @@ async function setToggle(page: Page, testId: string, on: boolean) {
   await expect(box).toBeChecked({ checked: on })
 }
 
+async function assertNoMasterLive(page: Page) {
+  await expect(page.getByTestId('live-bets')).toHaveCount(0)
+  await expect(page.getByTestId('live-banner')).toHaveCount(0)
+  await expect(page.getByTestId('confirm-live')).toHaveCount(0)
+  await expect(page.locator('body')).not.toContainText('master Live OFF · paper only')
+}
+
+async function assertCashColumnClear(page: Page) {
+  const head = page.getByTestId('bets-cash-head')
+  await expect(head).toBeVisible()
+  await expect(head).toHaveText('CASH')
+  const cell = page.getByTestId('bets-cash').first()
+  await expect(cell).toBeVisible()
+  const vis = await page.evaluate(() => {
+    const wrap = document.querySelector('.bets-log-wrap') as HTMLElement
+    const list = document.querySelector('[data-testid="bets-log"]') as HTMLElement
+    const headEl = document.querySelector('[data-testid="bets-cash-head"]') as HTMLElement
+    const cellEl = document.querySelector('[data-testid="bets-cash"]') as HTMLElement
+    const wr = wrap.getBoundingClientRect()
+    const hr = headEl.getBoundingClientRect()
+    const cr = cellEl.getBoundingClientRect()
+    const clientRight = wr.left + wrap.clientWidth
+    return {
+      headText: (headEl.textContent || '').trim(),
+      cellText: (cellEl.textContent || '').trim(),
+      headW: hr.width,
+      cellW: cr.width,
+      headRight: hr.right,
+      cellRight: cr.right,
+      clientRight,
+      listOverflowX: getComputedStyle(list).overflowX,
+      listOverflowY: getComputedStyle(list).overflowY,
+      wrapBar: getComputedStyle(wrap).scrollbarWidth,
+    }
+  })
+  expect(vis.headText).toBe('CASH')
+  expect(vis.headW).toBeGreaterThan(28)
+  expect(vis.cellW).toBeGreaterThan(28)
+  expect(vis.headRight).toBeLessThanOrEqual(vis.clientRight + 1)
+  expect(vis.cellRight).toBeLessThanOrEqual(vis.clientRight + 1)
+  expect(vis.cellText.length).toBeGreaterThan(1)
+  expect(vis.cellText).not.toMatch(/^\$\s*$/)
+  expect(vis.listOverflowX).toBe('visible')
+  expect(vis.listOverflowY).toBe('visible')
+  expect(vis.wrapBar).toBe('thin')
+}
+
 async function resetGoldDesk(page: Page) {
   await waitHost(page)
   await page.evaluate(() => window.scrollTo(0, 0))
@@ -25,9 +72,7 @@ async function resetGoldDesk(page: Page) {
       await setToggle(page, `bot-${id}`, true)
     }
   }
-  if (await page.getByTestId('live-bets').isChecked()) {
-    await setToggle(page, 'live-bets', false)
-  }
+  await assertNoMasterLive(page)
   await page.evaluate(() => window.scrollTo(0, 0))
 }
 
@@ -199,7 +244,7 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
   await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'false')
   await page.getByTestId('bets-filter-all').click()
   await expect(page.getByTestId('bets-filter-all')).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await expect(page.getByTestId('bot-btc')).toBeChecked()
   await expect(page.getByTestId('live-cash-btc')).not.toBeChecked()
   await expect(page.getByTestId('analyst-toggle')).toBeVisible()
@@ -230,14 +275,14 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
     await expect(page.getByTestId('contracts-btc')).toHaveValue('17')
   }
   await expect(page.getByTestId('tape-btc')).toBeVisible()
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await page.getByTestId('clock-btc').selectOption('5m')
   await expect(page.getByTestId('clock-btc')).toHaveValue('5m')
   await page.reload({ waitUntil: 'domcontentloaded' })
   await waitHost(page)
   await expect(page.getByTestId('clock-btc')).toHaveValue('5m')
   await expect(page.getByTestId('clock-ng')).toHaveValue('15m')
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await page.getByTestId('clock-btc').selectOption('15m')
 
   const serious = errors.filter(
@@ -350,7 +395,7 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.getByTestId('bets-pnl')).toContainText(/\$/)
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-bets-all.png' })
   await expect(page.getByTestId('bets-log')).toContainText('PAPER')
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   const modes = await page.getByTestId('bets-mode').allInnerTexts()
   expect(modes.some((m) => /PAPER/i.test(m))).toBeTruthy()
   expect(modes.length === 0 || modes.every((m) => /LIVE/i.test(m))).toBe(false)
@@ -364,7 +409,8 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.locator('.bets-log-head')).toContainText('CASH')
   await expect(page.locator('.bets-log-scroll')).toBeVisible()
   await expect(page.locator('.bets-log-wrap')).toHaveCSS('overflow-x', 'auto')
-  await expect(page.getByTestId('bets-log')).toHaveCSS('overflow-x', 'hidden')
+  await expect(page.getByTestId('bets-log')).toHaveCSS('overflow-x', 'visible')
+  await assertCashColumnClear(page)
   if (await page.locator('[data-kind="live"]').count()) {
     await expect(page.locator('[data-kind="live"] [data-testid="bets-cash"]').first()).toContainText('$')
   }
@@ -384,7 +430,7 @@ test('phone desk: 24H bets chips filter placed / W–L / P&L by tape', async ({ 
   await expect(page.getByTestId('bets-filter-cu')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('bets-log')).toContainText('PAPER')
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-bets-filter.png' })
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
 })
 
@@ -469,6 +515,7 @@ test('desktop desk: full bets log + auto analyst, no Accept/Deny', async ({ page
   await expect(page.locator('.bets-log-head')).toContainText('CASH')
   await expect(page.locator('.bets-log-head')).toContainText('CLOCK')
   await expect(page.locator('.result-win, .result-loss').first()).toBeVisible()
+  await assertCashColumnClear(page)
   await page.getByTestId('bets-24h').screenshot({ path: '/opt/cursor/artifacts/screenshots/desktop-bets-all.png' })
   await expect(page.getByTestId('analyst')).toBeVisible()
   await expect(page.getByTestId('analyst-lock')).toContainText(/No Accept/)
@@ -476,10 +523,10 @@ test('desktop desk: full bets log + auto analyst, no Accept/Deny', async ({ page
   await expect(page.locator('.rec-deny')).toHaveCount(0)
   await expect(page.getByTestId('analyst-auto-btc')).toBeVisible()
   await page.getByTestId('analyst').screenshot({ path: '/opt/cursor/artifacts/screenshots/desktop-analyst-auto.png' })
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
 })
 
-test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async ({ page }) => {
+test('phone desk: MAXIMUM QC every tap — no master Live; Live cash OFF is paper', async ({ page }) => {
   const livePosts: string[] = []
   page.on('request', (req) => {
     if (req.method() === 'POST' && /external-api\.kalshi\.com.*\/events\/orders/i.test(req.url())) {
@@ -495,21 +542,16 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
   await expect(page.locator('body')).not.toContainText('BITCOIN 15 MINUTE')
   await expect(page.getByTestId('bets-24h')).toBeVisible()
   await expect(page.getByTestId('save-btc')).toBeVisible()
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await waitHost(page)
   await resetGoldDesk(page)
-
-  await page.getByTestId('live-bets').click({ force: true })
-  await expect(page.getByTestId('live-banner')).toBeVisible()
-  await page.getByTestId('cancel-live').click()
-  await expect(page.getByTestId('live-banner')).toHaveCount(0)
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
-
-  await page.getByTestId('live-bets').click({ force: true })
-  await expect(page.getByTestId('live-banner')).toBeVisible()
-  await page.getByTestId('confirm-live').click()
-  await expect(page.getByTestId('live-banner')).toHaveCount(0)
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash OFF — paper only|Kalshi window closed|Bot OFF/)
+  await setToggle(page, 'live-cash-btc', true)
+  await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash ON — next through|Sit —|Kalshi keys missing|Kalshi window closed/)
+  await expect(page.getByTestId('bot-note-btc')).not.toContainText('Live cash OFF — paper only')
+  await setToggle(page, 'live-cash-btc', false)
+  await expect(page.getByTestId('bot-note-btc')).toContainText(/Live cash OFF — paper only|Kalshi window closed|Bot OFF/)
+  await assertNoMasterLive(page)
 
   await page.getByTestId('settings-toggle').click()
   await expect(page.getByTestId('settings')).toBeVisible()
@@ -598,7 +640,7 @@ test('phone desk: MAXIMUM QC every tap — Live and live-cash stay OFF', async (
     await expect(page.getByTestId('contracts-cu')).toHaveValue('5')
     await expect(page.getByTestId('contracts-gld')).toHaveValue('3')
   }
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
     await expect(page.getByTestId(`live-cash-${id}`)).not.toBeChecked()
     await expect(page.getByTestId(`bot-${id}`)).not.toBeChecked()
@@ -632,7 +674,7 @@ test('phone desk: boot first-paints from host creds — no Safari PEM, Live stay
   await expect(page.getByTestId('settings')).toHaveCount(0)
   await expect(page.getByTestId('key-pem')).toHaveCount(0)
   await expect(page.locator('.rain-col')).toHaveCount(0)
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await waitHost(page)
   await resetGoldDesk(page)
   await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
@@ -652,7 +694,7 @@ test('desktop desk: rain stays behind wordmark and BEAT/LIVE plates — Live OFF
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('desk-title')).toHaveText('HUB / PREDICTIONS')
   await expect(page.getByTestId('desk-title')).not.toHaveText(/HUBEB|PREDICTTIONS|HUBPREDICTIONS/)
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await expect(page.locator('.rain-col')).toHaveCount(0)
   await expect(page.getByTestId('bets-filter-all')).toHaveText('All')
   await expect(page.getByTestId('bets-filter-all')).not.toHaveText(/ALLLO/)
@@ -699,14 +741,14 @@ test('desktop desk: rain stays behind wordmark and BEAT/LIVE plates — Live OFF
   expect(iso.livePlate).toBe(true)
   expect(iso.rainBottom).toBeLessThan(iso.beatTop)
   await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/desk-desktop-isolated.png', fullPage: false })
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
 })
 
-test('Live cash ON survives reload; master Live stays OFF', async ({ page }) => {
+test('Live cash ON survives reload; no master Live switch', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await resetGoldDesk(page)
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await setToggle(page, 'live-cash-btc', true)
   await setToggle(page, 'live-cash-ng', true)
   await setToggle(page, 'live-cash-cu', true)
@@ -714,7 +756,7 @@ test('Live cash ON survives reload; master Live stays OFF', async ({ page }) => 
   await expect(page.getByTestId('live-cash-btc')).toBeChecked()
   await expect(page.getByTestId('live-cash-ng')).toBeChecked()
   await expect(page.getByTestId('live-cash-cu')).toBeChecked()
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await expect
     .poll(async () =>
       page.evaluate(() => {
@@ -740,7 +782,7 @@ test('Live cash ON survives reload; master Live stays OFF', async ({ page }) => 
   await expect(page.getByTestId('live-cash-ng')).toBeChecked()
   await expect(page.getByTestId('live-cash-cu')).toBeChecked()
   await expect(page.getByTestId('clock-btc')).toHaveValue('5m')
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await page.evaluate(() => localStorage.clear())
   await page.reload({ waitUntil: 'domcontentloaded' })
   await waitHost(page)
@@ -748,14 +790,14 @@ test('Live cash ON survives reload; master Live stays OFF', async ({ page }) => 
   await expect(page.getByTestId('live-cash-ng')).toBeChecked()
   await expect(page.getByTestId('live-cash-cu')).toBeChecked()
   await expect(page.getByTestId('clock-btc')).toHaveValue('5m')
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
   await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/live-cash-persist.png', clip: { x: 0, y: 0, width: 390, height: 844 } })
   await setToggle(page, 'live-cash-btc', false)
   await setToggle(page, 'live-cash-ng', false)
   await setToggle(page, 'live-cash-cu', false)
   await page.getByTestId('clock-btc').selectOption('15m')
   await expect(page.getByTestId('live-cash-btc')).not.toBeChecked()
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
 })
 
 test('live numbers stay painted without empty glitch frames', async ({ page }) => {
@@ -778,7 +820,7 @@ test('live numbers stay painted without empty glitch frames', async ({ page }) =
   expect(samples.every((s) => !/TO BEAT\s*$|NOW\s*$|\|\s*$|--:--/.test(s) || /\$|¢|\d/.test(s))).toBeTruthy()
   expect(samples.some((s) => /\$|¢|\d/.test(s))).toBeTruthy()
   await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-live-numbers.png', clip: { x: 0, y: 0, width: 390, height: 520 } })
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
 })
 
 test('LIVE chart has a continuous series, not one NOW dot', async ({ page }) => {
@@ -795,5 +837,5 @@ test('LIVE chart has a continuous series, not one NOW dot', async ({ page }) => 
   expect((d || '').length).toBeGreaterThan(40)
   expect(commands.length).toBeGreaterThan(2)
   await page.locator('[data-testid="race-btc"]').screenshot({ path: '/opt/cursor/artifacts/screenshots/btc-live-chart.png' })
-  await expect(page.getByTestId('live-bets')).not.toBeChecked()
+  await assertNoMasterLive(page)
 })
