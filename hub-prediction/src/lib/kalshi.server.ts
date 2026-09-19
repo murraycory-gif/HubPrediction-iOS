@@ -286,6 +286,18 @@ export function peekDeskBoard(): DeskBoard | null {
   return lastBoard
 }
 
+/** First-paint seed. Soft FAIL dumping the full race trail into SSR HTML. */
+export function slimDeskBoardSeed(board: DeskBoard | null): DeskBoard | null {
+  if (!board) return null
+  const tapes = { ...board.tapes }
+  for (const id of TAPE_IDS) {
+    const q = tapes[id]
+    if (!q || !Array.isArray(q.points) || q.points.length <= 32) continue
+    tapes[id] = { ...q, points: q.points.slice(-32) }
+  }
+  return { ...board, tapes }
+}
+
 export function resetDeskBoardForTests() {
   lastBoard = null
   lastBoardAt = 0

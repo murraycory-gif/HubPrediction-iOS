@@ -168,6 +168,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [chief, setChief] = useState<ChiefState>(() => loadChief())
   const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
   const [exitLogs, setExitLogs] = useState<ExitWatchLog[]>(() => loadExitLogs())
+  const [heavyReady, setHeavyReady] = useState(false)
   const sentRef = useRef<Record<string, SendClaim>>({})
   const clientOrderRef = useRef<Record<string, string>>({})
   const lastLocalWrite = useRef(0)
@@ -304,6 +305,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       setHostDeskWriter(null)
     }
   }, [])
+
+  useEffect(() => {
+    if (!hostReady) return
+    const start = window.setTimeout(() => setHeavyReady(true), 800)
+    return () => window.clearTimeout(start)
+  }, [hostReady])
 
   useEffect(() => {
     if (!hostReady) return
@@ -468,6 +475,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const cashHitsQuery = useQuery({
     queryKey: ['kalshi-cash-hits'],
     queryFn: () => getKalshiBook(),
+    enabled: heavyReady,
     refetchInterval: cashLatch || BOOK_LATCH_MS,
     staleTime: cashLatch ? 0 : 1_000,
     refetchOnMount: 'always',
@@ -488,6 +496,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const settledQuery = useQuery({
     queryKey: ['settled-desk'],
     queryFn: () => getSettledDesk(),
+    enabled: heavyReady,
     refetchInterval: 20_000,
     staleTime: 15_000,
   })
@@ -1206,6 +1215,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             events={liveEvents}
             killed={book.killed}
             rehab={rehab}
+            intelOn={heavyReady}
           />
         ) : null}
         <section className="exit-watch" data-testid="exit-watch">
@@ -1323,6 +1333,7 @@ function AnalystDesk({
   events,
   killed,
   rehab,
+  intelOn,
 }: {
   board: DeskBoard | null
   hits: ReturnType<typeof loadHits>
@@ -1331,6 +1342,7 @@ function AnalystDesk({
   events: Partial<Record<TapeId, string>>
   killed: boolean
   rehab: AnalystAutoState
+  intelOn: boolean
 }) {
   const liveSig = TAPE_IDS.map((id) => {
     const q = board?.tapes[id]
@@ -1339,6 +1351,7 @@ function AnalystDesk({
   const pathQuery = useQuery({
     queryKey: ['tape-paths', events, liveSig],
     queryFn: () => getTapePaths({ data: { events } }),
+    enabled: intelOn,
     staleTime: 60_000,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
@@ -1346,6 +1359,7 @@ function AnalystDesk({
   const briefQuery = useQuery({
     queryKey: ['desk-briefs', settings.clocks, liveSig],
     queryFn: () => getDeskBriefs({ data: { clocks: settings.clocks } }),
+    enabled: intelOn,
     staleTime: 8 * 60_000,
     refetchInterval: 8 * 60_000,
     placeholderData: keepPreviousData,

@@ -2,9 +2,9 @@ import { createServerFn } from '@tanstack/react-start'
 import type { ChartRange, TapeClock, TapeId } from './tapes'
 
 export const peekDesk = createServerFn({ method: 'GET' }).handler(async () => {
-  const { peekDeskBoard, startWarm } = await import('./kalshi.server')
+  const { peekDeskBoard, startWarm, slimDeskBoardSeed } = await import('./kalshi.server')
   startWarm()
-  return peekDeskBoard()
+  return slimDeskBoardSeed(peekDeskBoard())
 })
 
 export const getDeskBoard = createServerFn({ method: 'POST' })

@@ -1,11 +1,16 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Dashboard } from '../components/dashboard'
-import { getDeskBoard } from '../lib/btc-data'
+import { getDeskBoard, peekDesk } from '../lib/btc-data'
 
 export const Route = createFileRoute('/')({
   loader: async () => {
     try {
-      return await getDeskBoard({ data: {} })
+      const peek = await peekDesk()
+      if (peek) return peek
+      return await Promise.race([
+        getDeskBoard({ data: {} }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 600)),
+      ])
     } catch {
       return null
     }

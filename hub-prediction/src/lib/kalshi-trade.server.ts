@@ -6,6 +6,8 @@ import { cashFromBalancePayload } from './size-cash'
 
 const BASE = 'https://external-api.kalshi.com'
 const ROOT = '/trade-api/v2'
+/** Soft FAIL a hung Kalshi GET spinning the live tab. */
+const SIGNED_ABORT_MS = 4_000
 
 export type KalshiHostCreds = { keyId: string; pem: string }
 
@@ -117,11 +119,19 @@ async function signed(
     Accept: 'application/json',
   }
   if (body) headers['Content-Type'] = 'application/json'
-  const r = await fetch(BASE + path, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  })
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), SIGNED_ABORT_MS)
+  let r: Response
+  try {
+    r = await fetch(BASE + path, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ac.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
   const text = await r.text()
   let json: unknown = null
   try {
