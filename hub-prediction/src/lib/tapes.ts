@@ -120,11 +120,11 @@ export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
   return TAPE_SERIES[id][hydrateClock(clock)]
 }
 
-/** Structure board only. Prints ride LIVE_PRINT_MS. Fast near close so the next clock latches. */
-export const LIVE_PRINT_MS = 200
+/** Structure board only. Prints ride LIVE_PRINT_MS. Fast near close so the next clock latches. Soft FAIL 1Hz. */
+export const LIVE_PRINT_MS = 100
 export const LIVE_TRAIL_MS = 60 * 60_000
 export const LIVE_TRAIL_DOTS = 480
-export const BOARD_STRUCTURE_MS = 1000
+export const BOARD_STRUCTURE_MS = 400
 export const BOARD_ROLLOVER_MS = 350
 export const BOARD_CLOSED_MS = 200
 

@@ -2,6 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
 import { applyHostDeskState } from '../lib/desk-hydrate'
+import { DESK_TICK_MS } from '../lib/desk-tick'
 import { setHostDeskWriter } from '../lib/desk-persist'
 import {
   TAPE_IDS,
@@ -283,7 +284,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     refetchInterval: LIVE_PRINT_MS,
     refetchIntervalInBackground: true,
     placeholderData: keepPreviousData,
-    staleTime: 80,
+    staleTime: 40,
     retry: 1,
     refetchOnWindowFocus: false,
   })
@@ -560,7 +561,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   )
 
   return (
-    <div className="desk">
+    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS}>
       <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">

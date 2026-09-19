@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
-/** One desk clock. Soft FAIL a rAF loop per tape / chart / timer. */
-export const DESK_TICK_MS = 200
+/** One desk clock. Soft FAIL a rAF loop per tape / chart / timer. Soft FAIL 1Hz. */
+export const DESK_TICK_MS = 100
 
 type TickFn = (now: number) => void
 

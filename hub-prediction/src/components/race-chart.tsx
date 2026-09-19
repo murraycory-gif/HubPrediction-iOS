@@ -58,8 +58,8 @@ export function raceDomain(id: TapeId, beat: number, live: number | null, pts: P
   return { lo, hi }
 }
 
-/** Ease NOW toward the latest Kalshi last. Soft FAIL blank last-good. Soft FAIL a rAF per tape. */
-export function useSmoothedLive(live: number | null, ms = 180) {
+/** Ease NOW toward the latest Kalshi last. Soft FAIL blank last-good. Soft FAIL a rAF per tape. Soft FAIL 1Hz. */
+export function useSmoothedLive(live: number | null, ms = 70) {
   const tick = useDeskTick()
   const lastTick = useRef(tick)
   const held = useRef(live)
@@ -71,8 +71,9 @@ export function useSmoothedLive(live: number | null, ms = 180) {
     shownRef.current = target
   }
   useEffect(() => {
-    const dt = Math.max(0, tick - lastTick.current)
-    lastTick.current = tick
+    const now = Date.now()
+    const dt = Math.max(0, now - lastTick.current)
+    lastTick.current = now
     const cur = shownRef.current
     let next = cur
     if (target == null || !Number.isFinite(target) || target <= 0) next = cur ?? held.current

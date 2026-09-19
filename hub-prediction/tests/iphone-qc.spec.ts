@@ -885,6 +885,47 @@ test('LIVE chart has a continuous series, not one NOW dot', async ({ page }) => 
   await assertNoMasterLive(page)
 })
 
+test('all four tapes stay Kalshi-smooth — multi-Hz NOW, continuous path, no empty snap', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-desk-tick', '100')
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-print-ms', '100')
+  const ids = ['btc', 'ng', 'cu', 'gld'] as const
+  for (const id of ids) {
+    await expect(page.getByTestId(`live-${id}`)).toBeVisible()
+    await expect
+      .poll(async () => page.locator(`[data-testid="race-${id}"] .race-path`).count(), { timeout: 20_000 })
+      .toBeGreaterThan(0)
+  }
+  const samples: string[] = []
+  const started = Date.now()
+  while (Date.now() - started < 2500) {
+    const row: string[] = []
+    for (const id of ids) {
+      row.push((await page.getByTestId(`live-${id}`).innerText()).trim())
+      row.push((await page.getByTestId(`beat-value-${id}`).innerText()).trim())
+      row.push((await page.getByTestId(`ask-${id}`).innerText()).trim())
+    }
+    samples.push(row.join('|'))
+    await page.waitForTimeout(80)
+  }
+  expect(samples.length).toBeGreaterThanOrEqual(12)
+  for (const s of samples) {
+    expect(s).toMatch(/\$|¢|\d/)
+    expect(s).not.toMatch(/NOW\s*$|TO BEAT\s*$/)
+    expect(s.split('|').filter((_, i) => i % 3 === 0).some((v) => /\$|\d/.test(v))).toBeTruthy()
+  }
+  for (const id of ids) {
+    const d = await page.locator(`[data-testid="race-${id}"] .race-path`).getAttribute('d')
+    const commands = (d || '').match(/[CLc]/g) ?? []
+    expect((d || '').length).toBeGreaterThan(40)
+    expect(commands.length).toBeGreaterThan(2)
+  }
+  await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/four-tape-kalshi-smooth.png', fullPage: false })
+  await assertNoMasterLive(page)
+})
+
 test('phone desk: paper deskfill shows in BETS as MODE PAPER / CASH N/A — no master Live', async ({ page }) => {
   const now = Date.now()
   await page.addInitScript(

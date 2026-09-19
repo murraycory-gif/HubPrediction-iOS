@@ -486,6 +486,7 @@ describe('gold race path', () => {
     expect(holdChartTrail(prev, [], 4358.6, true, now).length).toBeGreaterThan(2)
     expect(holdCloseAt(undefined, now + 60_000)).toBe(now + 60_000)
     expect(holdCloseAt(now + 90_000, now + 60_000)).toBe(now + 90_000)
+    expect(DESK_TICK_MS).toBe(100)
     expect(DESK_TICK_MS).toBeLessThanOrEqual(250)
     const gold = raceDomain('gld', 4358, 4360, cleaned)
     expect(gold.hi - gold.lo).toBeLessThan(40)
@@ -506,9 +507,9 @@ describe('gold race path', () => {
     expect(empty.lo).toBe(0)
   })
 
-  it('LIVE chart eases NOW on the shared 200ms desk tick — Soft FAIL a rAF per tape', async () => {
+  it('LIVE chart eases NOW on the shared 100ms desk tick — Soft FAIL a rAF per tape', async () => {
     const src = await readFile(new URL('../src/components/race-chart.tsx', import.meta.url), 'utf8')
-    expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 180\)/)
+    expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 70\)/)
     expect(src).toMatch(/useDeskTick/)
     expect(src).toMatch(/holdChartTrail/)
     expect(src).toMatch(/displayLive/)
