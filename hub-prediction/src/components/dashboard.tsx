@@ -180,7 +180,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       return writeChain
     }
     setHostDeskWriter(writeHost)
-    void getDeskState()
+    void getDeskState({ data: { t: Date.now() } })
       .then(async (host) => {
         if (host && applyHostDeskState(host)) {
           setSettings(loadSettings())
@@ -232,7 +232,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const latchHost = async () => {
       if (Date.now() - lastLocalWrite.current < SETTINGS_DEBOUNCE_MS + 400) return
       try {
-        const host = await getDeskState()
+        const host = await getDeskState({ data: { t: Date.now() } })
         if (cancelled || !host) return
         const newer = hostSettingsNewer(host)
         const applied = applyHostDeskState(host)

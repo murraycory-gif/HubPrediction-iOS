@@ -34,10 +34,12 @@ export const getLivePrints = createServerFn({ method: 'POST' })
     return loadLivePrints(data?.events ?? {}, liveRangeFromCharts(data?.charts, data?.clocks))
   })
 
-export const getDeskState = createServerFn({ method: 'GET' }).handler(async () => {
-  const { readDeskState } = await import('./desk-state.server')
-  return readDeskState()
-})
+export const getDeskState = createServerFn({ method: 'POST' })
+  .validator((d: { t?: number } | undefined) => d ?? {})
+  .handler(async () => {
+    const { readDeskState } = await import('./desk-state.server')
+    return readDeskState()
+  })
 
 export const saveDeskState = createServerFn({ method: 'POST' })
   .validator((d: { settings?: unknown; tickets?: unknown; finance?: unknown; hits?: unknown } | undefined) => d ?? {})

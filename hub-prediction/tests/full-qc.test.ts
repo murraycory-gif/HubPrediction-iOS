@@ -128,6 +128,7 @@ describe('QC2 wires', () => {
     expect(dash).not.toMatch(/queryKey: \['live-prints', liveEvents, settings\.charts\][\s\S]{0,80}fetchedAt/)
     const data = await readFile(new URL('../src/lib/btc-data.ts', import.meta.url), 'utf8')
     expect(data).toMatch(/export const getLivePrints/)
+    expect(data).toMatch(/export const getDeskState = createServerFn\(\{ method: 'POST' \}\)/)
     expect(data).toMatch(/export const getDeskBriefs/)
     expect(data).toMatch(/hostLivePlaceGate/)
     expect(data).toMatch(/readDeskState/)
