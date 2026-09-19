@@ -44,9 +44,9 @@ describe('desk chiefs Soft KEEP gold + Google News RSS', () => {
     expect(DESK_EXPERT.ng.title).toMatch(/NG desk chief/)
     expect(DESK_EXPERT.cu.title).toMatch(/CU desk chief/)
     expect(DESK_EXPERT.gld.title).toMatch(/GLD desk chief/)
-    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89, liveOn: false })
-    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, liveOn: false })
-    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002, liveOn: false })
+    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 12, armToMin: 0.5, through: 15, centLo: 45, centHi: 89, liveOn: true, contracts: 20 })
+    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, centLo: 34, liveOn: true, contracts: 15 })
+    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, liveOn: true, contracts: 15 })
     expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 10, armToMin: 3, through: 2, centLo: 34, liveOn: false })
     for (const id of TAPE_IDS) {
       expect(newsRssUrl(id)).toMatch(/^https:\/\/news\.google\.com\/rss\/search\?/)
@@ -108,7 +108,7 @@ describe('forecastSwing good / bad', () => {
   it('sits a hug inside through and flags a late spike', () => {
     const swing = forecastSwing({
       id: 'btc',
-      live: 76520,
+      live: 76508,
       beat: 76500,
       closeAt: NOW + 8 * 60_000,
       points: [],
@@ -152,7 +152,7 @@ describe('forecastSwing good / bad', () => {
       now: NOW,
     })
     expect(swing.side).toBe('down')
-    expect(swing.risk).toBe('watch')
+    expect(swing.risk).toBe('swing')
     expect(swing.good).toMatch(/DOWN/)
     expect(swing.bad).toMatch(/Fade/)
   })
@@ -179,7 +179,7 @@ describe('buildDeskBrief per-desk report', () => {
       now: NOW,
     })
     expect(brief.expert).toBe(DESK_EXPERT.btc.title)
-    expect(brief.focus).toMatch(/69–89/)
+    expect(brief.focus).toMatch(/45–89/)
     expect(brief.upcoming[0]?.kind).toBe('live')
     expect(brief.upcoming.some((r) => r.ticker === 'btc-next')).toBe(true)
     expect(brief.trend).toMatch(/24h \+\$180/)

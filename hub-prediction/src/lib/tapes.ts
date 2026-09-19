@@ -532,11 +532,11 @@ export const TAPE_META: Record<
   slv: { id: 'slv', label: 'SLV', short: 'SLV', series: 'KXSILVER15M', decimals: 2, pulseName: 'SILVER 15 MINUTE' },
 }
 
-/** Final locked Grok Build recipes — Soft FAIL inventing new ones. */
+/** Final locked Grok Build recipes — Soft FAIL inventing new ones. Soft FAIL sitting all day on 8→3 / $40 / 69¢. */
 export const GOLD_RECIPES: Record<TapeId, TapeRecipe> = {
-  btc: { contracts: 1, botOn: true, liveOn: false, armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 },
-  ng: { contracts: 1, botOn: true, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
-  cu: { contracts: 1, botOn: true, liveOn: false, armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
+  btc: { contracts: 20, botOn: true, liveOn: true, armFromMin: 12, armToMin: 0.5, through: 15, centLo: 45, centHi: 89 },
+  ng: { contracts: 15, botOn: true, liveOn: true, armFromMin: 12, armToMin: 0.45, through: 0.001, centLo: 34, centHi: 89 },
+  cu: { contracts: 15, botOn: true, liveOn: true, armFromMin: 12, armToMin: 0.45, through: 0.001, centLo: 34, centHi: 89 },
   gld: { contracts: 1, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 },
   wti: { contracts: 1, botOn: true, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.05, centLo: 34, centHi: 89 },
   slv: { contracts: 1, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 0.05, centLo: 34, centHi: 89 },
@@ -608,8 +608,10 @@ export function clampTapeRecipe(id: TapeId, partial: Partial<TapeRecipe> | undef
   let armTo = clampNum(Number(partial?.armToMin ?? gold.armToMin), 0.2, 12)
   if (armTo >= armFrom) armTo = Math.max(0.2, Math.round((armFrom - 0.2) * 100) / 100)
   const thru = Number(partial?.through ?? gold.through)
-  const through = clampNum(Number.isFinite(thru) ? thru : gold.through, gold.through * 0.25, gold.through * 4)
-  const minLo = id === 'btc' ? 69 : 20
+  const thruLo = Math.min(gold.through * 0.25, 0.0005)
+  const thruHi = Math.max(gold.through * 4, gold.through)
+  const through = clampNum(Number.isFinite(thru) ? thru : gold.through, thruLo, thruHi)
+  const minLo = id === 'btc' ? 45 : 20
   let centLo = Math.round(clampNum(Number(partial?.centLo ?? gold.centLo), minLo, 90))
   let centHi = Math.round(clampNum(Number(partial?.centHi ?? gold.centHi), centLo + 1, 95))
   if (centHi <= centLo) centHi = Math.min(95, centLo + 1)
@@ -627,15 +629,15 @@ export function clampTapeRecipe(id: TapeId, partial: Partial<TapeRecipe> | undef
 
 function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe, id: TapeId): TapeRecipe {
   const next = clampTapeRecipe(id, partial, gold)
-  if (partial == null || typeof partial.botOn !== 'boolean') next.botOn = true
+  if (partial == null || typeof partial.botOn !== 'boolean') next.botOn = gold.botOn === true
   else next.botOn = partial.botOn === true
-  if (partial == null || typeof partial.liveOn !== 'boolean') next.liveOn = false
+  if (partial == null || typeof partial.liveOn !== 'boolean') next.liveOn = gold.liveOn === true
   else next.liveOn = partial.liveOn === true
   if (!tapeAllowsLive(id)) next.liveOn = false
   return next
 }
 
-/** Bots default ON. Live cash boots OFF unless stored true. User Bot / Live cash choices persist. Soft FAIL live-cash ON by default. */
+/** Bots default ON. BTC/NG/CU gold Live cash ON. User Bot / Live cash choices persist. Soft FAIL factory 1/off overwrite. */
 export function hydrateSettings(raw: unknown): DeskSettings {
   const o = raw && typeof raw === 'object' ? (raw as Partial<DeskSettings> & { tapes?: Partial<Record<TapeId, Partial<TapeRecipe>>> }) : {}
   const savedAt = Number((o as { savedAt?: unknown }).savedAt) || undefined
@@ -647,8 +649,8 @@ export function hydrateSettings(raw: unknown): DeskSettings {
       TAPE_IDS.some((id) => {
         const stored = o.tapes?.[id]
         return (
-          stored?.liveOn === true ||
-          stored?.botOn === false ||
+          (typeof stored?.liveOn === 'boolean' && stored.liveOn !== GOLD_RECIPES[id].liveOn) ||
+          (typeof stored?.botOn === 'boolean' && stored.botOn !== GOLD_RECIPES[id].botOn) ||
           (stored?.contracts != null && clampContracts(Number(stored.contracts)) !== GOLD_RECIPES[id].contracts)
         )
       }))
@@ -682,8 +684,8 @@ export function settingsReadyToPush(settings: DeskSettings) {
   if ((Number(settings.togglesAt) || 0) > 0) return true
   return TAPE_IDS.some(
     (id) =>
-      settings.tapes[id].liveOn === true ||
-      settings.tapes[id].botOn === false ||
+      settings.tapes[id].liveOn !== GOLD_RECIPES[id].liveOn ||
+      settings.tapes[id].botOn !== GOLD_RECIPES[id].botOn ||
       settings.tapes[id].contracts !== GOLD_RECIPES[id].contracts,
   )
 }
@@ -868,7 +870,7 @@ export function livePlaceGate(opts: { botOn?: boolean; liveOn?: boolean; hasKeys
   return { ok: true as const }
 }
 
-/** Client Bot + Live cash ON posts even if host recipe is still factory OFF. Soft FAIL host-lag swallow. Soft FAIL master liveBets. */
+/** Client Bot + Live cash ON posts even if host recipe is still factory OFF. Explicit client OFF Soft FAIL gold Live ON swallow. Soft FAIL master liveBets. */
 export function hostLivePlaceGate(opts: {
   settings?: unknown
   tape?: string
@@ -880,8 +882,8 @@ export function hostLivePlaceGate(opts: {
   if (!tapeAllowsLive(opts.tape)) return { ok: false as const, reason: `${opts.tape.toUpperCase()} paper desk — Soft FAIL Live` }
   const recipe = hydrateSettings(opts.settings).tapes[opts.tape]
   return livePlaceGate({
-    botOn: opts.clientBotOn === true || recipe.botOn === true,
-    liveOn: opts.clientLiveOn === true || recipe.liveOn === true,
+    botOn: opts.clientBotOn === true || (opts.clientBotOn !== false && recipe.botOn === true),
+    liveOn: opts.clientLiveOn === true || (opts.clientLiveOn !== false && recipe.liveOn === true),
     hasKeys: opts.hasKeys,
   })
 }

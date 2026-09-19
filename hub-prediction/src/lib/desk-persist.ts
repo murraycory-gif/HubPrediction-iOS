@@ -46,29 +46,37 @@ function tapeContracts(t: { contracts?: unknown } | undefined) {
   return Number.isFinite(n) && n > 0 ? n : 1
 }
 
-function tapeIsGoldDefault(t: { liveOn?: unknown; contracts?: unknown } | undefined) {
+function tapeIsGoldDefault(t: { liveOn?: unknown; contracts?: unknown } | undefined, id: string) {
   if (!t) return true
-  return t.liveOn !== true && tapeContracts(t) === 1
+  const factory: Record<string, { liveOn: boolean; contracts: number }> = {
+    btc: { liveOn: true, contracts: 20 },
+    ng: { liveOn: true, contracts: 15 },
+    cu: { liveOn: true, contracts: 15 },
+    gld: { liveOn: false, contracts: 1 },
+    wti: { liveOn: false, contracts: 1 },
+    slv: { liveOn: false, contracts: 1 },
+  }
+  const gold = factory[id] ?? { liveOn: false, contracts: 1 }
+  return t.liveOn === gold.liveOn && tapeContracts(t) === gold.contracts
 }
 
 export function settingsHasUserPicks(settings: unknown) {
   if (!settings || typeof settings !== 'object') return false
   const o = settings as { togglesPicked?: unknown; togglesAt?: unknown }
   if (o.togglesPicked === true || (Number(o.togglesAt) || 0) > 0) return true
-  if (settingsHasUserLive(settings)) return true
   return TOGGLE_IDS.some((id) => {
     const t = settingsTapes(settings)[id]
-    return t?.liveOn === true || t?.botOn === false || tapeContracts(t) !== 1
+    return !tapeIsGoldDefault(t, id) || t?.botOn === false
   })
 }
 
 function incomingIsUnsavedFactory(settings: unknown) {
   if (!settings || typeof settings !== 'object') return true
-  if (settingsHasUserLive(settings)) return false
   const o = settings as { savedAt?: unknown; togglesPicked?: unknown; togglesAt?: unknown }
-  const allGold = TOGGLE_IDS.every((id) => tapeIsGoldDefault(settingsTapes(settings)[id]))
-  if (allGold && o.togglesPicked !== true && (Number(o.togglesAt) || 0) === 0) return true
-  return (Number(o.savedAt) || 0) === 0 && o.togglesPicked !== true && (Number(o.togglesAt) || 0) === 0
+  if (o.togglesPicked === true || (Number(o.togglesAt) || 0) > 0) return false
+  const allGold = TOGGLE_IDS.every((id) => tapeIsGoldDefault(settingsTapes(settings)[id], id))
+  if (allGold) return true
+  return (Number(o.savedAt) || 0) === 0
 }
 
 /** Soft FAIL GOLD contracts 1 / liveOn false overwriting a user/phone pick. */
@@ -94,7 +102,11 @@ function protectUserSizes(winner: unknown, other: unknown) {
       liveOn = true
       changed = true
     }
-    if (oC > 1 && wC === 1 && !winnerNewer) {
+    if (o.liveOn !== true && w.liveOn === true && !winnerNewer) {
+      liveOn = false
+      changed = true
+    }
+    if (oC > 1 && wC !== oC && !winnerNewer) {
       contracts = oC
       changed = true
     }

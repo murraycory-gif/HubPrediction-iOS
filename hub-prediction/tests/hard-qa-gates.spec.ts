@@ -384,13 +384,77 @@ test('BTC liveOn sit→send: in-arm 70¢ lean-up Soft FAIL sit (bot loop, not TE
   expect(msg).not.toMatch(/After-fee EV|lock-in|Clock spend|paper 48h/)
 })
 
+test('BTC liveOn sit→send: 50¢ lean-through Soft FAIL sit', async ({ page }) => {
+  test.setTimeout(45_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await allowLiveArm(page)
+  const closeAt = Date.now() + 6 * 60_000
+  const ticker = `KXBTC15M-PRINT50-${closeAt}`
+  await page.evaluate(({ at, ticker }) => {
+    const w = window as Window & {
+      __HUB_PLACE_CALLS?: unknown[]
+      __HUB_PLACE?: (p: unknown) => Promise<unknown>
+      __HUB_TEST_LIVE_QUOTE?: Record<string, unknown>
+    }
+    w.__HUB_PLACE_CALLS = []
+    w.__HUB_PLACE = async (p) => {
+      w.__HUB_PLACE_CALLS!.push(p)
+      return {
+        order: {
+          order_id: '01print-btc-50-filled',
+          status: 'executed',
+          fill_count: 20,
+        },
+      }
+    }
+    w.__HUB_TEST_LIVE_QUOTE = {
+      btc: {
+        ticker,
+        clock: '15m',
+        clockId: '15m',
+        closeAt: at,
+        tradingActive: true,
+        openMarkets: 1,
+        live: 80020,
+        beat: 80000,
+        yesAsk: 50,
+        noAsk: 51,
+        fetchedAt: Date.now(),
+      },
+    }
+  }, { at: closeAt, ticker })
+  await setToggle(page, 'bot-btc', true)
+  await setToggle(page, 'live-cash-btc', true)
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const w = window as Window & { __HUB_TEST_BOTS?: { scan: () => void }; __HUB_PLACE_CALLS?: unknown[] }
+        w.__HUB_TEST_BOTS?.scan()
+        return w.__HUB_PLACE_CALLS?.length ?? 0
+      }),
+    { timeout: 12_000 },
+    )
+    .toBeGreaterThan(0)
+  const placed = await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_PLACE_CALLS?: Array<{ yesAsk?: number; ticker?: string; liveOn?: boolean }>
+    }
+    return w.__HUB_PLACE_CALLS?.[0] ?? null
+  })
+  expect(placed?.ticker).toBe(ticker)
+  expect(placed?.yesAsk).toBe(50)
+  expect(placed?.liveOn).toBe(true)
+})
+
 test('BTC liveOn arm-cross: out of arm sits, in-arm tick posts', async ({ page }) => {
   test.setTimeout(45_000)
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
   await allowLiveArm(page)
-  const outAt = Date.now() + 10 * 60_000
+  const outAt = Date.now() + 14 * 60_000
   const inAt = Date.now() + 6 * 60_000
   const ticker = `KXBTC15M-ARMCROSS-${inAt}`
   await page.evaluate(({ at, ticker }) => {
@@ -795,4 +859,51 @@ test('prints soak ≥10s Soft FAIL FEED STALE under normal poll', async ({ page 
   expect(end.stale).toBe(false)
   expect(end.banner).toBe(false)
   expect(end.flag).toBe('0')
+})
+
+test('3s print latency Soft FAIL banner; 12s dead paints; recover clears', async ({ page }) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  await expect
+    .poll(async () => page.evaluate(() => Boolean((window as Window & { __HUB_TEST_FEED?: unknown }).__HUB_TEST_FEED)), {
+      timeout: 20_000,
+    })
+    .toBe(true)
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-feed-stale-ms', '8000')
+  await page.evaluate(() => {
+    ;(window as Window & { __HUB_TEST_FEED?: { delayPrints: (ms: number) => void } }).__HUB_TEST_FEED!.delayPrints(3000)
+  })
+  await page.waitForTimeout(5_200)
+  const slow = await page.evaluate(() => {
+    const w = window as Window & { __HUB_TEST_FEED?: { stale: () => boolean; threshold: () => number } }
+    return {
+      stale: w.__HUB_TEST_FEED!.stale(),
+      banner: Boolean(document.querySelector('[data-testid="feed-stale"]')),
+      flag: document.querySelector('[data-testid="desk"]')?.getAttribute('data-feed-stale'),
+      threshold: w.__HUB_TEST_FEED!.threshold(),
+    }
+  })
+  expect(slow.stale).toBe(false)
+  expect(slow.banner).toBe(false)
+  expect(slow.flag).toBe('0')
+  expect(slow.threshold).toBeGreaterThanOrEqual(8000)
+  await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_TEST_FEED?: { delayPrints: (ms: number) => void; killPrints: (on?: boolean) => void }
+    }
+    w.__HUB_TEST_FEED!.delayPrints(0)
+    w.__HUB_TEST_FEED!.killPrints(true)
+  })
+  await page.waitForTimeout(12_200)
+  await expect(page.getByTestId('feed-stale')).toBeVisible()
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-feed-stale', '1')
+  await page.evaluate(() => {
+    const w = window as Window & { __HUB_TEST_FEED?: { killPrints: (on?: boolean) => void; refetchPrints: () => void } }
+    w.__HUB_TEST_FEED!.killPrints(false)
+    w.__HUB_TEST_FEED!.refetchPrints()
+  })
+  await expect(page.getByTestId('feed-stale')).toHaveCount(0, { timeout: 15_000 })
+  await expect(page.getByTestId('desk')).toHaveAttribute('data-feed-stale', '0')
 })

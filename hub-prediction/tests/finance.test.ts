@@ -68,8 +68,8 @@ describe('finance Soft KEEP', () => {
 
   it('recommends gold contract sizes and does not retune recipes', () => {
     expect(recommendSize('btc')).toBe(GOLD_RECIPES.btc.contracts)
-    expect(recommendSize('ng')).toBe(1)
-    expect(GOLD_RECIPES.btc).toMatchObject({ through: 40, armFromMin: 8, centLo: 69 })
+    expect(recommendSize('ng')).toBe(15)
+    expect(GOLD_RECIPES.btc).toMatchObject({ through: 15, armFromMin: 12, centLo: 45, contracts: 20, liveOn: true })
     expect(HIT_FLOOR).toBe(80)
     expect(hitFloorGate(0, 0).ok).toBe(true)
     expect(hitFloorGate(3, 0).ok).toBe(true)
@@ -136,6 +136,8 @@ describe('finance Soft KEEP', () => {
   })
 
   it('Soft FAIL asks ≥80¢ unless the book is locked — factory 89 is not a lock', () => {
+    expect(askAllowedByGold('btc', 50)).toBe(true)
+    expect(askAllowedByGold('btc', 70)).toBe(true)
     expect(askAllowedByGold('btc', 79)).toBe(true)
     expect(askAllowedByGold('btc', 80)).toBe(false)
     expect(askAllowedByGold('btc', 82)).toBe(false)
@@ -556,7 +558,7 @@ describe('finance Soft KEEP', () => {
     expect(applyBetsFilter(persisted, 'ng').betsFilter).toEqual(['btc', 'ng'])
     expect(loadSettings().betsFilter).toEqual(['btc', 'ng'])
     expect(loadSettings()).not.toHaveProperty('liveBets')
-    expect(loadSettings().tapes.btc.armFromMin).toBe(8)
+    expect(loadSettings().tapes.btc.armFromMin).toBe(12)
   })
 
   it('books Kalshi fills + settlements + open positions from first deposit', () => {
@@ -922,18 +924,9 @@ describe('liveBotCall instant Kalshi post', () => {
     expect(paperFillAllowed({ liveCash: false, rehabPaper: false, stale: false }).ok).toBe(true)
   })
 
-  it('liveTapeDecision BTC liveOn inArm 76¢ through → send Soft FAIL sit', () => {
+  it('liveTapeDecision BTC liveOn inArm 50–76¢ through $15 → send Soft FAIL sit', () => {
     const now = 1_700_000_000_000
-    const recipe = {
-      contracts: 20,
-      botOn: true,
-      liveOn: true,
-      armFromMin: 8,
-      armToMin: 3,
-      through: 40,
-      centLo: 69,
-      centHi: 89,
-    }
+    const recipe = GOLD_RECIPES.btc
     const hub = liveTapeDecision({
       id: 'btc',
       quote: {
@@ -951,13 +944,30 @@ describe('liveBotCall instant Kalshi post', () => {
       now,
     })
     expect(hub).toEqual({ action: 'send', call: 'live', lean: 'up', ask: 76 })
+    const mid = liveTapeDecision({
+      id: 'btc',
+      quote: {
+        ticker: 'KXBTC15M-PRINT50',
+        closeAt: now + 6 * 60_000,
+        tradingActive: true,
+        live: 80020,
+        beat: 80000,
+        yesAsk: 50,
+        noAsk: 51,
+      },
+      recipe,
+      botOn: true,
+      liveCash: true,
+      now,
+    })
+    expect(mid).toEqual({ action: 'send', call: 'live', lean: 'up', ask: 50 })
     const hug = liveTapeDecision({
       id: 'btc',
       quote: {
         ticker: 'KXBTC15M-26SEP191245-45',
         closeAt: now + 3.54 * 60_000,
         tradingActive: true,
-        live: 80020,
+        live: 80010,
         beat: 80000,
         yesAsk: 76,
         noAsk: 25,
@@ -989,7 +999,7 @@ describe('liveBotCall instant Kalshi post', () => {
       id: 'btc',
       quote: {
         ticker: 'KXBTC15M-26SEP191245-45',
-        closeAt: now + 10 * 60_000,
+        closeAt: now + 14 * 60_000,
         tradingActive: true,
         live: 80080,
         beat: 80000,
@@ -1002,7 +1012,7 @@ describe('liveBotCall instant Kalshi post', () => {
       now,
     })
     expect(outOfArm.action).toBe('sit')
-    expect(outOfArm).toMatchObject({ reason: 'Sit — arm 8–3 min' })
+    expect(outOfArm).toMatchObject({ reason: 'Sit — arm 12–0.5 min' })
   })
 
   it('tapeBotNote names Live cash paper vs live — Soft FAIL master Live copy', () => {

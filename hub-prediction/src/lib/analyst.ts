@@ -258,7 +258,7 @@ function recommendRecipe(
 
   if (score.outBand >= 2 && score.pct < HIT_FLOOR) {
     if (id === 'btc') {
-      why.push(`${score.outBand} ¢-band misses — keep BTC 69–89, do not open 56–68`)
+      why.push(`${score.outBand} ¢-band misses — keep BTC 45–89, do not sit 50–68`)
     } else {
       centLo = Math.max(id === 'gld' ? 34 : 28, current.centLo - 4)
       why.push(`${score.outBand} ¢-band misses under ${HIT_FLOOR}% — sit more ¢, do not chase`)

@@ -34,11 +34,20 @@ afterEach(() => {
 })
 
 describe('QC0 defaults Soft FAIL Live / live-cash ON', () => {
-  it('defaults and hydrate stay Live OFF and every tape live-cash OFF', () => {
+  it('defaults bake Live print desks ON — Soft FAIL factory 1/off wipe', () => {
     const s = hydrateSettings(null)
     expect(s).not.toHaveProperty('liveBets')
     expect(DEFAULT_SETTINGS).not.toHaveProperty('liveBets')
-    for (const id of TAPE_IDS) {
+    expect(GOLD_RECIPES.btc).toMatchObject({ liveOn: true, contracts: 20, through: 15, centLo: 45, armFromMin: 12 })
+    expect(GOLD_RECIPES.ng).toMatchObject({ liveOn: true, contracts: 15, through: 0.001, armFromMin: 12 })
+    expect(GOLD_RECIPES.cu).toMatchObject({ liveOn: true, contracts: 15, through: 0.001, armFromMin: 12 })
+    expect(s.tapes.btc.liveOn).toBe(true)
+    expect(s.tapes.ng.liveOn).toBe(true)
+    expect(s.tapes.cu.liveOn).toBe(true)
+    expect(cashGates(s, 'btc').ok).toBe(true)
+    expect(cashGates(s, 'ng').ok).toBe(true)
+    expect(cashGates(s, 'cu').ok).toBe(true)
+    for (const id of ['gld', 'wti', 'slv'] as const) {
       expect(s.tapes[id].liveOn).toBe(false)
       expect(DEFAULT_SETTINGS.tapes[id].liveOn).toBe(false)
       expect(GOLD_RECIPES[id].liveOn).toBe(false)
@@ -134,6 +143,10 @@ describe('QC2 wires', () => {
     expect(dash).toMatch(/liveEventKey/)
     const tick = await readFile(new URL('../src/lib/desk-tick.ts', import.meta.url), 'utf8')
     expect(tick).toMatch(/export const DESK_TICK_MS = 100/)
+    expect(tick).toMatch(/export const FEED_STALE_MS = 8_000/)
+    expect(tick).toMatch(/export const FEED_STALE_RTT_MULT = 3/)
+    expect(tick).toMatch(/export const FEED_STALE_RECOVER_MS = 8_000/)
+    expect(tick).not.toMatch(/export const FEED_STALE_MS = 2_500/)
     const tapesSrc = await readFile(new URL('../src/lib/tapes.ts', import.meta.url), 'utf8')
     expect(tapesSrc).toMatch(/export const LIVE_PRINT_MS = 100/)
     expect(tapesSrc).toMatch(/export const BOARD_STRUCTURE_MS = 400/)
@@ -143,8 +156,8 @@ describe('QC2 wires', () => {
     expect(tapesSrc.indexOf('now - c.at >= CLAIM_COOLDOWN_MS')).toBeLessThan(tapesSrc.indexOf('prev.tries >= CLAIM_MAX_TRIES'))
     expect(tapesSrc).not.toMatch(/liveBets:/)
     expect(tapesSrc).not.toMatch(/setLiveBets/)
-    expect(tapesSrc).toMatch(/clientLiveOn === true \|\| recipe\.liveOn === true/)
-    expect(tapesSrc).toMatch(/clientBotOn === true \|\| recipe\.botOn === true/)
+    expect(tapesSrc).toMatch(/clientLiveOn === true \|\| \(opts\.clientLiveOn !== false && recipe\.liveOn === true\)/)
+    expect(tapesSrc).toMatch(/clientBotOn === true \|\| \(opts\.clientBotOn !== false && recipe\.botOn === true\)/)
     expect(tapesSrc).not.toMatch(/clientLiveOn === true && recipe\.liveOn === true/)
     const race = await readFile(new URL('../src/components/race-chart.tsx', import.meta.url), 'utf8')
     expect(race).toMatch(/holdChartTrail/)
@@ -264,6 +277,9 @@ describe('QC2 wires', () => {
     expect(dash).toMatch(/feed-stale/)
     expect(dash).toMatch(/feedIsStale/)
     expect(dash).toMatch(/lastPrintOkAt/)
+    expect(dash).toMatch(/lastPrintRttMs/)
+    expect(dash).toMatch(/FEED_STALE_RECOVER_MS/)
+    expect(dash).toMatch(/killPrints/)
     expect(dash).not.toMatch(/wall - printAt/)
     expect(dash).not.toMatch(/useDeskTick\(\)/)
     expect(tapesSrc).toMatch(/export const PRINT_WIRE_DOTS = 12/)
@@ -514,7 +530,7 @@ describe('QC3 live-cash READY dry-run — Soft FAIL real POST', () => {
   it('finance never sends and liveSendGate sits without the three cash gates', () => {
     expect(() => financeSendsOrders()).toThrow(/must not send/i)
     const s = hydrateSettings(null)
-    expect(cashGates(s, 'btc').ok).toBe(false)
+    expect(cashGates(s, 'btc').ok).toBe(true)
     const blocked = liveSendGate(emptyFinance(), {
       tape: 'btc',
       ticker: 'KXBTC15M-1',

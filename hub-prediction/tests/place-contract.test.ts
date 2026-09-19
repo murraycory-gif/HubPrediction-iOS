@@ -77,7 +77,7 @@ describe('placeContract V2 Soft KEEP', () => {
     const s = hydrateSettings(null)
     expect(s).not.toHaveProperty('liveBets')
     expect(hydrateSettings({ liveBets: true })).not.toHaveProperty('liveBets')
-    expect(cashGates(s, 'btc').ok).toBe(false)
+    expect(cashGates(s, 'btc').ok).toBe(true)
     expect(livePlaceGate({ botOn: true, liveOn: true, hasKeys: true }).ok).toBe(true)
     expect(livePlaceGate({ botOn: false, liveOn: true, hasKeys: true }).ok).toBe(false)
     expect(livePlaceGate({ botOn: true, liveOn: false, hasKeys: true }).ok).toBe(false)
@@ -120,9 +120,9 @@ describe('placeContract V2 Soft KEEP', () => {
         }).ok,
       ).toBe(true)
     }
-    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })
-    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002 })
-    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002 })
+    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 12, armToMin: 0.5, through: 15, centLo: 45, centHi: 89, contracts: 20, liveOn: true })
+    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, contracts: 15, liveOn: true })
+    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, contracts: 15, liveOn: true })
     expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 10, armToMin: 3, through: 2, centLo: 34 })
     expect(tabIsOpen()).toBe(true)
   })

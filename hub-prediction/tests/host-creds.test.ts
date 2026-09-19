@@ -75,7 +75,7 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
     clearEnv()
     expect(loadKalshiHostCreds()).toBeNull()
     expect(hydrateSettings(null)).not.toHaveProperty('liveBets')
-    expect(hydrateSettings(null).tapes.btc.liveOn).toBe(false)
+    expect(hydrateSettings(null).tapes.btc.liveOn).toBe(true)
   })
 
   it('host fetchBalance paints cash from GET /portfolio/balance', async () => {

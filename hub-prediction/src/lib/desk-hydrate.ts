@@ -27,8 +27,8 @@ function hostSettingsPicks(raw: object, savedAt: number) {
     incoming.togglesPicked === true ||
     TAPE_IDS.some(
       (id) =>
-        incoming.tapes[id].liveOn === true ||
-        incoming.tapes[id].botOn === false ||
+        incoming.tapes[id].liveOn !== GOLD_RECIPES[id].liveOn ||
+        incoming.tapes[id].botOn !== GOLD_RECIPES[id].botOn ||
         incoming.tapes[id].contracts !== GOLD_RECIPES[id].contracts,
     )
   incoming.togglesAt = Number((raw as { togglesAt?: unknown }).togglesAt) || incoming.togglesAt

@@ -632,9 +632,9 @@ test('phone desk: MAXIMUM QC every tap — no master Live; Live cash OFF is pape
 
   await page.getByTestId('settings-toggle').click()
   await expect(page.getByTestId('settings')).toBeVisible()
-  await expect(page.getByTestId('arm-from-btc')).toHaveValue('8')
-  await expect(page.getByTestId('through-btc')).toHaveValue(/^(40|46)$/)
-  await expect(page.getByTestId('cent-lo-btc')).toHaveValue('69')
+  await expect(page.getByTestId('arm-from-btc')).toHaveValue('12')
+  await expect(page.getByTestId('through-btc')).toHaveValue(/^(15|17)$/)
+  await expect(page.getByTestId('cent-lo-btc')).toHaveValue('45')
   await page.getByRole('button', { name: 'Refresh cash' }).click()
   await page.getByTestId('settings-toggle').click()
   await expect(page.getByTestId('settings')).toHaveCount(0)
@@ -893,7 +893,7 @@ test('analyst proposes drafts only — Accept gated, no auto Live rewrite', asyn
   await expect(page.getByTestId('analyst-accept-ng')).toHaveCount(0)
   await expect(page.locator('.rec-deny')).toHaveCount(0)
   await page.getByTestId('settings-toggle').click()
-  await expect(page.getByTestId('through-btc')).toHaveValue(/^(40|46)$/)
+  await expect(page.getByTestId('through-btc')).toHaveValue(/^(15|17)$/)
 })
 
 test('Live cash ON toggle runs liveArmGate — Soft FAIL enable if !ok', async ({ page }) => {

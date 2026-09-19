@@ -61,11 +61,11 @@ describe('HARD QA 1–10', () => {
   })
 
   it('2 gold factory stays — Accept may persist a clamped retune', () => {
-    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })
-    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 })
-    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 })
+    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 12, armToMin: 0.5, through: 15, centLo: 45, centHi: 89, contracts: 20, liveOn: true })
+    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, centLo: 34, centHi: 89, contracts: 15, liveOn: true })
+    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 12, armToMin: 0.45, through: 0.001, centLo: 34, centHi: 89, contracts: 15, liveOn: true })
     expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 })
-    expect(hydrateSettings(null).tapes.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69 })
+    expect(hydrateSettings(null).tapes.btc).toMatchObject({ armFromMin: 12, through: 15, centLo: 45, contracts: 20, liveOn: true })
     const forced = hydrateSettings({
       tapes: {
         btc: { armFromMin: 7, through: 46, centLo: 69 },
@@ -79,14 +79,18 @@ describe('HARD QA 1–10', () => {
     expect(forced.tapes.ng.through).toBeCloseTo(0.003)
     expect(forced.tapes.gld.armFromMin).toBe(9)
     expect(forced).not.toHaveProperty('liveBets')
-    expect(forced.tapes.btc.liveOn).toBe(false)
+    expect(forced.tapes.btc.liveOn).toBe(true)
   })
 
   it('3 Live + bots + per-tape cash Soft FAIL cold ON', () => {
     const s = hydrateSettings(null)
     expect(s).not.toHaveProperty('liveBets')
     expect(DEFAULT_SETTINGS).not.toHaveProperty('liveBets')
-    for (const id of TAPE_IDS) {
+    expect(s.tapes.btc.liveOn).toBe(true)
+    expect(s.tapes.ng.liveOn).toBe(true)
+    expect(s.tapes.cu.liveOn).toBe(true)
+    expect(cashGates(s, 'btc').ok).toBe(true)
+    for (const id of ['gld', 'wti', 'slv'] as const) {
       expect(s.tapes[id].botOn).toBe(true)
       expect(s.tapes[id].liveOn).toBe(false)
       expect(cashGates(s, id).ok).toBe(false)
@@ -117,7 +121,7 @@ describe('HARD QA 1–10', () => {
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}').tapes.btc.contracts).toBe(17)
     expect(loadSettings().tapes.btc.contracts).toBe(17)
     expect(loadSettings()).not.toHaveProperty('liveBets')
-    expect(loadSettings().tapes.btc.armFromMin).toBe(8)
+    expect(loadSettings().tapes.btc.armFromMin).toBe(12)
   })
 
   it('6 stable CSS Soft FAIL hashed /assets/index-*.css', async () => {

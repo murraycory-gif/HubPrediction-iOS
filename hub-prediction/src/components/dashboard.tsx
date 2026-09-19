@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { getClockSettle, getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiBook, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
 import { applyHostDeskState, hostSettingsNewer, SETTINGS_DEBOUNCE_MS, SETTINGS_LATCH_MS } from '../lib/desk-hydrate'
-import { DESK_TICK_MS, FEED_STALE_CHECK_MS, FEED_STALE_MS, feedIsStale, lastDeskTickAt, subscribeDeskTick } from '../lib/desk-tick'
+import { DESK_TICK_MS, FEED_STALE_CHECK_MS, FEED_STALE_MS, FEED_STALE_RECOVER_MS, feedIsStale, feedStaleThreshold, lastDeskTickAt, subscribeDeskTick } from '../lib/desk-tick'
 import { setHostDeskWriter } from '../lib/desk-persist'
 import {
   TAPE_IDS,
@@ -180,8 +180,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const sentRef = useRef<Record<string, SendClaim>>({})
   const printFetches = useRef(0)
   const lastPrintOkAt = useRef(0)
+  const lastPrintRttMs = useRef(0)
   const printFetchStartedAt = useRef(0)
   const printsFetchingRef = useRef(false)
+  const printDelayMs = useRef(0)
+  const printDead = useRef(false)
+  const printHoldWaiters = useRef<Array<() => void>>([])
+  const lastRecoverAt = useRef(0)
   const ticketsRef = useRef(tickets)
   const bookRef = useRef(book)
   const boardRef = useRef<DeskBoard | null>(null)
@@ -454,7 +459,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       printFetchStartedAt.current = Date.now()
       printsFetchingRef.current = true
       try {
+        if (printDead.current) {
+          await new Promise<void>((resolve) => {
+            printHoldWaiters.current.push(resolve)
+          })
+        }
+        const delay = printDelayMs.current
+        if (delay > 0) await new Promise((resolve) => window.setTimeout(resolve, delay))
+        const started = printFetchStartedAt.current
         const next = await getLivePrints({ data: { events: liveEvents, charts: settings.charts, clocks: settings.clocks } })
+        lastPrintRttMs.current = Math.max(0, Date.now() - started)
         lastPrintOkAt.current = Date.now()
         return next
       } catch {
@@ -509,6 +523,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       lastPrintOkAt: lastPrintOkAt.current,
       fetchStartedAt: printFetchStartedAt.current,
       fetching: printsQuery.isFetching,
+      lastPrintRttMs: lastPrintRttMs.current,
     })
   const cashQuery = useQuery({
     queryKey: ['kalshi-balance'],
@@ -1003,6 +1018,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         stale: () => boolean
         forceStale: (on?: boolean) => void
         refetchPrints: () => void
+        delayPrints?: (ms: number) => void
+        killPrints?: (on?: boolean) => void
+        threshold?: () => number
       }
     }
     w.__HUB_TEST_EXIT = {
@@ -1014,7 +1032,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     w.__HUB_TEST_FEED = {
       tickAt: () => lastDeskTickAt(),
       printFetches: () => printFetches.current,
-      printUpdatedAt: () => 0,
+      printUpdatedAt: () => lastPrintOkAt.current,
       stale: () => Boolean((document.querySelector('[data-testid="feed-stale"]') as HTMLElement | null)?.dataset.stale),
       forceStale: (on = true) => {
         setForceFeedStale(on)
@@ -1023,6 +1041,18 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       refetchPrints: () => {
         /* filled after printsQuery exists — overwritten below */
       },
+      delayPrints: (ms) => {
+        printDelayMs.current = Math.max(0, Number(ms) || 0)
+      },
+      killPrints: (on = true) => {
+        printDead.current = on === true
+        if (!printDead.current) {
+          printFetchStartedAt.current = Date.now()
+          const waiters = printHoldWaiters.current.splice(0)
+          for (const resume of waiters) resume()
+        }
+      },
+      threshold: () => feedStaleThreshold(lastPrintRttMs.current),
     }
     return () => {
       delete w.__HUB_TEST_EXIT
@@ -1145,6 +1175,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           lastPrintOkAt: lastPrintOkAt.current,
           fetchStartedAt: printFetchStartedAt.current,
           fetching: printsFetchingRef.current,
+          lastPrintRttMs: lastPrintRttMs.current,
         }),
       )
     })
@@ -1152,12 +1183,15 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   useEffect(() => {
     if (!feedStale || forceFeedStale || printsQuery.isFetching) return
+    const now = Date.now()
+    if (now - lastRecoverAt.current < FEED_STALE_RECOVER_MS) return
     const id = window.setTimeout(() => {
-      void boardQuery.refetch()
+      if (printsFetchingRef.current || printDead.current) return
+      lastRecoverAt.current = Date.now()
       void printsQuery.refetch()
     }, 1000)
     return () => window.clearTimeout(id)
-  }, [feedStale, forceFeedStale, printsQuery.isFetching, boardQuery.refetch, printsQuery.refetch])
+  }, [feedStale, forceFeedStale, printsQuery.isFetching, printsQuery.refetch])
 
   useEffect(() => {
     const w = window as Window & {
@@ -1168,6 +1202,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         stale: () => boolean
         forceStale: (on?: boolean) => void
         refetchPrints: () => void
+        delayPrints: (ms: number) => void
+        killPrints: (on?: boolean) => void
+        threshold: () => number
       }
     }
     w.__HUB_TEST_FEED = {
@@ -1182,6 +1219,18 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       refetchPrints: () => {
         void printsQuery.refetch()
       },
+      delayPrints: (ms) => {
+        printDelayMs.current = Math.max(0, Number(ms) || 0)
+      },
+      killPrints: (on = true) => {
+        printDead.current = on === true
+        if (!printDead.current) {
+          printFetchStartedAt.current = Date.now()
+          const waiters = printHoldWaiters.current.splice(0)
+          for (const resume of waiters) resume()
+        }
+      },
+      threshold: () => feedStaleThreshold(lastPrintRttMs.current),
     }
   })
 
