@@ -112,17 +112,34 @@ export const placeKalshi = createServerFn({ method: 'POST' })
       count: number
       yesAsk: number
       noAsk: number
+      tape?: TapeId
       botOn?: boolean
       liveOn?: boolean
     }) => d,
   )
   .handler(async ({ data }) => {
     const { loadKalshiHostCreds, placeContract } = await import('./kalshi-trade.server')
-    const { livePlaceGate } = await import('./tapes')
+    const { readDeskState } = await import('./desk-state.server')
+    const { hostLivePlaceGate } = await import('./tapes')
     const creds = loadKalshiHostCreds()
-    const gate = livePlaceGate({ botOn: data.botOn, liveOn: data.liveOn, hasKeys: Boolean(creds) })
+    const host = readDeskState()
+    const gate = hostLivePlaceGate({
+      settings: host?.settings,
+      tape: data.tape,
+      clientBotOn: data.botOn,
+      clientLiveOn: data.liveOn,
+      hasKeys: Boolean(creds),
+    })
     if (!gate.ok) throw new Error(gate.reason)
-    return placeContract({ ...data, keyId: creds.keyId, pem: creds.pem })
+    return placeContract({
+      ticker: data.ticker,
+      side: data.side,
+      count: data.count,
+      yesAsk: data.yesAsk,
+      noAsk: data.noAsk,
+      keyId: creds.keyId,
+      pem: creds.pem,
+    })
   })
 
 /** @deprecated BTC-only snapshot — kept so leftover imports typecheck. */

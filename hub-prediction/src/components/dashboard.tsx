@@ -417,6 +417,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           count: settings.tapes[tape].contracts,
           yesAsk: quote.yesAsk,
           noAsk: quote.noAsk,
+          tape,
           botOn: settings.tapes[tape].botOn === true,
           liveOn: settings.tapes[tape].liveOn === true,
         },

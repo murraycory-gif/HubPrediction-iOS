@@ -697,6 +697,23 @@ export function livePlaceGate(opts: { botOn?: boolean; liveOn?: boolean; hasKeys
   return { ok: true as const }
 }
 
+/** Host desk state is source of truth. Soft FAIL a client-only Live POST. Soft FAIL master liveBets. */
+export function hostLivePlaceGate(opts: {
+  settings?: unknown
+  tape?: string
+  clientBotOn?: boolean
+  clientLiveOn?: boolean
+  hasKeys?: boolean
+}) {
+  if (!opts.tape || !isTapeId(opts.tape)) return { ok: false as const, reason: 'Kalshi POST needs a tape' }
+  const recipe = hydrateSettings(opts.settings).tapes[opts.tape]
+  return livePlaceGate({
+    botOn: opts.clientBotOn === true && recipe.botOn === true,
+    liveOn: opts.clientLiveOn === true && recipe.liveOn === true,
+    hasKeys: opts.hasKeys,
+  })
+}
+
 export type SendClaim = { at: number; tries: number; filled?: string }
 
 /** IOC miss retries 3–4x then release. Stale claim >8s cannot block. */
