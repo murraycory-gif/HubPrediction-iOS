@@ -973,6 +973,7 @@ test('any tape Live cash HALT is orange, not grey', async ({ page }) => {
     expect(paint.color).toMatch(/rgb\(\s*255,\s*138,\s*61\s*\)/i)
     expect(paint.border).toMatch(/rgb\(\s*255,\s*138,\s*61\s*\)/i)
     expect(paint.bg).not.toMatch(/rgb\(\s*(12,\s*17,\s*16|0,\s*0,\s*0)\s*\)/)
+    await box.screenshot({ path: `/opt/cursor/artifacts/screenshots/halt-orange-${id}.png` })
   }
   await assertNoMasterLive(page)
 })
