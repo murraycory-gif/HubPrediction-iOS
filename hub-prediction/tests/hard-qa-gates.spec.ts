@@ -266,8 +266,11 @@ test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ pag
   }, { at: closeAt, ticker })
   await setToggle(page, 'bot-btc', true)
   await setToggle(page, 'live-cash-btc', true)
-  await page.getByTestId('contracts-btc').fill('20')
-  await page.getByTestId('contracts-btc').blur()
+  const contracts = page.getByTestId('contracts-btc')
+  if ((await contracts.inputValue()) !== '20' && (await contracts.isEnabled())) {
+    await contracts.fill('20')
+    await contracts.blur()
+  }
   await setToggle(page, 'bot-btc', false)
   await setToggle(page, 'bot-btc', true)
   await expect
