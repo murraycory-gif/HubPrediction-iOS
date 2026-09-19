@@ -85,7 +85,8 @@ export function FinancePanel(props: {
         <p className="hud-label">Desk Chief · profit + Kalshi cash</p>
         <p className="settings-note" data-testid="chief-lock">
           Paper size auto. Live size is a draft. Soft FAIL Live ON. Soft FAIL recipe rewrite. Reserve{' '}
-          {Math.round(RESERVE_CASH * 100)}/{Math.round(RESERVE_RISK * 100)} · max {MAX_LIVE_CLOCKS} Live clocks · lock-in +$
+          {Math.round(RESERVE_CASH * 100)}/{Math.round(RESERVE_RISK * 100)} · max {MAX_LIVE_CLOCKS} Live clocks (BTC + NG/CU)
+          · lock-in +$
           {DAILY_PROFIT_LOCK}
           {props.chief.lockIn ? ' · lock-in sit' : ''}.
         </p>

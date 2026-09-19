@@ -7,6 +7,7 @@ import {
   DAILY_PROFIT_LOCK,
   HIT_FLOOR,
   MAX_LIVE_CLOCKS,
+  livePairGate,
   dailyProfitLockHit,
   deskDailyRealizedPnl,
   feeAwareEv,
@@ -37,7 +38,7 @@ import {
 export const CHIEF_KEY = 'hub.desk.chief.v1'
 export const RESERVE_CASH = 0.6
 export const RESERVE_RISK = 0.4
-export { MAX_LIVE_CLOCKS, DAILY_PROFIT_LOCK, feeAwareEv, dailyProfitLockHit } from './finance'
+export { MAX_LIVE_CLOCKS, DAILY_PROFIT_LOCK, feeAwareEv, dailyProfitLockHit, livePairGate } from './finance'
 export const STEP_UP_WINS = 3
 export const STEP_UP_ADD = 1
 export const STEP_UP_ADD_MAX = 2
@@ -533,6 +534,7 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
     }
 
     const arm = tapeLiveArmGate(id, q)
+    const pair = livePairGate(id, heat)
     const blockLiveUp = !sizeUp
       ? ''
       : Number.isFinite(input.cash ?? NaN) && (input.cash as number) < floor
@@ -545,8 +547,8 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
               ? `Reserve ${Math.round(RESERVE_CASH * 100)}/${Math.round(RESERVE_RISK * 100)} — Soft FAIL 100% into risk`
               : !arm.ok
                 ? arm.reason
-                : heat.length >= MAX_LIVE_CLOCKS && !heat.includes(id)
-                  ? `Max ${MAX_LIVE_CLOCKS} Live clocks`
+                : !pair.ok
+                  ? pair.reason
                   : ''
 
     if (blockLiveUp) {

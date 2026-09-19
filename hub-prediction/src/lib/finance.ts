@@ -71,6 +71,23 @@ export const CLOCK_MAX_SPEND = 25
 export const HIT_FLOOR = 80
 export const DAILY_PROFIT_LOCK = 40
 export const MAX_LIVE_CLOCKS = 2
+export const LIVE_PAIR_PRIMARY: TapeId = 'btc'
+export const LIVE_PAIR_SECONDARY = ['ng', 'cu'] as const
+
+/** BTC + one of NG/CU. Soft FAIL 3–4 Live clocks. Soft FAIL GLD in the pair. */
+export function livePairGate(tape: TapeId, heat: readonly TapeId[]): Gate {
+  if (heat.includes(tape)) return { ok: true }
+  if (tape === 'gld') return { ok: false, reason: 'GLD Soft FAIL Live pair — BTC + one of NG/CU' }
+  if (tape === 'ng' || tape === 'cu') {
+    const other = tape === 'ng' ? 'cu' : 'ng'
+    if (heat.includes(other)) return { ok: false, reason: 'Live pair is BTC + one of NG/CU' }
+  }
+  const pair = heat.filter((id) => id === LIVE_PAIR_PRIMARY || (LIVE_PAIR_SECONDARY as readonly string[]).includes(id))
+  if (pair.length >= MAX_LIVE_CLOCKS) {
+    return { ok: false, reason: `Max ${MAX_LIVE_CLOCKS} Live clocks` }
+  }
+  return { ok: true }
+}
 
 export function kalshiTakerFeeDollars(askCents: number, contracts: number) {
   const ask = Math.max(1, Math.min(99, askCents)) / 100
@@ -684,9 +701,8 @@ export function liveSendGate(
   const ev = feeAwareEvGate(opts.ask, count)
   if (!ev.ok) return ev
   const heat = openLiveClockTapes(state)
-  if (!heat.includes(opts.tape) && heat.length >= MAX_LIVE_CLOCKS) {
-    return { ok: false, reason: `Max ${MAX_LIVE_CLOCKS} Live clocks` }
-  }
+  const pair = livePairGate(opts.tape, heat)
+  if (!pair.ok) return pair
   const floor = liveCashFloor(opts.deposits)
   if (Number.isFinite(opts.cash ?? NaN) && (opts.cash as number) - opts.spent < floor) {
     return { ok: false, reason: `Cash floor ${floor} blocks Place` }

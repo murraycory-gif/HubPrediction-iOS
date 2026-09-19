@@ -12,7 +12,7 @@ import {
   runDeskChief,
   tapeLiveArmGate,
 } from '../src/lib/desk-chief'
-import { DAILY_PROFIT_LOCK, HIT_FLOOR, emptyFinance, feeAwareEv, liveCashFloor } from '../src/lib/finance'
+import { DAILY_PROFIT_LOCK, HIT_FLOOR, emptyFinance, feeAwareEv, liveCashFloor, livePairGate, liveSendGate } from '../src/lib/finance'
 import { GOLD_RECIPES, hydrateSettings } from '../src/lib/tapes'
 
 const now = 1_800_000_000_000
@@ -61,7 +61,10 @@ describe('Desk Chief paper allocator', () => {
   it('defaults are 60/40 reserve, max 2 Live clocks, +$40 lock-in, 80% goal', () => {
     expect(RESERVE_CASH).toBe(0.6)
     expect(RESERVE_RISK).toBe(0.4)
+    expect(RESERVE_CASH).not.toBe(0.5)
+    expect(RESERVE_RISK).not.toBe(0.5)
     expect(MAX_LIVE_CLOCKS).toBe(2)
+    expect(MAX_LIVE_CLOCKS).toBeLessThan(3)
     expect(DAILY_PROFIT_LOCK).toBe(40)
     expect(HIT_FLOOR).toBe(80)
     expect(STEP_UP_WINS).toBe(3)
@@ -121,6 +124,58 @@ describe('Desk Chief paper allocator', () => {
     )
     expect(settings.tapes.btc.liveOn).toBe(true)
     expect(settings.tapes.btc.contracts).toBe(2)
+  })
+
+  it('Live pair is BTC + one of NG/CU — Soft FAIL 3–4 and GLD', () => {
+    expect(livePairGate('btc', []).ok).toBe(true)
+    expect(livePairGate('ng', ['btc']).ok).toBe(true)
+    expect(livePairGate('cu', ['btc', 'ng']).ok).toBe(false)
+    expect(livePairGate('ng', ['cu']).ok).toBe(false)
+    expect(livePairGate('gld', ['btc']).ok).toBe(false)
+    expect(livePairGate('cu', ['btc', 'ng', 'cu']).ok).toBe(true)
+    const heat = {
+      ...emptyFinance(),
+      bets: [
+        liveSettled('btc', 1, 0.3),
+        { ...liveSettled('ng', 2, 0.3), status: 'open' as const, pnl: null, settledAt: null },
+        { ...liveSettled('btc', 3, 0.3), status: 'open' as const, pnl: null, settledAt: null, ticker: 'KXBTC15M-OPEN', orderId: 'ord-live-btc-open1', betId: 'bet_ord-live-btc-open1' },
+      ],
+    }
+    const third = liveSendGate(heat, {
+      tape: 'cu',
+      ticker: 'KXCOPPER15M-HEAT',
+      ask: 70,
+      cash: 400,
+      deposits: 760,
+      spent: 0.7,
+    })
+    expect(third.ok).toBe(false)
+    if (!third.ok) expect(third.reason).toMatch(/NG\/CU|Max 2/)
+  })
+
+  it('3W steps +1 and 2L cuts −50% Soft FAIL 1→20', () => {
+    const up = runDeskChief({
+      settings: hydrateSettings({ tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, contracts: 2 } } }),
+      book: { ...emptyFinance(), bets: [1, 2, 3].map((i) => paperSettled('btc', i, 0.3)) },
+      cash: 400,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(up.paperApplies.some((a) => a.tape === 'btc' && a.contracts === 3)).toBe(true)
+    const cut = runDeskChief({
+      settings: hydrateSettings({ tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, contracts: 8 } } }),
+      book: { ...emptyFinance(), bets: [1, 2].map((i) => paperSettled('btc', i, -0.7)) },
+      cash: 400,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      now: now + 1,
+      prev: hydrateChief(null, now + 1),
+    })
+    expect(cut.paperApplies.some((a) => a.tape === 'btc' && a.contracts === 4)).toBe(true)
+    expect(up.liveOnWrites).toEqual({})
+    expect(cut.liveOnWrites).toEqual({})
   })
 
   it('GLD STALE Soft FAIL Live arm', () => {
