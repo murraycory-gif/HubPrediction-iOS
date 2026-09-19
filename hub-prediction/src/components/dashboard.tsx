@@ -243,7 +243,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       }
     }
     void getDeskState({ data: { t: Date.now() } })
-      .then(async (host) => {
+      .then((host) => {
         try {
           if (host && applyHostDeskState(host)) {
             setSettings(loadSettings())
@@ -261,14 +261,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         } catch {
           /* host apply miss */
         }
-        await flushHost()
         window.clearTimeout(readyTimer)
         markReady()
+        void flushHost()
       })
-      .catch(async () => {
-        await flushHost()
+      .catch(() => {
         window.clearTimeout(readyTimer)
         markReady()
+        void flushHost()
       })
     void getKalshiBalance()
       .then((r) => applyCashAndSettlements(r))
