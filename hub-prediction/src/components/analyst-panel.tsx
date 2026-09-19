@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useState } from 'react'
 import {
   analyzeDesk,
   clockCall,
@@ -50,6 +50,10 @@ export function AnalystPanel({
   )
   const [drafts, setDrafts] = useState<PaperDrafts | null>(() => loadPaperDrafts())
   const [saved, setSaved] = useState('')
+  const [hydrated, setHydrated] = useState(false)
+  useLayoutEffect(() => {
+    setHydrated(true)
+  }, [])
 
   return (
     <section className="analyst" data-testid="analyst">
@@ -68,6 +72,7 @@ export function AnalystPanel({
             path: t.path,
             upcoming: briefs?.upcoming?.[t.id],
             news: briefs?.news?.[t.id],
+            now: hydrated ? undefined : 0,
           })
           const rules = explainRules(t.id, t.currentRecipe)
           const proposal = proposalCopy(t)

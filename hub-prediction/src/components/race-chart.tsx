@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { formatChartTick } from '../lib/chicago-time'
 import { DESK_TICK_MS, useDeskTick } from '../lib/desk-tick'
 import {
@@ -117,6 +117,10 @@ export const RaceChart = memo(function RaceChart({
   onChart?: (chart: ChartRange) => void
 }) {
   const wall = useDeskTick()
+  const [hydrated, setHydrated] = useState(false)
+  useLayoutEffect(() => {
+    setHydrated(true)
+  }, [])
   const trailRef = useRef<Point[]>([])
   const lineHold = useRef('')
   const [trail, setTrail] = useState<Point[]>([])
@@ -156,7 +160,13 @@ export const RaceChart = memo(function RaceChart({
 
   const shown =
     displayLive != null && Number.isFinite(displayLive) && (displayLive as number) > 0 ? displayLive : live
-  const now = chart === 'live' ? wall : trail.length ? trail[trail.length - 1]!.t : Date.now()
+  const now = hydrated
+    ? chart === 'live'
+      ? wall
+      : trail.length
+        ? trail[trail.length - 1]!.t
+        : Date.now()
+    : 0
   const windowMs = chartWindowMs(chart, clock)
   const pts = useMemo(() => {
     const cleaned = cleanRacePoints(trail.length ? trail : points, now, windowMs, openAt, closeAt)
