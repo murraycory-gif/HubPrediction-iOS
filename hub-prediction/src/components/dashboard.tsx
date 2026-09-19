@@ -106,7 +106,6 @@ import {
   CLOCK_MAX_SPEND,
   emptyFinance,
   loadFinance,
-  saveFinance,
   recipeRetuneGate,
   hitFloorGate,
   recentLiveTapeWL,
@@ -802,6 +801,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       }
       __HUB_APPLY_BOOK?: (payload: KalshiBookPayload) => void
       __HUB_TEST_BETS?: {
+        replace: (bets: FinanceState['bets']) => void
         inject: (bets: FinanceState['bets']) => void
         add: (bet: FinanceState['bets'][number]) => void
       }
@@ -814,11 +814,15 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       setBook((prev) => applyKalshiBook(prev, payload))
     }
     w.__HUB_TEST_BETS = {
+      replace: (bets) => {
+        ;(window as Window & { __HUB_RESET_BETS24?: boolean }).__HUB_RESET_BETS24 = true
+        setBook((prev) => ({ ...prev, bets }))
+      },
       inject: (bets) => {
-        setBook((prev) => saveFinance({ ...prev, bets: [...prev.bets, ...bets] }))
+        setBook((prev) => ({ ...prev, bets: [...prev.bets, ...bets] }))
       },
       add: (bet) => {
-        setBook((prev) => saveFinance({ ...prev, bets: [...prev.bets, bet] }))
+        setBook((prev) => ({ ...prev, bets: [...prev.bets, bet] }))
       },
     }
     return () => {
@@ -907,7 +911,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
 
   const desk24 = last24hBets(book, hits, Date.now(), TAPE_IDS)
   const desk24Ref = useRef(desk24)
-  desk24Ref.current = latchDeskBets24(desk24Ref.current, desk24)
+  const reset24 = (window as Window & { __HUB_RESET_BETS24?: boolean }).__HUB_RESET_BETS24 === true
+  if (reset24) {
+    desk24Ref.current = desk24
+    delete (window as Window & { __HUB_RESET_BETS24?: boolean }).__HUB_RESET_BETS24
+  } else {
+    desk24Ref.current = latchDeskBets24(desk24Ref.current, desk24)
+  }
   const ttl = desk24Ref.current
   const stripRows = isAllBetsFilter(settings.betsFilter)
     ? ttl.rows

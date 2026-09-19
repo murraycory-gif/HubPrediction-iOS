@@ -417,6 +417,33 @@ describe('finance Soft KEEP', () => {
     const wiped = latchDeskBets24(frozen, { ...frozen, rows: [], placed: 0, w: 0, l: 0, pnl: 0, open: 0, pct: 0 })
     expect(wiped.placed).toBeCloseTo(frozen.placed)
     expect(wiped.rows).toHaveLength(frozen.rows.length)
+    const swap = last24hBets(
+      {
+        ...emptyFinance(),
+        bets: [
+          {
+            betId: 'bet_swap',
+            tape: 'btc' as const,
+            ticker: 'KXBTC15M-SWAP',
+            clock: '15m',
+            closeAt: now,
+            side: 'up' as const,
+            count: 1,
+            ask: 70,
+            spent: 99,
+            orderId: 'ord-swap-aaaaaa',
+            status: 'settled' as const,
+            pnl: 1,
+            filledAt: now,
+            settledAt: now,
+            kind: 'live' as const,
+          },
+        ],
+      },
+      emptyHits,
+      now,
+    )
+    expect(latchDeskBets24(frozen, swap).placed).toBeCloseTo(frozen.placed)
   })
 
   it('Last 24H bets tape filter splits placed / W–L / P&L', () => {

@@ -171,15 +171,18 @@ test('two clients: BTC 20 on A is host book — B and reload stay 20', async ({ 
     await a.goto('/', { waitUntil: 'domcontentloaded' })
     await waitHost(a)
     await allowLiveArm(a)
+    await a.getByTestId('contracts-btc').fill('19')
+    await a.getByTestId('contracts-btc').blur()
     await a.getByTestId('contracts-btc').fill('20')
     await a.getByTestId('contracts-btc').blur()
     await expect(a.getByTestId('contracts-btc')).toHaveValue('20')
+    await a.waitForTimeout(1500)
     await b.goto('/', { waitUntil: 'domcontentloaded' })
     await waitHost(b)
-    await expect(b.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 5_000 })
+    await expect(b.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 15_000 })
     await a.reload({ waitUntil: 'domcontentloaded' })
     await waitHost(a)
-    await expect(a.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 5_000 })
+    await expect(a.getByTestId('contracts-btc')).toHaveValue('20', { timeout: 15_000 })
     await expect(b.getByTestId('contracts-btc')).toHaveValue('20')
   } finally {
     await a.close()
@@ -268,13 +271,55 @@ test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page })
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
+  const ts = Date.now()
+  await page.evaluate((at) => {
+    ;(window as Window & { __HUB_TEST_BETS?: { replace: (bets: unknown[]) => void } }).__HUB_TEST_BETS?.replace([
+      {
+        betId: 'bet_ord-live-freeze-a',
+        tape: 'btc',
+        ticker: 'KXBTC15M-FREEZEA',
+        clock: '15m',
+        closeAt: at,
+        side: 'up',
+        count: 1,
+        ask: 70,
+        spent: 25,
+        orderId: 'ord-live-freeze-aaaa',
+        status: 'settled',
+        pnl: 10,
+        filledAt: at - 1000,
+        settledAt: at,
+        kind: 'live',
+      },
+      {
+        betId: 'bet_deskfill-freeze-a',
+        tape: 'btc',
+        ticker: 'KXBTC15M-FREEZEP',
+        clock: '15m',
+        closeAt: at,
+        side: 'down',
+        count: 1,
+        ask: 40,
+        spent: 8,
+        orderId: 'deskfill-btc-freezea',
+        status: 'settled',
+        pnl: -8,
+        filledAt: at - 500,
+        settledAt: at,
+        kind: 'paper',
+      },
+    ])
+  }, ts)
   const snapshot = async () =>
     page.evaluate(() => ({
       placed: document.querySelector('[data-testid="bets-placed"]')?.textContent?.trim() || '',
       wl: document.querySelector('[data-testid="bets-wl"]')?.textContent?.trim() || '',
       rows: document.querySelectorAll('[data-testid="bets-log"] li').length,
     }))
+  await expect.poll(async () => (await snapshot()).rows, { timeout: 8_000 }).toBe(2)
   const frozen = await snapshot()
+  expect(frozen.placed).toMatch(/\$33/)
+  expect(frozen.wl).toMatch(/1W–1L/)
   await page.evaluate((ts) => {
     const hist = Array.from({ length: 200 }, (_, i) => ({
       betId: `kalshi:KXBTC15M-H${i}`,

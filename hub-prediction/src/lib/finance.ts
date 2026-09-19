@@ -406,6 +406,11 @@ export function latchDeskBets24<T extends DeskBetRow>(prev: DeskBets24<T> | null
   if (deskBets24Key(prev.rows) === deskBets24Key(next.rows)) return next
   if (!next.rows.length) return prev
   if (next.rows.every((r) => isHistBet(r) || isImportedKalshiRow(r))) return prev
+  const prevIds = new Set(prev.rows.map((r) => String(r.betId || r.orderId || '')))
+  const added = next.rows.filter((r) => !prevIds.has(String(r.betId || r.orderId || '')))
+  if (added.length && added.every((r) => isHistBet(r) || isImportedKalshiRow(r))) return prev
+  const overlap = next.rows.filter((r) => prevIds.has(String(r.betId || r.orderId || ''))).length
+  if (overlap === 0) return prev
   return next
 }
 
