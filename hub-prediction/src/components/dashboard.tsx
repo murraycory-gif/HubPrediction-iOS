@@ -107,7 +107,9 @@ import {
   settleBook,
   syncTicketsIntoBook,
   dailyPnlFloorHit,
+  dailyProfitLockHit,
   DAILY_PNL_FLOOR_PAPER,
+  DAILY_PROFIT_LOCK,
   type FinanceState,
 } from '../lib/finance'
 import { acceptAnalystRecipe, analyzeDesk, isRehabPaper, loadAutoState, runAutoAnalyst, type AnalystAutoState } from '../lib/analyst'
@@ -750,8 +752,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     for (const a of result.paperApplies) {
       const cur = loadSettings()
       if (cur.tapes[a.tape].liveOn === true) continue
-      if (cur.tapes[a.tape].contracts === a.contracts) continue
-      setSettings(patchTape(cur, a.tape, { contracts: a.contracts }))
+      if (a.contracts && cur.tapes[a.tape].contracts !== a.contracts) {
+        setSettings(patchTape(cur, a.tape, { contracts: a.contracts }))
+      }
+      if (a.clock && loadSettings().clocks[a.tape] !== a.clock) {
+        setSettings(setTapeClock(loadSettings(), a.tape, a.clock))
+      }
     }
     return result
   }
@@ -1055,10 +1061,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
             onChiefAccept={(id) => {
               const decided = decideChiefProposal(loadChief(), id, true)
               setChief(saveChief(decided.state))
-              if (decided.apply && loadSettings().tapes[decided.apply.tape].liveOn !== true) {
-                setSettings(patchTape(loadSettings(), decided.apply.tape, { contracts: decided.apply.contracts }))
-              } else if (decided.apply) {
-                setSettings(patchTape(loadSettings(), decided.apply.tape, { contracts: decided.apply.contracts }))
+              if (decided.apply) {
+                if (decided.apply.contracts) {
+                  setSettings(patchTape(loadSettings(), decided.apply.tape, { contracts: decided.apply.contracts }))
+                }
+                if (decided.apply.clock) {
+                  setSettings(setTapeClock(loadSettings(), decided.apply.tape, decided.apply.clock))
+                }
               }
             }}
             onChiefReject={(id) => {
@@ -1071,6 +1080,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         {book.killed && dailyPnlFloorHit(book) ? (
           <p className="desk-msg" data-testid="floor-hit">
             floor hit — daily P/L ≤ {DAILY_PNL_FLOOR_PAPER}. KILL on. Place blocked.
+          </p>
+        ) : null}
+
+        {chief.lockIn || dailyProfitLockHit(book) ? (
+          <p className="desk-msg" data-testid="lock-in">
+            lock-in sit — daily P/L ≥ ${DAILY_PROFIT_LOCK}. Live place sat. Live cash stays.
           </p>
         ) : null}
 

@@ -3,6 +3,7 @@ import {
   ASK_CAP,
   CLOCK_MAX_SPEND,
   DAILY_PNL_FLOOR_PAPER,
+  DAILY_PROFIT_LOCK,
   HIT_FLOOR,
   LIVE_FLOOR_MIN,
   hitFloorGate,
@@ -20,6 +21,8 @@ import {
   liveSendGate,
   liveArmGateForDesk,
   dailyPnlFloorHit,
+  dailyProfitLockHit,
+  feeAwareEv,
   engageKill,
   paper48hPassed,
   paperCashFloor,
@@ -169,6 +172,47 @@ describe('finance Soft KEEP', () => {
     const killed = engageKill(hit)
     expect(killed.killed).toBe(true)
     expect(hit.bets[0]).not.toHaveProperty('liveOn')
+  })
+
+  it('daily lock-in and after-fee EV sit Live send Soft FAIL flipping Live', () => {
+    expect(DAILY_PROFIT_LOCK).toBe(40)
+    expect(feeAwareEv(72, 1, 80)).toBeGreaterThan(0)
+    expect(feeAwareEv(82, 1, 80)).toBeLessThanOrEqual(0)
+    const now = Date.now()
+    const lock = {
+      ...emptyFinance(),
+      bets: [
+        {
+          betId: 'bet_lock',
+          tape: 'btc' as const,
+          ticker: 'KXBTC15M-LOCK',
+          clock: '15m',
+          closeAt: now,
+          side: 'up' as const,
+          count: 1,
+          ask: 70,
+          spent: 0.7,
+          orderId: 'ord-lock-1',
+          status: 'settled' as const,
+          pnl: DAILY_PROFIT_LOCK,
+          filledAt: now - 1000,
+          settledAt: now,
+          kind: 'live' as const,
+        },
+      ],
+    }
+    expect(dailyProfitLockHit(lock, now)).toBe(true)
+    const gated = liveSendGate(lock, {
+      tape: 'btc', ticker: 'KXBTC15M-3', ask: 72, cash: 400, deposits: 760, spent: 0.72,
+    }, now)
+    expect(gated.ok).toBe(false)
+    if (!gated.ok) expect(gated.reason).toMatch(/lock-in/)
+    expect(lock).not.toHaveProperty('liveOn')
+    const evSit = liveSendGate(emptyFinance(), {
+      tape: 'btc', ticker: 'KXBTC15M-EV', ask: 79, cash: 400, deposits: 760, spent: 0.79,
+    })
+    expect(evSit.ok).toBe(false)
+    if (!evSit.ok) expect(evSit.reason).toMatch(/EV/)
   })
 
   it('Soft FAIL Live ON before paper 48h and under cash floor', () => {

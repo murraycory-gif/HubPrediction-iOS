@@ -1861,6 +1861,44 @@ test('cash floor Soft FAIL Live size-up', async ({ page }) => {
   await expect(page.getByTestId('live-cash-btc')).not.toBeChecked()
 })
 
+test('Desk Chief clock pick persists paper Soft FAIL Live flip', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await resetGoldDesk(page)
+  await page.getByTestId('clock-gld').selectOption('5m')
+  await expect(page.getByTestId('clock-gld')).toHaveValue('5m')
+  await expect(page.getByTestId('live-cash-gld')).not.toBeChecked()
+  const result = await page.evaluate(() => {
+    const w = window as Window & {
+      __HUB_TEST_CHIEF?: {
+        run: (over: Record<string, unknown>) => {
+          paperApplies: Array<{ tape: string; contracts: number; clock?: string }>
+          liveOnWrites: Record<string, boolean>
+        }
+      }
+    }
+    const now = Date.now()
+    const settings = JSON.parse(localStorage.getItem('hub.desk.settings.v1') || 'null') as {
+      tapes?: { gld?: { liveOn?: boolean; contracts?: number } }
+      clocks?: { gld?: string }
+    }
+    if (settings?.tapes?.gld) settings.tapes.gld.liveOn = false
+    if (settings?.clocks) settings.clocks.gld = '5m'
+    return w.__HUB_TEST_CHIEF?.run({
+      settings,
+      book: { killed: false, paperStartedAt: now, bets: [] },
+      cash: 293.93,
+      deposits: 760,
+      quotes: { gld: { tradingActive: false, stale: true, yesAsk: 40 } },
+      now,
+    })
+  })
+  expect(result?.paperApplies.some((a) => a.tape === 'gld' && a.clock === '15m')).toBe(true)
+  expect(result?.liveOnWrites ?? {}).toEqual({})
+  await expect(page.getByTestId('live-cash-gld')).not.toBeChecked()
+  await expect(page.getByTestId('clock-gld')).toHaveValue('15m')
+})
+
 test('GLD STALE Soft FAIL Live arm', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })

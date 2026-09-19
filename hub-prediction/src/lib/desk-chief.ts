@@ -20,11 +20,14 @@ import {
   type FinanceState,
   type Gate,
 } from './finance'
+import { tapeSessionHours } from './tape-hours'
 import {
+  DEFAULT_CLOCK,
   GOLD_RECIPES,
   TAPE_IDS,
   TAPE_META,
   clampContracts,
+  hydrateClock,
   type DeskSettings,
   type TapeClock,
   type TapeId,
@@ -79,6 +82,7 @@ export type ChiefTapeProgress = {
   halt: boolean
   closed: boolean
   tradingActive: boolean
+  clock: TapeClock
 }
 
 export type ChiefState = {
@@ -144,7 +148,8 @@ export function liveHeatTapes(
   return [...heat]
 }
 
-export function tapeLiveArmGate(id: TapeId, quote?: ChiefQuote | null): Gate {
+export function tapeLiveArmGate(id: TapeId, quote?: ChiefQuote | null, now = Date.now()): Gate {
+  const session = tapeSessionHours(id, now)
   const closed = quote?.tradingActive === false
   const stale = quote?.stale === true || closed
   if (id === 'gld' && (stale || closed || quote?.tradingActive !== true)) {
@@ -153,7 +158,24 @@ export function tapeLiveArmGate(id: TapeId, quote?: ChiefQuote | null): Gate {
   if (stale || closed) {
     return { ok: false, reason: `${TAPE_META[id].label} STALE/CLOSED — Soft FAIL Live arm` }
   }
+  if (!session.open && quote?.tradingActive !== true) {
+    return { ok: false, reason: `${TAPE_META[id].label} hours closed — Soft FAIL Live arm` }
+  }
   return { ok: true }
+}
+
+/** Next-open / regime clock. Soft FAIL Live flip. Soft FAIL 5m on a dead tape. */
+export function pickChiefClock(
+  current: TapeClock,
+  snap: Pick<ChiefTapeProgress, 'closed' | 'stale' | 'halt' | 'hitPct' | 'w' | 'l'>,
+): TapeClock | null {
+  const cur = hydrateClock(current)
+  if (snap.closed || snap.stale) return cur === DEFAULT_CLOCK ? null : DEFAULT_CLOCK
+  if (snap.halt || (snap.l >= CUT_LOSSES && snap.hitPct < HIT_FLOOR)) {
+    return cur === '5m' ? DEFAULT_CLOCK : null
+  }
+  if (snap.w >= STEP_UP_WINS && snap.hitPct >= HIT_FLOOR && cur === '1h') return DEFAULT_CLOCK
+  return null
 }
 
 export function readTestTapeQuote(id: TapeId): ChiefQuote | null {
@@ -179,6 +201,7 @@ function emptyProgress(id: TapeId, recipe: TapeRecipe, ask: number): ChiefTapePr
     halt: false,
     closed: false,
     tradingActive: false,
+    clock: DEFAULT_CLOCK,
   }
 }
 
@@ -361,8 +384,10 @@ function targetContracts(cur: number, snap: ChiefTapeProgress, winStreak: number
   let next = cur
   if (lossStreak >= CUT_LOSSES) {
     next = Math.max(1, Math.floor(cur * CUT_FRAC))
-  } else if (snap.halt || snap.stale || snap.closed || snap.pnl < 0) {
+  } else if (snap.halt || snap.pnl < 0) {
     next = Math.max(1, cur - 1)
+  } else if (snap.stale || snap.closed) {
+    next = cur
   } else if (winStreak >= STEP_UP_WINS && (snap.hitPct >= HIT_FLOOR || snap.w + snap.l < 4)) {
     const add = winStreak >= STEP_UP_WINS + 2 ? STEP_UP_ADD_MAX : STEP_UP_ADD
     next = cur + add
@@ -403,10 +428,12 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
     const recipe = input.settings.tapes[id]
     const ask = typicalAskFor(id, input)
     const q = input.quotes?.[id]
-    const closed = q?.tradingActive === false
+    const session = tapeSessionHours(id, now)
+    const closed = q?.tradingActive === false || !session.open
     const stale = q?.stale === true || closed
     const halt = input.halt?.[id] === true
     const liveOn = recipe.liveOn === true
+    const currentClock = hydrateClock(input.settings.clocks[id])
     const bets = tapeBets(input.book, id, !liveOn)
     const wl = settledWl(bets)
     const { wins, losses } = streak(bets)
@@ -426,10 +453,54 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
       halt,
       closed,
       tradingActive: q?.tradingActive === true,
+      clock: currentClock,
     }
     progress[id] = snap
     const want = targetContracts(recipe.contracts, snap, wins, losses)
     sleeves[id] = { contracts: want, sleeveUsd: money(want * (ask / 100)) }
+    const wantClock = pickChiefClock(currentClock, snap)
+
+    if ((snap.closed || snap.stale) && !liveOn) {
+      const sit = `${TAPE_META[id].label} sit dead tape — paper pre-arm ${wantClock || currentClock} next open`
+      if (!alreadyDid(actions, sit, now)) actions = remember(actions, sit, id, now)
+    }
+
+    if (wantClock && wantClock !== currentClock) {
+      const clockKey = `clock-${id}-${currentClock}-${wantClock}`
+      if (!proposals.some((p) => p.id === clockKey && (p.status === 'applied' || p.status === 'rejected' || p.status === 'pending'))) {
+        const clockReason = `${TAPE_META[id].label} clock ${currentClock}→${wantClock}${liveOn ? ' — draft' : ' — paper next open'}`
+        if (liveOn) {
+          proposals = proposals.concat({
+            id: clockKey,
+            tape: id,
+            kind: 'clock',
+            fromContracts: recipe.contracts,
+            toContracts: recipe.contracts,
+            clock: wantClock,
+            apply: 'draft',
+            reason: clockReason,
+            createdAt: now,
+            status: 'pending',
+          })
+          actions = remember(actions, `draft ${clockReason}`, id, now)
+        } else if (!alreadyDid(actions, `applied ${clockReason}`, now)) {
+          proposals = proposals.concat({
+            id: clockKey,
+            tape: id,
+            kind: 'clock',
+            fromContracts: recipe.contracts,
+            toContracts: recipe.contracts,
+            clock: wantClock,
+            apply: 'auto',
+            reason: clockReason,
+            createdAt: now,
+            status: 'applied',
+          })
+          paperApplies.push({ tape: id, contracts: recipe.contracts, clock: wantClock })
+          actions = remember(actions, `applied ${clockReason}`, id, now)
+        }
+      }
+    }
 
     if (want === recipe.contracts) continue
 
@@ -456,7 +527,7 @@ export function runDeskChief(input: ChiefRunInput): ChiefResult {
         status: 'applied',
       }
       proposals = proposals.filter((p) => p.id !== idKey).concat(proposal)
-      paperApplies.push({ tape: id, contracts: want })
+      paperApplies.push({ tape: id, contracts: want, clock: wantClock || undefined })
       actions = remember(actions, `applied ${reason}`, id, now)
       continue
     }

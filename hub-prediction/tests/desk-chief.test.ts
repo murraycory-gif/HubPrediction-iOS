@@ -8,6 +8,7 @@ import {
   chiefNeverWritesLiveOn,
   hydrateChief,
   mergeChiefState,
+  pickChiefClock,
   runDeskChief,
   tapeLiveArmGate,
 } from '../src/lib/desk-chief'
@@ -139,6 +140,68 @@ describe('Desk Chief paper allocator', () => {
     })
     expect(result.liveOnWrites.gld).toBeUndefined()
     expect(result.state.actions.some((a) => /GLD STALE/i.test(a.text))).toBe(true)
+  })
+
+  it('clock pick paper-applies 5m→15m on a dead tape Soft FAIL Live flip', () => {
+    expect(pickChiefClock('5m', { closed: true, stale: true, halt: false, hitPct: 0, w: 0, l: 0 })).toBe('15m')
+    expect(pickChiefClock('15m', { closed: true, stale: true, halt: false, hitPct: 0, w: 0, l: 0 })).toBeNull()
+    const settings = hydrateSettings({
+      tapes: { gld: { ...GOLD_RECIPES.gld, liveOn: false, botOn: true, contracts: 1 } },
+      clocks: { btc: '15m', ng: '15m', cu: '15m', gld: '5m' },
+    })
+    const result = runDeskChief({
+      settings,
+      book: emptyFinance(),
+      cash: 400,
+      deposits: 760,
+      quotes: { gld: { tradingActive: false, stale: true, yesAsk: 40 } },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(result.paperApplies.some((a) => a.tape === 'gld' && a.clock === '15m')).toBe(true)
+    expect(result.liveOnWrites).toEqual({})
+    expect(settings.tapes.gld.liveOn).toBe(false)
+    expect(result.state.actions.some((a) => /pre-arm/i.test(a.text))).toBe(true)
+  })
+
+  it('Live clock change is a draft — Soft FAIL auto clock + Soft FAIL Live ON', () => {
+    const settings = hydrateSettings({
+      tapes: { gld: { ...GOLD_RECIPES.gld, liveOn: true, botOn: true, contracts: 1 } },
+      clocks: { btc: '15m', ng: '15m', cu: '15m', gld: '5m' },
+    })
+    const result = runDeskChief({
+      settings,
+      book: { ...emptyFinance(), paperStartedAt: now - 49 * 3600_000 },
+      cash: 400,
+      deposits: 760,
+      quotes: { gld: { tradingActive: false, stale: true, yesAsk: 40 } },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(result.paperApplies.some((a) => a.tape === 'gld' && a.clock === '15m')).toBe(false)
+    expect(result.state.proposals.some((p) => p.kind === 'clock' && p.apply === 'draft' && p.tape === 'gld')).toBe(true)
+    expect(result.liveOnWrites).toEqual({})
+    expect(settings.tapes.gld.liveOn).toBe(true)
+  })
+
+  it('Soft FAIL jump 1→20 without a streak', () => {
+    expect(
+      pickChiefClock('15m', { closed: false, stale: false, halt: false, hitPct: 100, w: 1, l: 0 }),
+    ).toBeNull()
+    const settings = hydrateSettings({
+      tapes: { btc: { ...GOLD_RECIPES.btc, liveOn: false, contracts: 1 } },
+    })
+    const book = { ...emptyFinance(), bets: [paperSettled('btc', 1, 0.3)] }
+    const result = runDeskChief({
+      settings,
+      book,
+      cash: 400,
+      deposits: 760,
+      quotes: { btc: { tradingActive: true, stale: false, yesAsk: 70 } },
+      now,
+      prev: hydrateChief(null, now),
+    })
+    expect(result.paperApplies.some((a) => a.tape === 'btc' && a.contracts >= 20)).toBe(false)
   })
 
   it('chief state merge keeps the newer blob Soft FAIL wipe', () => {

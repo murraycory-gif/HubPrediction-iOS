@@ -99,7 +99,7 @@ export function FinancePanel(props: {
             const sleeve = props.chief.sleeves[id]
             return (
               <p key={id} className="tape-recipe" data-testid={`chief-alloc-${id}`}>
-                {TAPE_META[id].label} ×{sleeve?.contracts ?? row?.contracts ?? 1} · sleeve{' '}
+                {TAPE_META[id].label} ×{sleeve?.contracts ?? row?.contracts ?? 1} · {row?.clock ?? '15m'} · sleeve{' '}
                 {formatCash(sleeve?.sleeveUsd ?? 0)} · Bot {row?.botOn ? 'ON' : 'OFF'} · Live {row?.liveOn ? 'ON' : 'OFF'} ·{' '}
                 {row?.hitPct ?? 0}% {row?.w ?? 0}W–{row?.l ?? 0}L · risk {formatCash(row?.openRisk ?? 0)} ·{' '}
                 {row?.halt ? 'HALT' : row?.closed ? 'CLOSED' : row?.stale ? 'STALE' : row?.tradingActive ? 'LIVE' : '—'} ·{' '}

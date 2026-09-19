@@ -69,6 +69,8 @@ describe('QC2 wires', () => {
     expect(dash).toMatch(/liveArmGateForDesk/)
     expect(dash).toMatch(/runDeskChief/)
     expect(dash).toMatch(/tapeLiveArmGate/)
+    expect(dash).toMatch(/pickChiefClock|setTapeClock/)
+    expect(dash).toMatch(/data-testid="lock-in"/)
     expect(dash).not.toMatch(/data-testid="live-all"/)
     expect(dash).not.toMatch(/Live ALL/)
     expect(dash).toMatch(/floor-hit/)
