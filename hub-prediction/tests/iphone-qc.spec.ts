@@ -1113,3 +1113,42 @@ test('LIVE clock settle flips OPEN to WIN and walks cash without reload', async 
   expect(page.url().replace(/\/$/, '')).toBe(startUrl.replace(/\/$/, ''))
   await assertNoMasterLive(page)
 })
+
+test('phone 390: ticket line is contracts + ¢ + cost + win, not a 36-char uuid', async ({ page }) => {
+  const now = Date.now()
+  const uuid = '01a0b74f-e288-7687-8399-a6f10015a68a'
+  await page.addInitScript(
+    ([ts, orderId]) => {
+      const tickets = (['btc', 'ng', 'cu', 'gld'] as const).map((tape, i) => ({
+        tape,
+        ticker: `KX${tape.toUpperCase()}15M-STRIP`,
+        side: i === 0 ? 'down' : 'up',
+        orderId: tape === 'btc' ? orderId : `ord-${tape}-fill-strip01`,
+        contracts: 1,
+        beat: 1,
+        filledAt: ts,
+        ask: tape === 'btc' ? 98 : 70,
+      }))
+      localStorage.setItem('hub.desk.tickets.v1', JSON.stringify(tickets))
+    },
+    [now, uuid],
+  )
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+    const line = page.getByTestId(`ticket-${id}`)
+    await expect(line).toBeVisible()
+    await expect(page.getByTestId(`hours-${id}`)).toContainText(/Hours/)
+    const text = (await line.innerText()).replace(/\s+/g, ' ')
+    expect(text).toMatch(/contract/)
+    expect(text).toMatch(/¢/)
+    expect(text).toMatch(/cost \$/)
+    expect(text).toMatch(/win \$/)
+    expect(text).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+    expect(text).not.toContain(uuid)
+  }
+  await expect(page.getByTestId('ticket-btc')).toContainText('DOWN · 1 contract · 98¢ · cost $0.98 · win $0.02')
+  await expect(page.getByTestId('ticket-id-btc')).toHaveText(/LIVE|PAPER/)
+  await assertNoMasterLive(page)
+})

@@ -1,7 +1,7 @@
 import { deskStorage } from './desk-storage'
 import { pushHostDesk } from './desk-persist'
 import { mergeRaceTrail, pointTime } from './race-path'
-import { cashFromBalancePayload } from './size-cash'
+import { cashFromBalancePayload, ticketCost } from './size-cash'
 import type { DeskBoard, LivePrints, TapeQuote } from './types'
 
 export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
@@ -816,6 +816,7 @@ export type DeskTicket = {
   contracts: number
   beat: number
   filledAt: number
+  ask?: number
 }
 
 export function isRealOrderId(id: unknown): id is string {
@@ -833,6 +834,7 @@ export function makePaperTicket(input: {
   side: 'up' | 'down'
   contracts: number
   beat: number
+  ask?: number
 }): DeskTicket | null {
   const orderId = `deskfill-${input.tape}-${Math.random().toString(36).slice(2, 10)}`
   return makeTicket({ ...input, orderId })
@@ -847,10 +849,12 @@ export function makeTicket(input: {
   contracts: number
   beat: number
   filledAt?: number
+  ask?: number
 }): DeskTicket | null {
   if (!isRealOrderId(input.orderId)) return null
   if (input.side !== 'up' && input.side !== 'down') return null
   if (!input.ticker) return null
+  const ask = Number(input.ask)
   return {
     tape: input.tape,
     ticker: input.ticker,
@@ -859,7 +863,52 @@ export function makeTicket(input: {
     contracts: clampContracts(input.contracts),
     beat: input.beat,
     filledAt: input.filledAt ?? Date.now(),
+    ask: Number.isFinite(ask) && ask > 0 ? Math.round(ask) : undefined,
   }
+}
+
+export function fillAskCents(
+  ticket: { ask?: unknown; side?: unknown },
+  quote?: { yesAsk?: number; noAsk?: number } | null,
+  booked?: { ask?: unknown } | null,
+) {
+  for (const raw of [booked?.ask, ticket.ask, ticket.side === 'down' ? quote?.noAsk : quote?.yesAsk]) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return Math.round(n)
+  }
+  return 0
+}
+
+/** Heartbeat fill strip. Soft FAIL raw Kalshi order id as the ticket line. */
+export function ticketFillStrip(
+  ticket: DeskTicket,
+  quote?: { yesAsk?: number; noAsk?: number } | null,
+  booked?: { ask?: number; spent?: number; count?: number } | null,
+) {
+  const count = Math.max(1, Math.round(ticket.contracts || booked?.count || 1))
+  const ask = fillAskCents(ticket, quote, booked)
+  const cost =
+    booked?.spent != null && Number.isFinite(booked.spent) ? Math.round(booked.spent * 100) / 100 : ticketCost(count, ask)
+  const win = Math.round((count - cost) * 100) / 100
+  const side = ticket.side === 'down' ? 'DOWN' : 'UP'
+  const noun = count === 1 ? 'contract' : 'contracts'
+  const askLabel = ask > 0 ? `${ask}¢` : '—¢'
+  return `${side} · ${count} ${noun} · ${askLabel} · cost ${formatCash(cost)} · win ${formatCash(win)}`
+}
+
+export function looksLikeOrderUuid(text: string) {
+  return /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text)
+}
+
+/** Latest fill on this tape. Prefer the live ticker, else a fresh ticket so the strip still paints. */
+export function displayTicket(tickets: DeskTicket[], id: TapeId, ticker?: string) {
+  if (ticker) {
+    const hit = tickets.find((t) => t.tape === id && t.ticker === ticker)
+    if (hit) return hit
+  }
+  return tickets
+    .filter((t) => t.tape === id && Date.now() - (Number(t.filledAt) || 0) < 20 * 60_000)
+    .sort((a, b) => (b.filledAt || 0) - (a.filledAt || 0))[0]
 }
 
 export function loadTickets(): DeskTicket[] {

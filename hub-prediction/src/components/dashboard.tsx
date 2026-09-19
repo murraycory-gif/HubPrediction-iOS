@@ -57,7 +57,9 @@ import {
   setTapeClock,
   tabIsOpen,
   tapeLean,
+  ticketFillStrip,
   ticketStatus,
+  displayTicket,
   upsertTicket,
   weThinkPair,
   type DeskSettings,
@@ -69,6 +71,7 @@ import {
   type TapeRecipe,
 } from '../lib/tapes'
 import { ticketCost } from '../lib/size-cash'
+import { tapeHoursLine } from '../lib/tape-hours'
 import type { DeskBoard, LivePrints, TapeQuote } from '../lib/types'
 import {
   betClockLabel,
@@ -428,18 +431,19 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       releaseClaim(sentRef.current, `${tape}:`)
       return
     }
+    const ask = side === 'down' ? quote.noAsk : quote.yesAsk
     const ticket = makePaperTicket({
       tape,
       ticker: quote.ticker,
       side,
       contracts: settings.tapes[tape].contracts,
       beat: quote.beat,
+      ask,
     })
     if (!ticket) {
       releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
       return
     }
-    const ask = side === 'down' ? quote.noAsk : quote.yesAsk
     markFilled(sentRef.current, `${tape}:${quote.ticker}`, ticket.orderId)
     setTickets((prev) => upsertTicket(prev, ticket))
     setBook((prev) => {
@@ -553,6 +557,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         orderId,
         contracts: settings.tapes[tape].contracts,
         beat: quote.beat,
+        ask,
       })
       if (!ticket) {
         abortLive(`${TAPE_META[tape].label} Kalshi returned no order id — no ticket`)
@@ -571,7 +576,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         orderId: ticket.orderId,
       })
       if (booked.ok) setBook(collapseClockBets(booked.state))
-      setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
+      setMsg(`${TAPE_META[tape].label} ${ticketFillStrip(ticket, quote)}`)
       await refreshCash()
     } catch (e) {
       abortLive(e instanceof Error ? e.message : `${TAPE_META[tape].label} Kalshi error — IOC miss`)
@@ -686,7 +691,8 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               key={id}
               id={id}
               quote={board?.tapes[id] ?? null}
-              ticket={ticketFor(tickets, id, board?.tapes[id]?.ticker)}
+              ticket={displayTicket(tickets, id, board?.tapes[id]?.ticker)}
+              booked={book.bets.find((b) => b.orderId === displayTicket(tickets, id, board?.tapes[id]?.ticker)?.orderId)}
               hits={tapeHitCell(id, hits, book.bets, Date.now(), hitFrom)}
               recipe={settings.tapes[id]}
               clock={settings.clocks[id]}
@@ -856,15 +862,19 @@ function AnalystDesk({
   killed: boolean
   rehab: AnalystAutoState
 }) {
+  const liveSig = TAPE_IDS.map((id) => {
+    const q = board?.tapes[id]
+    return `${id}:${q?.tradingActive === true ? 1 : 0}:${q?.ticker ?? ''}`
+  }).join('|')
   const pathQuery = useQuery({
-    queryKey: ['tape-paths', events],
+    queryKey: ['tape-paths', events, liveSig],
     queryFn: () => getTapePaths({ data: { events } }),
     staleTime: 60_000,
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   })
   const briefQuery = useQuery({
-    queryKey: ['desk-briefs', settings.clocks],
+    queryKey: ['desk-briefs', settings.clocks, liveSig],
     queryFn: () => getDeskBriefs({ data: { clocks: settings.clocks } }),
     staleTime: 8 * 60_000,
     refetchInterval: 8 * 60_000,
@@ -916,6 +926,7 @@ function TapeRow({
   id,
   quote,
   ticket,
+  booked,
   hits,
   recipe,
   clock,
@@ -931,6 +942,7 @@ function TapeRow({
   id: TapeId
   quote: TapeQuote | null
   ticket: DeskTicket | undefined
+  booked?: { ask?: number; spent?: number; count?: number; kind?: unknown; orderId?: string } | null
   hits: { w: number; l: number }
   recipe: TapeRecipe
   clock: TapeClock
@@ -978,8 +990,12 @@ function TapeRow({
     onTape({ contracts: n })
   }
 
+  const fillLine = ticket ? ticketFillStrip(ticket, shownQuote, booked) : ''
+  const hoursLine = tapeHoursLine(id, shownQuote, clock, Date.now(), liveOn && !stale)
+  const modeLabel = ticket ? (ticket.orderId.startsWith('deskfill') || booked?.kind === 'paper' ? 'PAPER' : 'LIVE') : 'PAPER'
+
   return (
-    <article className={`tape tape-${id}`} data-testid={`tape-${id}`} data-tape={id}>
+    <article className={`tape tape-${id}`} data-testid={`tape-${id}`} data-tape={id} data-ticker={shownQuote?.ticker ?? ''}>
       <header className="tape-head">
         <div className="tape-identity">
           <TapeIcon id={id} />
@@ -1003,6 +1019,9 @@ function TapeRow({
                   <span className="live-dot" /> LIVE
                 </span>
               ) : null}
+            </p>
+            <p className="tape-hours glyph-plate" data-testid={`hours-${id}`}>
+              {hoursLine}
             </p>
           </div>
         </div>
@@ -1059,7 +1078,12 @@ function TapeRow({
           </select>
         </label>
         <p className="tape-ticket" data-testid={`ticket-${id}`}>
-          {ticket ? `${status} · ${ticket.contracts} · ${ticket.orderId}` : 'No ticket this clock'}
+          {ticket ? fillLine : 'No ticket this clock'}
+          {ticket ? (
+            <span className="ticket-id" data-testid={`ticket-id-${id}`} title={ticket.orderId}>
+              {modeLabel}
+            </span>
+          ) : null}
         </p>
       </div>
 
@@ -1095,7 +1119,7 @@ function TapeRow({
 
       {paper || ticket ? (
         <p className="tape-banner glyph-plate" data-testid={`banner-${id}`}>
-          {ticket ? `${ticket.orderId.startsWith('deskfill') ? 'PAPER' : 'LIVE'} ${status}` : 'PAPER'}
+          {ticket ? `${modeLabel} ${status}` : 'PAPER'}
         </p>
       ) : null}
       {botNote ? (
