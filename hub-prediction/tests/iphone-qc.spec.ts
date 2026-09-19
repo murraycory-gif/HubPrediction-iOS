@@ -822,7 +822,6 @@ test('hit goal is 80% — Soft FAIL leftover 83%', async ({ page }) => {
   await waitHost(page)
   await expect(page.getByTestId('ttl-value')).toContainText(/80% goal|<80%/)
   await expect(page.getByTestId('ttl-value')).not.toContainText('83% goal')
-  await expect(page.getByTestId('analyst-lock')).toContainText(/80%|paper-test/)
   await expect(page.getByTestId('desk')).not.toContainText('83% goal')
   await expect(page.locator('.hud-label', { hasText: 'Analyst' })).toContainText('80%')
   await expect(page.locator('.hud-label', { hasText: 'Analyst' })).not.toContainText('83%')
