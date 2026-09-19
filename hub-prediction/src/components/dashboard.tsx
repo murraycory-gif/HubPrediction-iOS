@@ -92,7 +92,8 @@ import {
   isAllBetsFilter,
   HIT_FLOOR,
   last24hBets,
-  stripDeskRows,
+  latchDeskBets24,
+  statsFromDeskBets24,
   tapeHitCell,
   tapeBotNote,
   liveBotCall,
@@ -105,6 +106,7 @@ import {
   CLOCK_MAX_SPEND,
   emptyFinance,
   loadFinance,
+  saveFinance,
   recipeRetuneGate,
   hitFloorGate,
   recentLiveTapeWL,
@@ -799,6 +801,10 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         snapshot: () => ChiefState
       }
       __HUB_APPLY_BOOK?: (payload: KalshiBookPayload) => void
+      __HUB_TEST_BETS?: {
+        inject: (bets: FinanceState['bets']) => void
+        add: (bet: FinanceState['bets'][number]) => void
+      }
     }
     w.__HUB_TEST_CHIEF = {
       run: (over) => tickChief(over, { force: true }),
@@ -807,9 +813,18 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     w.__HUB_APPLY_BOOK = (payload) => {
       setBook((prev) => applyKalshiBook(prev, payload))
     }
+    w.__HUB_TEST_BETS = {
+      inject: (bets) => {
+        setBook((prev) => saveFinance({ ...prev, bets: [...prev.bets, ...bets] }))
+      },
+      add: (bet) => {
+        setBook((prev) => saveFinance({ ...prev, bets: [...prev.bets, bet] }))
+      },
+    }
     return () => {
       delete w.__HUB_TEST_CHIEF
       delete w.__HUB_APPLY_BOOK
+      delete w.__HUB_TEST_BETS
     }
   })
 
@@ -890,8 +905,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     if (next.msg && !/Accept to apply/.test(next.msg)) setMsg(next.msg)
   }, [hostReady, board, book.bets, book.killed, hits, rehab, settings])
 
-  const ttl = last24hBets(book, hits, Date.now(), TAPE_IDS)
-  const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter)
+  const desk24 = last24hBets(book, hits, Date.now(), TAPE_IDS)
+  const desk24Ref = useRef(desk24)
+  desk24Ref.current = latchDeskBets24(desk24Ref.current, desk24)
+  const ttl = desk24Ref.current
+  const stripRows = isAllBetsFilter(settings.betsFilter)
+    ? ttl.rows
+    : ttl.rows.filter((b) => settings.betsFilter.includes(b.tape))
+  const bets24 = { rows: stripRows, ...statsFromDeskBets24(stripRows) }
   const cashByBet = useMemo(
     () => cashAfterEachBet(book.bets, cash.cash, cash.deposits),
     [book.bets, cash.cash, cash.deposits],
@@ -1017,7 +1038,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           pnl={bets24.pnl}
           open={bets24.open}
           pct={bets24.pct}
-          rows={stripDeskRows(book.bets, settings.betsFilter)}
+          rows={bets24.rows}
           cashByBet={cashByBet}
           filter={settings.betsFilter}
           onFilter={(chip) => setSettings(applyBetsFilter(loadSettings(), chip))}
@@ -1611,8 +1632,8 @@ function Bets24Strip({
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
       <p className="hud-label">
-        Bets since first deposit · this desk LIVE walks CASH · PAPER and HIST do not
-        walk CASH · WINDOW · CLOCK · MODE · CASH · {HIT_FLOOR}% win-ratio goal
+        Last 24 hours · desk paper + live · Soft FAIL hist · LIVE walks CASH · PAPER
+        CASH N/A · WINDOW · CLOCK · MODE · CASH · {HIT_FLOOR}% win-ratio goal
       </p>
       <div className="bets-filter" data-testid="bets-filter">
         <button

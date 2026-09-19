@@ -262,3 +262,96 @@ test('BTC Live ON in-arm 70¢ ask calls placeKalshi Soft FAIL sit', async ({ pag
   expect(msg).not.toMatch(/After-fee EV|lock-in|Clock spend|paper 48|Sit —/)
   await expect(page.getByTestId('desk-msg')).not.toContainText(/Sit —|After-fee EV|lock-in sit/i)
 })
+
+test('24H bets table one book — hist dump Soft FAIL flicker', async ({ page }) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  const snapshot = async () =>
+    page.evaluate(() => ({
+      placed: document.querySelector('[data-testid="bets-placed"]')?.textContent?.trim() || '',
+      wl: document.querySelector('[data-testid="bets-wl"]')?.textContent?.trim() || '',
+      rows: document.querySelectorAll('[data-testid="bets-log"] li').length,
+    }))
+  const frozen = await snapshot()
+  await page.evaluate((ts) => {
+    const hist = Array.from({ length: 200 }, (_, i) => ({
+      betId: `kalshi:KXBTC15M-H${i}`,
+      tape: 'btc',
+      ticker: `KXBTC15M-H${i}`,
+      clock: '15m',
+      closeAt: ts,
+      side: 'up',
+      count: 1,
+      ask: 50,
+      spent: 50,
+      orderId: `settled-KXBTC15M-H${i}`,
+      status: 'settled',
+      pnl: 0.5,
+      filledAt: ts,
+      settledAt: ts,
+      kind: 'hist',
+    }))
+    ;(window as Window & { __HUB_TEST_BETS?: { inject: (bets: unknown[]) => void } }).__HUB_TEST_BETS?.inject(hist)
+  }, Date.now())
+  const start = Date.now()
+  while (Date.now() - start < 5000) {
+    const cur = await snapshot()
+    expect(cur.placed).toBe(frozen.placed)
+    expect(cur.wl).toBe(frozen.wl)
+    expect(cur.rows).toBe(frozen.rows)
+    expect(cur.placed).not.toMatch(/11,?784/)
+    expect(cur.wl).not.toMatch(/255W/)
+    await page.waitForTimeout(400)
+  }
+  const now = Date.now()
+  await page.evaluate((ts) => {
+    const w = window as Window & { __HUB_TEST_BETS?: { add: (bet: unknown) => void } }
+    w.__HUB_TEST_BETS?.add({
+      betId: 'bet_paper-24h-add',
+      tape: 'btc',
+      ticker: 'KXBTC15M-PAPERADD',
+      clock: '15m',
+      closeAt: ts,
+      side: 'down',
+      count: 1,
+      ask: 40,
+      spent: 4,
+      orderId: 'deskfill-btc-24hadd',
+      status: 'settled',
+      pnl: -4,
+      filledAt: ts,
+      settledAt: ts,
+      kind: 'paper',
+    })
+    w.__HUB_TEST_BETS?.add({
+      betId: 'bet_live-24h-add',
+      tape: 'btc',
+      ticker: 'KXBTC15M-LIVEADD',
+      clock: '15m',
+      closeAt: ts,
+      side: 'up',
+      count: 1,
+      ask: 70,
+      spent: 7,
+      orderId: 'ord-live-24hadd-aaaa',
+      status: 'settled',
+      pnl: 3,
+      filledAt: ts,
+      settledAt: ts,
+      kind: 'live',
+    })
+  }, now)
+  await expect.poll(async () => (await snapshot()).rows, { timeout: 8_000 }).toBe(frozen.rows + 2)
+  const after = await snapshot()
+  expect(after.placed).not.toBe(frozen.placed)
+  await expect(page.locator('[data-order-id="deskfill-btc-24hadd"] [data-testid="bets-mode"]')).toHaveText('PAPER')
+  await expect(page.locator('[data-order-id="ord-live-24hadd-aaaa"] [data-testid="bets-mode"]')).toHaveText('LIVE')
+  await expect(page.locator('[data-testid="bets-mode"]', { hasText: 'HIST' })).toHaveCount(0)
+  await page.waitForTimeout(1200)
+  const hold = await snapshot()
+  expect(hold.placed).toBe(after.placed)
+  expect(hold.wl).toBe(after.wl)
+  expect(hold.rows).toBe(after.rows)
+})

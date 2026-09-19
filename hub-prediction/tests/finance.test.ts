@@ -31,6 +31,7 @@ import {
   isPaperOrderId,
   isPaperOrderId,
   last24hBets,
+  latchDeskBets24,
   stripDeskRows,
   tapeHitCell,
   betClockLabel,
@@ -408,6 +409,14 @@ describe('finance Soft KEEP', () => {
     expect(dumped.l).toBe(strip.l)
     expect(stripDeskRows(histDump.bets).every((b) => b.kind !== 'hist')).toBe(true)
     expect(stripDeskRows(histDump.bets).some((b) => b.orderId === 'ord-win-12345')).toBe(true)
+    const emptyHits = { tapes: { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } } }
+    const frozen = last24hBets(state, emptyHits, now)
+    const dumpedPack = last24hBets(histDump, emptyHits, now)
+    expect(latchDeskBets24(frozen, dumpedPack).placed).toBeCloseTo(frozen.placed)
+    expect(latchDeskBets24(frozen, dumpedPack).rows.map((b) => b.betId).sort()).toEqual(frozen.rows.map((b) => b.betId).sort())
+    const wiped = latchDeskBets24(frozen, { ...frozen, rows: [], placed: 0, w: 0, l: 0, pnl: 0, open: 0, pct: 0 })
+    expect(wiped.placed).toBeCloseTo(frozen.placed)
+    expect(wiped.rows).toHaveLength(frozen.rows.length)
   })
 
   it('Last 24H bets tape filter splits placed / W–L / P&L', () => {
@@ -604,16 +613,18 @@ describe('finance Soft KEEP', () => {
     }
     const all = last24hBets(live, hits, now)
     expect(all.w).toBe(1)
-    expect(all.l).toBe(0)
-    expect(all.placed).toBeCloseTo(10)
-    expect(all.pnl).toBeCloseTo(5)
+    expect(all.l).toBe(1)
+    expect(all.placed).toBeCloseTo(10 + paper.bet.spent)
+    expect(all.pnl).toBeCloseTo(-3)
+    expect(all.rows.some((b) => b.kind === 'paper')).toBe(true)
+    expect(all.rows.some((b) => b.kind === 'live')).toBe(true)
     expect(bookRealizedPnl(live)).toBeCloseTo(5)
     expect(chasingLosses(withPaper, now)).toBe(false)
     const cu = last24hBets(live, hits, now, ['cu'])
     expect(cu.w).toBe(0)
-    expect(cu.l).toBe(0)
-    expect(cu.placed).toBe(0)
-    expect(cu.pnl).toBe(0)
+    expect(cu.l).toBe(1)
+    expect(cu.placed).toBeCloseTo(paper.bet.spent)
+    expect(cu.pnl).toBeCloseTo(-8)
     const hydrated = hydrateFinance(live)
     expect(hydrated.bets.find((b) => b.orderId.startsWith('deskfill-'))?.kind).toBe('paper')
     expect(betClockLabel({ clock: '15m', ticker: 'KXCOPPER15M-PAPER' })).toBe('15m')
@@ -932,8 +943,11 @@ describe('MODE LIVE is this-desk V2 only — Soft FAIL kalshi:* as LIVE', () => 
     const settled = { ...booked.bet, status: 'settled' as const, pnl: -8, settledAt: Date.now() }
     const run = cashAfterEachBet([settled], 505)
     expect(run[booked.bet.betId]).toBeNull()
-    expect(last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits).placed).toBe(0)
-    expect(last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits).pnl).toBe(0)
+    const paperStrip = last24hBets({ ...emptyFinance(), bets: [settled] }, emptyHits)
+    expect(paperStrip.placed).toBeCloseTo(booked.bet.spent)
+    expect(paperStrip.pnl).toBeCloseTo(-8)
+    expect(paperStrip.l).toBe(1)
+    expect(paperStrip.rows.every((b) => b.kind === 'paper')).toBe(true)
   })
 
   it('mocked placeContract order_id → MODE LIVE and cash walks', () => {

@@ -101,8 +101,9 @@ describe('HARD QA gates', () => {
       ],
     }
     const strip = last24hBets(state, hits, now)
-    expect(strip.placed).toBeCloseTo(0.7)
+    expect(strip.placed).toBeCloseTo(1.1)
     expect(strip.placed).not.toBeCloseTo(11784)
+    expect(strip.rows).toHaveLength(2)
     expect(stripDeskRows(state.bets, TAPE_IDS, now).every((b) => b.kind !== 'hist')).toBe(true)
     expect(stripDeskRows(state.bets, TAPE_IDS, now).map((b) => b.orderId).sort()).toEqual(['deskfill-cu-today', 'ord-live-aaaa'])
   })

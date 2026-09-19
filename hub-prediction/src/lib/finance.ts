@@ -344,48 +344,93 @@ export function hitFromMs(now = Date.now(), fromMs?: number) {
   return now - 24 * 60 * 60 * 1000
 }
 
+/** This desk booked it. Soft FAIL imported Kalshi hist in the 24H table. */
+export function isDeskBookedBet(b: { kind?: unknown; orderId?: unknown; betId?: unknown }) {
+  if (isImportedKalshiRow(b) || isHistBet(b)) return false
+  return isPaperBet(b) || isLiveBet(b)
+}
+
+export type DeskBetRow = {
+  betId?: string
+  tape: TapeId
+  kind?: unknown
+  orderId?: unknown
+  status?: 'open' | 'settled'
+  spent?: number
+  pnl?: number | null
+  settledAt?: number | null
+  closeAt?: number
+  filledAt?: number
+}
+
+/** Last 24h of desk paper + live. Soft FAIL hist / imported settlements. */
+export function deskBooked24h<T extends DeskBetRow>(
+  bets: T[],
+  tapes: readonly TapeId[] = TAPE_IDS,
+  now = Date.now(),
+  fromMs?: number,
+) {
+  const allow = new Set(hydrateBetsFilter([...tapes]))
+  const from = hitFromMs(now, fromMs)
+  return bets
+    .filter((b) => allow.has(b.tape) && isDeskBookedBet(b) && betStamp(b) >= from)
+    .slice()
+    .sort((a, b) => betStamp(b) - betStamp(a))
+}
+
+export function deskBets24Key(rows: Array<{ betId?: unknown; orderId?: unknown }>) {
+  return rows
+    .map((r) => String(r.betId || r.orderId || ''))
+    .filter(Boolean)
+    .sort()
+    .join('|')
+}
+
+/** Stats from the same 24h desk rows. Soft FAIL a second compute / hits.events. */
+export function statsFromDeskBets24(rows: Array<{ status?: 'open' | 'settled'; spent?: number; pnl?: number | null }>) {
+  const settled = rows.filter((b) => b.status === 'settled')
+  const w = settled.filter((b) => (b.pnl ?? 0) > 0).length
+  const l = settled.filter((b) => (b.pnl ?? 0) < 0).length
+  const placed = Math.round(rows.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
+  const pnl = Math.round(settled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
+  const open = rows.filter((b) => b.status === 'open').length
+  const n = w + l
+  return { placed, w, l, pnl, open, pct: n ? Math.round((w / n) * 100) : 0 }
+}
+
+export type DeskBets24<T extends DeskBetRow = DeskBetRow> = ReturnType<typeof statsFromDeskBets24> & { rows: T[] }
+
+/** Soft FAIL overwrite unless the desk betId set actually changed. Soft FAIL poll flicker. */
+export function latchDeskBets24<T extends DeskBetRow>(prev: DeskBets24<T> | null | undefined, next: DeskBets24<T>): DeskBets24<T> {
+  if (!prev || !prev.rows.length) return next
+  if (deskBets24Key(prev.rows) === deskBets24Key(next.rows)) return next
+  if (!next.rows.length) return prev
+  if (next.rows.every((r) => isHistBet(r) || isImportedKalshiRow(r))) return prev
+  return next
+}
+
 export function last24hBets(
   state: FinanceState,
-  hits: {
+  _hits: {
     tapes: Record<TapeId, { w: number; l: number }>
     events?: Array<{ tape: TapeId; ticker?: string; win?: boolean; at: number; spent?: number; pnl?: number }>
   },
   now = Date.now(),
   tapes: readonly TapeId[] = TAPE_IDS,
   fromMs?: number,
-) {
-  const allow = new Set(hydrateBetsFilter([...tapes]))
-  const from = hitFromMs(now, fromMs)
-  const liveRecent = state.bets.filter((b) => allow.has(b.tape) && isLiveBet(b) && betStamp(b) >= from)
-  const liveSettled = liveRecent.filter((b) => b.status === 'settled')
-  const paperToday = state.bets.filter((b) => allow.has(b.tape) && isPaperBet(b) && betStamp(b) >= dayStartMs(now))
-  const open = [...liveRecent, ...paperToday].filter((b) => b.status === 'open').length
-  const w = liveSettled.filter((b) => (b.pnl ?? 0) > 0).length
-  const l = liveSettled.filter((b) => (b.pnl ?? 0) < 0).length
-  const placed = Math.round(liveRecent.reduce((s, b) => s + (Number(b.spent) || 0), 0) * 100) / 100
-  const pnl = Math.round(liveSettled.reduce((s, b) => s + (b.pnl ?? 0), 0) * 100) / 100
-  const n = w + l
-  return { placed, w, l, pnl, open, pct: n ? Math.round((w / n) * 100) : 0 }
+): DeskBets24<BookedBet> {
+  const rows = deskBooked24h(state.bets, tapes, now, fromMs)
+  return { rows, ...statsFromDeskBets24(rows) }
 }
 
-/** Last-24H strip rows: desk LIVE + today paper. Soft FAIL Kalshi hist dump. */
-export function stripDeskRows<T extends { tape: TapeId; kind?: unknown; orderId?: unknown; betId?: unknown; settledAt?: number | null; closeAt?: number; filledAt?: number }>(
+/** Same array as last24hBets. Soft FAIL a second book. */
+export function stripDeskRows<T extends DeskBetRow>(
   bets: T[],
   tapes: readonly TapeId[] = TAPE_IDS,
   now = Date.now(),
+  fromMs?: number,
 ) {
-  const allow = new Set(hydrateBetsFilter([...tapes]))
-  const from24 = now - 24 * 60 * 60 * 1000
-  const today = dayStartMs(now)
-  return bets
-    .filter((b) => {
-      if (!allow.has(b.tape)) return false
-      if (isHistBet(b)) return false
-      if (isPaperBet(b)) return betStamp(b) >= today
-      return isLiveBet(b) && betStamp(b) >= from24
-    })
-    .slice()
-    .sort((a, b) => betStamp(b) - betStamp(a))
+  return deskBooked24h(bets, tapes, now, fromMs)
 }
 
 function betWon(b: { pnl: number | null; win?: boolean }): boolean | null {
