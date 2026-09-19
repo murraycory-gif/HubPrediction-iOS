@@ -142,6 +142,7 @@ import {
   formatExitLocked,
   latestExitFor,
   loadExitLogs,
+  recentExitLogs,
   type ExitWatchDecision,
   type ExitWatchInput,
   type ExitWatchLog,
@@ -1216,6 +1217,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               </p>
             )
           })}
+          {recentExitLogs(exitLogs).map((row) => (
+            <p
+              key={`${row.orderId}-${row.action}-${row.at}`}
+              className="tape-line"
+              data-testid={`exit-log-${row.orderId}`}
+              data-exit-action={row.action}
+            >
+              {row.action === 'exit' ? 'EXIT' : 'HOLD'} · {formatExitLocked(row.locked)} · {row.why}
+            </p>
+          ))}
         </section>
         {financeOpen ? (
           <FinancePanel

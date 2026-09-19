@@ -502,9 +502,9 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
       __HUB_PLACE_CALLS?: unknown[]
     }
     w.__HUB_PLACE_CALLS = []
-    const start = at - 40_000
+    const start = at - 45_000
     const points = Array.from({ length: 8 }, (_, i) => ({
-      t: start + (i * 40_000) / 7,
+      t: start + (i * 45_000) / 7,
       px: 80_120 + ((80_040 - 80_120) * i) / 7,
     }))
     return w.__HUB_TEST_EXIT!.apply({
@@ -519,18 +519,18 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
       closeAt: at + 6 * 60_000,
       points,
       yesAsk: 75,
-      noAsk: 26,
+      noAsk: 22,
       fillCount: 20,
       now: at,
     })
   }, now)
   expect(fade.action).toBe('exit')
-  expect(fade.locked).toBeGreaterThan(0)
+  expect(fade.locked).toBeGreaterThanOrEqual(0.4)
   expect(fade.liveSell).toBe(false)
   expect(fade.paper).toBe(true)
-  await expect(page.getByTestId('exit-action-btc')).toHaveText('EXIT')
-  await expect(page.getByTestId('exit-locked-btc')).toContainText('$')
-  await expect(page.getByTestId('exit-why-btc')).toContainText(/Profit lock/)
+  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toHaveAttribute('data-exit-action', 'exit')
+  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toContainText(/Profit lock/)
+  await expect(page.getByTestId('exit-log-01exit-btc-fill-aaaa')).toContainText('$')
   await expect(page.getByTestId('exit-watch-lock')).toContainText(/Soft FAIL Live sell/)
   await expect(page.getByTestId('analyst-accept-btc')).toHaveCount(0)
   await expect(page.locator('[data-testid^="chief-accept-"]')).toHaveCount(0)
@@ -544,9 +544,9 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
     const w = window as Window & {
       __HUB_TEST_EXIT?: { apply: (input: Record<string, unknown>) => { action: string; liveSell: boolean } }
     }
-    const start = at - 40_000
+    const start = at - 45_000
     const points = Array.from({ length: 8 }, (_, i) => ({
-      t: start + (i * 40_000) / 7,
+      t: start + (i * 45_000) / 7,
       px: 80_100 + ((80_130 - 80_100) * i) / 7,
     }))
     return w.__HUB_TEST_EXIT!.apply({
@@ -561,12 +561,13 @@ test('EXIT WATCH fade-to-beat paper EXIT; no-fade holds to settle', async ({ pag
       closeAt: at + 6 * 60_000,
       points,
       yesAsk: 75,
-      noAsk: 26,
+      noAsk: 22,
       fillCount: 20,
       now: at,
     })
   }, now)
   expect(hold.action).toBe('hold')
   expect(hold.liveSell).toBe(false)
+  await expect(page.getByTestId('exit-log-01exit-btc-hold-bbbb')).toHaveAttribute('data-exit-action', 'hold')
   await expect(page.getByTestId('exit-watch-lock')).toContainText(/Soft FAIL Accept/)
 })

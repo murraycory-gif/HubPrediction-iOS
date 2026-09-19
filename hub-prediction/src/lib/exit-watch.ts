@@ -9,8 +9,17 @@ import { isRealOrderId, TAPE_META, type TapeId } from './tapes'
 export const EXIT_WATCH_LIVE = false
 export const EXIT_KEY = 'hub.desk.exit.v1'
 export const EXIT_MIN_POINTS = 3
-export const EXIT_MIN_SPAN_MS = 8_000
-export const EXIT_VEL_WINDOW_MS = 90_000
+/** Finance: adverse velocity measured over 45s. Soft FAIL first down tick. */
+export const EXIT_MIN_SPAN_MS = 45_000
+export const EXIT_VEL_WINDOW_MS = 45_000
+/** Hold while favorable NOW−beat ≥ $20. Arm only if buffer < 20 or path crosses beat. */
+export const BUFFER_USD = 20
+/** Max salvage only if buffer < $12 AND v ≥ 0.80/s AND path crosses. Soft FAIL salvage above 12. */
+export const BUFFER_SALVAGE_USD = 12
+/** Adverse ≥ $0.80/sec over 45s. Soft FAIL sell without that. */
+export const VELOCITY_USD_PER_SEC = 0.8
+/** After-fee P&L ≥ $0.40 → profit-lock EXIT at best bid when armed. */
+export const MIN_LOCK_USD = 0.4
 
 export type ExitWatchAction = 'exit' | 'hold'
 
@@ -74,7 +83,7 @@ export function distanceToBeat(side: 'up' | 'down', live: number, beat: number) 
   return side === 'down' ? beat - live : live - beat
 }
 
-/** Recent velocity toward the beat, px / minute. Soft FAIL one-tick dips. */
+/** Recent adverse velocity toward the beat, USD / sec over 45s. Soft FAIL one-tick dips. */
 export function velocityTowardBeat(
   id: TapeId,
   side: 'up' | 'down',
@@ -99,7 +108,7 @@ export function velocityTowardBeat(
     return { vel: 0, spanMs, delta, firstTick: true, points: rows.length }
   }
   const toward = side === 'up' ? -delta : delta
-  const vel = toward / (spanMs / 60_000)
+  const vel = toward / (spanMs / 1000)
   return { vel, spanMs, delta, firstTick: false, points: rows.length }
 }
 
@@ -138,7 +147,7 @@ export function projectedCrossesBeat(opts: {
   if (!(opts.dist > 0) || !(opts.vel > 0) || !(left > 0)) {
     return { crosses: false, etaMs: null as number | null }
   }
-  const etaMs = (opts.dist / opts.vel) * 60_000
+  const etaMs = (opts.dist / opts.vel) * 1000
   return { crosses: etaMs > 0 && etaMs < left, etaMs }
 }
 
@@ -188,7 +197,7 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
     })
   }
   if (motion.firstTick) {
-    return hold(`${label} Soft FAIL first down tick — need a path, not one print.`, {
+    return hold(`${label} Soft FAIL first down tick — need a 45s path, not one print.`, {
       locked,
       bidCents,
       dist,
@@ -196,33 +205,76 @@ export function decideExitWatch(input: ExitWatchInput): ExitWatchDecision {
       firstTick: true,
     })
   }
-  if (!path.crosses) {
-    return hold(`${label} hold to settle — path Soft FAIL beat before close.`, {
+  const fastEnough = motion.vel >= VELOCITY_USD_PER_SEC
+  const armed = dist < BUFFER_USD || path.crosses
+  if (!fastEnough) {
+    return hold(`${label} hold — Soft FAIL sell without adverse ≥ ${VELOCITY_USD_PER_SEC.toFixed(2)}/s over 45s.`, {
       locked,
       bidCents,
       dist,
       vel: motion.vel,
       etaMs: path.etaMs,
-      crosses: false,
+      crosses: path.crosses,
     })
   }
-  const why =
-    locked > 0
-      ? `${label} EXIT paper — fade crosses beat. Profit lock ${locked >= 0 ? '+' : ''}$${Math.abs(locked).toFixed(2)}. Live Soft FAIL.`
-      : `${label} EXIT paper — fade crosses beat. Max salvage ${locked >= 0 ? '+' : ''}$${Math.abs(locked).toFixed(2)}. Live Soft FAIL.`
-  return {
-    ...base,
-    action: 'exit',
-    why,
+  if (locked >= MIN_LOCK_USD) {
+    if (!armed) {
+      return hold(`${label} hold — buffer ≥ $${BUFFER_USD} and path Soft FAIL beat before close.`, {
+        locked,
+        bidCents,
+        dist,
+        vel: motion.vel,
+        etaMs: path.etaMs,
+        crosses: false,
+      })
+    }
+    return {
+      ...base,
+      action: 'exit',
+      why: `${label} EXIT paper — fade + ${motion.vel.toFixed(2)}/s. Profit lock ${locked >= 0 ? '+' : ''}$${Math.abs(locked).toFixed(2)}. Live Soft FAIL.`,
+      locked,
+      bidCents,
+      dist,
+      vel: motion.vel,
+      etaMs: path.etaMs,
+      crosses: path.crosses,
+      alreadyThrough: false,
+      firstTick: false,
+    }
+  }
+  if (dist < BUFFER_SALVAGE_USD && path.crosses) {
+    return {
+      ...base,
+      action: 'exit',
+      why: `${label} EXIT paper — fade crosses beat. Max salvage ${locked >= 0 ? '+' : ''}$${Math.abs(locked).toFixed(2)}. Live Soft FAIL.`,
+      locked,
+      bidCents,
+      dist,
+      vel: motion.vel,
+      etaMs: path.etaMs,
+      crosses: true,
+      alreadyThrough: false,
+      firstTick: false,
+    }
+  }
+  if (dist >= BUFFER_SALVAGE_USD) {
+    return hold(`${label} hold — Soft FAIL salvage above $${BUFFER_SALVAGE_USD}.`, {
+      locked,
+      bidCents,
+      dist,
+      vel: motion.vel,
+      etaMs: path.etaMs,
+      crosses: path.crosses,
+    })
+  }
+  return hold(`${label} hold to settle — path Soft FAIL beat before close.`, {
     locked,
     bidCents,
     dist,
     vel: motion.vel,
     etaMs: path.etaMs,
-    crosses: true,
-    alreadyThrough: false,
-    firstTick: false,
-  }
+    crosses: false,
+  })
 }
 
 export function emptyExitLogs(): ExitWatchLog[] {
@@ -302,6 +354,19 @@ export function applyExitDecision(logs: ExitWatchLog[], decision: ExitWatchDecis
 
 export function latestExitFor(logs: ExitWatchLog[], tape: TapeId) {
   return logs.filter((l) => l.tape === tape).sort((a, b) => b.at - a.at)[0] ?? null
+}
+
+/** Newest paper row per order id. Soft FAIL ghost sells. */
+export function recentExitLogs(logs: ExitWatchLog[], n = 8) {
+  const seen = new Set<string>()
+  const out: ExitWatchLog[] = []
+  for (const row of [...logs].sort((a, b) => b.at - a.at)) {
+    if (seen.has(row.orderId)) continue
+    seen.add(row.orderId)
+    out.push(row)
+    if (out.length >= n) break
+  }
+  return out
 }
 
 export function formatExitLocked(locked: number) {
