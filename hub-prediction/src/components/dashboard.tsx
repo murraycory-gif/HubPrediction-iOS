@@ -282,7 +282,6 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       try {
         const host = await getDeskState({ data: { t: Date.now() } })
         if (cancelled || !host) return
-        if (Date.now() - lastLocalWrite.current < SETTINGS_LATCH_MS * 3) return
         const newer = hostSettingsNewer(host)
         const applied = applyHostDeskState(host)
         if (!applied && !newer) return
@@ -833,10 +832,14 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         setBook((prev) => ({ ...prev, bets: [...prev.bets, bet] }))
       },
     }
+    ;(w as Window & { __HUB_TEST_CONTRACTS?: (tape: TapeId, n: number) => void }).__HUB_TEST_CONTRACTS = (tape, n) => {
+      setSettings(patchTape(loadSettings(), tape, { contracts: clampContracts(n) }))
+    }
     return () => {
       delete w.__HUB_TEST_CHIEF
       delete w.__HUB_APPLY_BOOK
       delete w.__HUB_TEST_BETS
+      delete (w as Window & { __HUB_TEST_CONTRACTS?: unknown }).__HUB_TEST_CONTRACTS
     }
   })
 
