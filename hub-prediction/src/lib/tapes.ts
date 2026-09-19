@@ -778,31 +778,33 @@ export function hostLivePlaceGate(opts: {
   })
 }
 
-export type SendClaim = { at: number; tries: number; filled?: string }
+export type SendClaim = { at: number; tries: number; filled?: string; pending?: boolean }
 
-/** IOC miss retries 3–4x then release. Stale claim >8s cannot block. */
+/** One in-flight POST per ticker. Soft FAIL 4 CU ghosts. IOC miss can retry after release, cap 4. */
 export function claimSend(map: Record<string, SendClaim>, key: string, now = Date.now()): 'send' | 'skip' {
   const c = map[key]
   if (c?.filled) return 'skip'
-  if (c && now - c.at < 180) return 'skip'
-  if (c && c.tries >= 4 && now - c.at < 8500) return 'skip'
-  if (c && now - c.at >= 8000) delete map[key]
+  if (c?.pending) return 'skip'
+  if (c && c.tries >= 4) return 'skip'
+  if (c && now - c.at >= 8000 && !c.pending) delete map[key]
   const prev = map[key]
   const tries = (prev?.tries ?? 0) + 1
   if (tries > 4) {
     delete map[key]
     return 'skip'
   }
-  map[key] = { at: now, tries }
+  map[key] = { at: now, tries, pending: true }
   return 'send'
 }
 
 export function markFilled(map: Record<string, SendClaim>, key: string, orderId: string) {
-  map[key] = { at: Date.now(), tries: 4, filled: orderId }
+  map[key] = { at: Date.now(), tries: 4, filled: orderId, pending: true }
 }
 
 export function releaseClaim(map: Record<string, SendClaim>, key: string) {
-  delete map[key]
+  const c = map[key]
+  if (!c || c.filled) return
+  map[key] = { at: Date.now(), tries: c.tries }
 }
 
 export type DeskTicket = {

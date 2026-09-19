@@ -186,6 +186,8 @@ describe('Windows-host Kalshi creds — Soft FAIL browser PEM', () => {
     expect(trade).toMatch(/timestamp \+ method \+ signRequestPath\(path\)/)
     expect(trade).toMatch(/export async function fetchFills/)
     expect(trade).toMatch(/export async function fetchPositions/)
+    expect(trade).toMatch(/export async function fetchClockSettle/)
+    expect(src).toMatch(/export const getClockSettle/)
     expect(ignore).toMatch(/\.secrets\//)
     expect(ignore).toMatch(/\*\.pem/)
   })

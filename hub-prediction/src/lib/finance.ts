@@ -449,6 +449,33 @@ export function openDeskFillOnTicker(state: FinanceState, ticker: string) {
   return state.bets.some((b) => b.ticker === ticker && b.status === 'open' && betKind(b) !== 'hist')
 }
 
+/** One desk LIVE/PAPER row per ticker. Soft FAIL 4 CU LIVE ghosts from in-flight retries. */
+export function collapseClockBets(state: FinanceState): FinanceState {
+  const hist: BookedBet[] = []
+  const desk: BookedBet[] = []
+  for (const b of state.bets) {
+    if (betKind(b) === 'hist') hist.push(b)
+    else desk.push(b)
+  }
+  desk.sort((a, b) => (a.filledAt || 0) - (b.filledAt || 0))
+  const byTicker = new Map<string, BookedBet>()
+  for (const b of desk) {
+    const cur = byTicker.get(b.ticker)
+    if (!cur) {
+      byTicker.set(b.ticker, b)
+      continue
+    }
+    if (cur.status === 'open' && b.status === 'settled') {
+      byTicker.set(b.ticker, { ...b, betId: cur.betId })
+    }
+  }
+  const next = [...byTicker.values(), ...hist]
+  if (next.length === state.bets.length && next.every((b, i) => b.betId === state.bets[i]?.betId && b.orderId === state.bets[i]?.orderId && b.status === state.bets[i]?.status)) {
+    return state
+  }
+  return saveFinance({ ...state, bets: next })
+}
+
 export type Gate = { ok: true } | { ok: false; reason: string }
 
 export function liveArmGate(
@@ -909,11 +936,17 @@ export function mergeKalshiHistoryToBook(
   const deskNext = desk.map((b) => {
     const k = kalshi.find((row) => row.ticker === b.ticker)
     if (!k) return { ...b, kind: betKind(b) }
-    if (b.status === 'settled') return { ...b, kind: betKind(b) }
+    if (b.status === 'settled') {
+      if (k.status === 'settled' && k.pnl != null && isLiveBet(b) && k.pnl !== b.pnl) {
+        return { ...b, pnl: k.pnl, settledAt: b.settledAt ?? k.settledAt, spent: b.spent || k.spent, kind: betKind(b) }
+      }
+      return { ...b, kind: betKind(b) }
+    }
+    if (k.status !== 'settled') return { ...b, kind: betKind(b), spent: b.spent || k.spent }
     return {
       ...b,
-      status: k.status,
-      pnl: b.pnl ?? k.pnl,
+      status: 'settled' as const,
+      pnl: k.pnl ?? b.pnl,
       settledAt: b.settledAt ?? k.settledAt,
       spent: b.spent || k.spent,
       kind: betKind(b),

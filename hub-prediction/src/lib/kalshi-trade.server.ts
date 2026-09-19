@@ -222,6 +222,65 @@ export async function fetchFills(keyId: string, pem: string) {
   return { fills }
 }
 
+async function fetchPublicMarket(ticker: string) {
+  try {
+    const r = await fetch(`${BASE}${ROOT}/markets/${encodeURIComponent(ticker)}`, {
+      headers: { Accept: 'application/json', 'User-Agent': 'HUB-Prediction/1.0' },
+    })
+    if (!r.ok) return { ticker, result: '' }
+    const json = (await r.json()) as { market?: Record<string, unknown> } & Record<string, unknown>
+    const m = (json.market && typeof json.market === 'object' ? json.market : json) as Record<string, unknown>
+    return {
+      ticker,
+      result: String(m.result ?? ''),
+      closeTime: (m.close_time ?? m.close_ts ?? '') as string | number,
+    }
+  } catch {
+    return { ticker, result: '' }
+  }
+}
+
+function rowsNamed(raw: unknown, keys: string[]) {
+  if (!raw || typeof raw !== 'object') return [] as unknown[]
+  const o = raw as Record<string, unknown>
+  for (const key of keys) {
+    if (Array.isArray(o[key])) return o[key] as unknown[]
+  }
+  return []
+}
+
+function filterTickerRows(raw: unknown, keys: string[], want: Set<string>) {
+  const rows = rowsNamed(raw, keys).filter((row) => {
+    if (!row || typeof row !== 'object') return false
+    const ticker = String((row as { ticker?: unknown }).ticker ?? '')
+    return !want.size || want.has(ticker)
+  })
+  const first = keys[0] || 'rows'
+  return { [first]: rows, ...Object.fromEntries(keys.map((k) => [k, rows])) }
+}
+
+/** One closed ticker: market result + portfolio settlement + cash. Soft FAIL a 20s series drip. */
+export async function fetchClockSettle(keyId: string, pem: string, tickers: string[], minTsMs = 0) {
+  const want = new Set(tickers.map((t) => String(t || '').trim()).filter(Boolean))
+  const minSec =
+    minTsMs > 1e12 ? Math.max(0, Math.floor(minTsMs / 1000) - 180) : Math.max(0, Math.floor(minTsMs || Date.now() / 1000 - 7200))
+  const [bal, settlements, markets] = await Promise.all([
+    fetchBalance(keyId, pem),
+    fetchSettlements(keyId, pem, minSec).catch(() => ({ settlements: [] as unknown[] })),
+    Promise.all([...want].map((ticker) => fetchPublicMarket(ticker))),
+  ])
+  return {
+    cash: bal.cash,
+    settlements: filterTickerRows(settlements, ['settlements'], want),
+    fills: { fills: [] as unknown[] },
+    positions: { market_positions: [] as unknown[] },
+    markets,
+    tickers: [...want],
+    fetchedAt: Date.now(),
+    hostCreds: true,
+  }
+}
+
 export async function fetchPositions(keyId: string, pem: string) {
   const { rows } = await paginatedList(
     keyId,

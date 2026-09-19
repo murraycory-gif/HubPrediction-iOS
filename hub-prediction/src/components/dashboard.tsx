@@ -1,8 +1,8 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
+import { getClockSettle, getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
 import { applyHostDeskState } from '../lib/desk-hydrate'
-import { DESK_TICK_MS } from '../lib/desk-tick'
+import { DESK_TICK_MS, useDeskTick } from '../lib/desk-tick'
 import { setHostDeskWriter } from '../lib/desk-persist'
 import {
   TAPE_IDS,
@@ -76,6 +76,8 @@ import {
   betWindowMs,
   cashAfterEachBet,
   bookFill,
+  collapseClockBets,
+  openDeskFillOnTicker,
   clearKill,
   engageKill,
   chasingLosses,
@@ -101,6 +103,7 @@ import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
 import { FinancePanel } from './finance-panel'
 import { formatBetWindow, formatWindowRange } from '../lib/chicago-time'
+import { applyClockSettle, clocksNeedingSettle, readTestClockSettle } from '../lib/settle-latch'
 import { RaceChart, useSmoothedLive } from './race-chart'
 import { SettingsPanel } from './settings-panel'
 import { TapeIcon } from './tape-icon'
@@ -119,6 +122,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [financeOpen, setFinanceOpen] = useState(false)
   const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
   const sentRef = useRef<Record<string, SendClaim>>({})
+  const wall = useDeskTick()
 
   function applyCashAndSettlements(r: {
     cash?: number | null
@@ -326,11 +330,13 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   })
 
   useEffect(() => {
+    if (readTestClockSettle()) return
     if (!cashQuery.data) return
     applyCashAndSettlements(cashQuery.data)
   }, [cashQuery.data])
 
   useEffect(() => {
+    if (readTestClockSettle()) return
     if (!cashHitsQuery.data) return
     applyCashAndSettlements(cashHitsQuery.data)
   }, [cashHitsQuery.data])
@@ -342,14 +348,35 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     staleTime: 15_000,
   })
 
+  const settleNeed = clocksNeedingSettle(book.bets, board, wall)
+  const settleQuery = useQuery({
+    queryKey: ['clock-settle', settleNeed.tickers.join('|')],
+    queryFn: async () => {
+      const test = readTestClockSettle()
+      if (test) return test
+      return getClockSettle({ data: { tickers: settleNeed.tickers, minTs: settleNeed.minTs } })
+    },
+    enabled: settleNeed.tickers.length > 0,
+    refetchInterval: settleNeed.latchMs || false,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  })
+
   useEffect(() => {
     const settled = settledQuery.data
     if (!settled?.length) return
     const recent = settled.filter((s) => !s.closeAt || s.closeAt >= Date.now() - 24 * 60 * 60 * 1000)
     const ev = eventsFromTickets(tickets, recent)
     if (ev.length) setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
-    setBook((prev) => settleBook(prev, recent))
+    setBook((prev) => collapseClockBets(settleBook(prev, recent)))
   }, [settledQuery.data, tickets])
+
+  useEffect(() => {
+    const payload = settleQuery.data
+    if (!payload) return
+    setBook((prev) => applyClockSettle(prev, payload))
+    if (payload.cash != null || payload.settlements != null) applyCashAndSettlements(payload)
+  }, [settleQuery.dataUpdatedAt])
 
   useEffect(() => {
     setBook((prev) =>
@@ -407,7 +434,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask,
         orderId: ticket.orderId,
       })
-      return booked.ok ? booked.state : prev
+      return booked.ok ? collapseClockBets(booked.state) : prev
     })
     setMsg(note)
   }
@@ -457,6 +484,11 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     }
     if (!quote.ticker) {
       abortLive(`${TAPE_META[tape].label} Kalshi error — no ticker`)
+      return
+    }
+    if (ticketFor(tickets, tape, quote.ticker) || openDeskFillOnTicker(book, quote.ticker)) {
+      markFilled(sentRef.current, key, ticketFor(tickets, tape, quote.ticker)?.orderId || 'open')
+      setMsg(`${TAPE_META[tape].label} one ticket this clock`)
       return
     }
     const liveGate = trueLiveGate({
@@ -519,7 +551,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask,
         orderId: ticket.orderId,
       })
-      if (booked.ok) setBook(booked.state)
+      if (booked.ok) setBook(collapseClockBets(booked.state))
       setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
       await refreshCash()
     } catch (e) {
@@ -599,7 +631,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   )
 
   return (
-    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS}>
+    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-settle-latch={settleNeed.latchMs || 0}>
       <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">
@@ -1241,6 +1273,7 @@ function Bets24Strip({
                   <span data-testid="bets-clock">{clockLabel}</span>
                   <span>{b.side.toUpperCase()}</span>
                   <span
+                    data-testid="bets-result"
                     className={
                       result === 'WIN' ? 'result-win' : result === 'LOSS' ? 'result-loss' : result === 'OPEN' ? 'result-open' : undefined
                     }
@@ -1252,6 +1285,7 @@ function Bets24Strip({
                   </span>
                   <span>{formatCash(b.spent)}</span>
                   <span
+                    data-testid="bets-row-pnl"
                     className={rowPnl == null ? undefined : rowPnl > 0 ? 'tone-up' : rowPnl < 0 ? 'tone-down' : undefined}
                   >
                     {rowPnl == null ? '—' : formatPnl(rowPnl)}

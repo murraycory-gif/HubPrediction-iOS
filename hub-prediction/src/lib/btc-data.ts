@@ -75,6 +75,29 @@ export const getSettledDesk = createServerFn({ method: 'GET' }).handler(async ()
   return rows.flat()
 })
 
+/** Closed-clock settle latch. Soft FAIL wait for reload / 20s series drip. */
+export const getClockSettle = createServerFn({ method: 'POST' })
+  .validator((d: { tickers?: string[]; minTs?: number } | undefined) => d ?? {})
+  .handler(async ({ data }) => {
+    const { loadKalshiHostCreds, fetchClockSettle } = await import('./kalshi-trade.server')
+    const creds = loadKalshiHostCreds()
+    const tickers = Array.isArray(data.tickers) ? data.tickers.map((t) => String(t || '').trim()).filter(Boolean) : []
+    if (!creds) {
+      return {
+        cash: null,
+        deposits: null,
+        settlements: null,
+        fills: null,
+        positions: null,
+        markets: [] as { ticker: string; result: string }[],
+        tickers,
+        fetchedAt: Date.now(),
+        hostCreds: false,
+      }
+    }
+    return fetchClockSettle(creds.keyId, creds.pem, tickers, Number(data.minTs) || 0)
+  })
+
 /** First-paint cash + deposits from Windows-host creds. Soft FAIL browser PEM. */
 export const getKalshiBalance = createServerFn({ method: 'GET' }).handler(async () => {
   const { loadKalshiHostCreds, fetchBalance, fetchDeposits } = await import('./kalshi-trade.server')

@@ -1037,3 +1037,79 @@ test('any tape Live cash HALT is orange, not grey', async ({ page }) => {
   }
   await assertNoMasterLive(page)
 })
+
+test('LIVE clock settle flips OPEN to WIN and walks cash without reload', async ({ page }) => {
+  const now = Date.now()
+  const startUrl = 'http://127.0.0.1:8080/'
+  await page.addInitScript(
+    ([ts]) => {
+      localStorage.setItem(
+        'hub.desk.cash.v1',
+        JSON.stringify({ cash: 500, deposits: 500, pnl: 0, firstDepositAt: ts - 86_400_000, asOf: ts }),
+      )
+      localStorage.setItem(
+        'hub.desk.finance.v1',
+        JSON.stringify({
+          killed: false,
+          paperStartedAt: ts,
+          bets: [
+            {
+              betId: 'bet_ord-btc-settle-01',
+              tape: 'btc',
+              ticker: 'KXBTC15M-SETTLEQA',
+              clock: '15m',
+              closeAt: ts - 2000,
+              side: 'up',
+              count: 1,
+              ask: 72,
+              spent: 0.72,
+              orderId: 'ord-btc-settle-01',
+              status: 'open',
+              pnl: null,
+              filledAt: ts - 60_000,
+              settledAt: null,
+              kind: 'live',
+            },
+          ],
+        }),
+      )
+      ;(window as Window & { __HUB_CLOCK_SETTLE?: unknown }).__HUB_CLOCK_SETTLE = {
+        cash: 500.28,
+        deposits: 500,
+        tickers: ['KXBTC15M-SETTLEQA'],
+        settlements: {
+          settlements: [
+            {
+              ticker: 'KXBTC15M-SETTLEQA',
+              market_result: 'yes',
+              yes_count_fp: '1',
+              no_count_fp: '0',
+              yes_total_cost_dollars: 0.72,
+              revenue_dollars: 1,
+              settled_time: new Date(ts).toISOString(),
+            },
+          ],
+        },
+        markets: [{ ticker: 'KXBTC15M-SETTLEQA', result: 'yes' }],
+        fetchedAt: ts,
+        hostCreds: true,
+      }
+    },
+    [now],
+  )
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  if ((await page.getByTestId('bets-filter-all').getAttribute('aria-pressed')) !== 'true') {
+    await page.getByTestId('bets-filter-all').click()
+  }
+  const row = page.locator('[data-order-id="ord-btc-settle-01"]')
+  await expect(row).toHaveCount(1)
+  await expect(row.getByTestId('bets-result')).toHaveText('WIN')
+  await expect(row.getByTestId('bets-row-pnl')).toHaveText(/\+\$0\.28/)
+  await expect(row.getByTestId('bets-cash')).toHaveText(/\$500\.28/)
+  await expect(row.getByTestId('bets-mode')).toHaveText('LIVE')
+  await expect(page.getByTestId('kalshi-cash')).toContainText('$500.28')
+  expect(page.url().replace(/\/$/, '')).toBe(startUrl.replace(/\/$/, ''))
+  await assertNoMasterLive(page)
+})
