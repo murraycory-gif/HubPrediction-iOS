@@ -1,7 +1,16 @@
 import { deskStorage } from './desk-storage'
+import { pushHostDesk } from './desk-persist'
+import { mergeRaceTrail, pointTime } from './race-path'
+import { cashFromBalancePayload, ticketCost } from './size-cash'
+import type { DeskBoard, LivePrints, TapeQuote } from './types'
 
-export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld'] as const
+export const TAPE_IDS = ['btc', 'ng', 'cu', 'gld', 'wti', 'slv'] as const
 export type TapeId = (typeof TAPE_IDS)[number]
+/** Paper desks. Soft FAIL Live until HARD QA PASS. */
+export const PAPER_ONLY_TAPES = ['wti', 'slv'] as const
+export function tapeAllowsLive(id: TapeId) {
+  return !(PAPER_ONLY_TAPES as readonly string[]).includes(id)
+}
 
 export type TapeRecipe = {
   contracts: number
@@ -36,12 +45,64 @@ export const CLOCK_LIVE_RANGE: Record<TapeClock, string> = {
   '1h': '1h',
 }
 
+export const CHART_RANGES = ['live', '5m', '15m', '1h'] as const
+export type ChartRange = (typeof CHART_RANGES)[number]
+export const DEFAULT_CHART: ChartRange = 'live'
+export const CHART_LABELS: Record<ChartRange, string> = {
+  live: 'LIVE',
+  '5m': '5M',
+  '15m': '15M',
+  '1h': '1H',
+}
+export const CHART_MS: Record<ChartRange, number> = {
+  live: 15 * 60_000,
+  '5m': 5 * 60_000,
+  '15m': 15 * 60_000,
+  '1h': 60 * 60_000,
+}
+
+/** LIVE follows the selected clock — Soft FAIL a 90s stub with one NOW dot. */
+export function chartWindowMs(chart: ChartRange, clock: TapeClock = DEFAULT_CLOCK) {
+  if (hydrateChartRange(chart) === 'live') return CLOCK_MS[hydrateClock(clock)]
+  return CHART_MS[hydrateChartRange(chart)]
+}
+
+export { raceWindowStart } from './race-path'
+
+export const CLOCK_CALLOUT: Record<TapeClock, { kicker: string; title: string }> = {
+  '5m': { kicker: '5 MIN', title: '5 min' },
+  '15m': { kicker: '15 MIN', title: '15 min' },
+  '1h': { kicker: '1 HR', title: '1 hr' },
+}
+
+export function isChartRange(v: unknown): v is ChartRange {
+  return typeof v === 'string' && (CHART_RANGES as readonly string[]).includes(v)
+}
+
+export function hydrateChartRange(raw: unknown): ChartRange {
+  if (raw === '10m' || raw === '20m') return '15m'
+  return isChartRange(raw) ? raw : DEFAULT_CHART
+}
+
+export function defaultChartRanges(): Record<TapeId, ChartRange> {
+  return { btc: DEFAULT_CHART, ng: DEFAULT_CHART, cu: DEFAULT_CHART, gld: DEFAULT_CHART, wti: DEFAULT_CHART, slv: DEFAULT_CHART }
+}
+
+export function hydrateChartRanges(raw: unknown): Record<TapeId, ChartRange> {
+  const o = raw && typeof raw === 'object' ? (raw as Partial<Record<TapeId, unknown>>) : {}
+  const next = defaultChartRanges()
+  for (const id of TAPE_IDS) next[id] = hydrateChartRange(o[id])
+  return next
+}
+
 /** Kalshi series per tape clock. 15m is gold. 5m/1h use the listed Kalshi ticker when it exists. */
 export const TAPE_SERIES: Record<TapeId, Record<TapeClock, string>> = {
   btc: { '5m': 'KXBTC5M', '15m': 'KXBTC15M', '1h': 'KXBTCD' },
   ng: { '5m': 'KXNATGAS5M', '15m': 'KXNATGAS15M', '1h': 'KXNATGAS1H' },
   cu: { '5m': 'KXCOPPER5M', '15m': 'KXCOPPER15M', '1h': 'KXCOPPER1H' },
   gld: { '5m': 'KXGOLD5M', '15m': 'KXGOLD15M', '1h': 'KXGOLDH' },
+  wti: { '5m': 'KXWTI5M', '15m': 'KXWTI15M', '1h': 'KXWTI1H' },
+  slv: { '5m': 'KXSILVER5M', '15m': 'KXSILVER15M', '1h': 'KXSILVER1H' },
 }
 
 export function isTapeClock(v: unknown): v is TapeClock {
@@ -53,7 +114,7 @@ export function hydrateClock(raw: unknown): TapeClock {
 }
 
 export function defaultClocks(): Record<TapeId, TapeClock> {
-  return { btc: DEFAULT_CLOCK, ng: DEFAULT_CLOCK, cu: DEFAULT_CLOCK, gld: DEFAULT_CLOCK }
+  return { btc: DEFAULT_CLOCK, ng: DEFAULT_CLOCK, cu: DEFAULT_CLOCK, gld: DEFAULT_CLOCK, wti: DEFAULT_CLOCK, slv: DEFAULT_CLOCK }
 }
 
 export function hydrateClocks(raw: unknown): Record<TapeId, TapeClock> {
@@ -67,11 +128,398 @@ export function seriesForTape(id: TapeId, clock: TapeClock = DEFAULT_CLOCK) {
   return TAPE_SERIES[id][hydrateClock(clock)]
 }
 
+/** Client snapshot poll. Host warm loop owns Kalshi. Clock ticks locally. */
+export const LIVE_PRINT_MS = 250
+export const LIVE_TRAIL_MS = 60 * 60_000
+export const LIVE_TRAIL_DOTS = 480
+/** Last-N on the wire. Client merge keeps the chart. */
+export const PRINT_WIRE_DOTS = 12
+/** Host Kalshi loop. One poller, every client reads this snapshot. */
+export const WARM_PRINT_MS = 250
+export const BOARD_STRUCTURE_MS = 400
+export const BOARD_ROLLOVER_MS = 350
+export const BOARD_CLOSED_MS = 200
+
+export function slimLivePoints(
+  points: { t: number; px: number }[] | undefined,
+  now = Date.now(),
+  keepMs = LIVE_TRAIL_MS,
+  maxDots = LIVE_TRAIL_DOTS,
+) {
+  const from = now - keepMs
+  const cut: { t: number; px: number }[] = []
+  for (const p of points ?? []) {
+    if (p.t >= from && Number.isFinite(p.px) && p.px > 0) cut.push(p)
+  }
+  return cut.length <= maxDots ? cut : cut.slice(-maxDots)
+}
+
+export function boardPollMs(
+  board:
+    | { tapes: Record<TapeId, { tradingActive?: boolean; closeAt?: number } | null> }
+    | null
+    | undefined,
+  now = Date.now(),
+) {
+  if (!board) return 400
+  for (const id of TAPE_IDS) {
+    if (!tapeAllowsLive(id)) continue
+    const q = board.tapes[id]
+    if (!q) return BOARD_CLOSED_MS
+    if (q.tradingActive === false) return BOARD_CLOSED_MS
+    if (Number(q.closeAt) > 0 && Number(q.closeAt) <= now) return BOARD_CLOSED_MS
+    if (Number(q.closeAt) > 0 && Number(q.closeAt) - now <= 8000) return BOARD_ROLLOVER_MS
+  }
+  return BOARD_STRUCTURE_MS
+}
+
+/** Wait until the soonest close + 50ms, or a short nudge when a tape already sat. */
+export function nextBoardRolloverWait(
+  board:
+    | { tapes: Record<TapeId, { tradingActive?: boolean; closeAt?: number } | null> }
+    | null
+    | undefined,
+  now = Date.now(),
+) {
+  if (!board) return BOARD_CLOSED_MS
+  let next = Infinity
+  let dead = false
+  for (const id of TAPE_IDS) {
+    if (!tapeAllowsLive(id)) continue
+    const q = board.tapes[id]
+    if (!q) {
+      dead = true
+      continue
+    }
+    const closeAt = Number(q.closeAt)
+    if (q.tradingActive === false || (closeAt > 0 && closeAt <= now)) {
+      dead = true
+      continue
+    }
+    if (closeAt > now && closeAt < next) next = closeAt
+  }
+  if (dead) return BOARD_CLOSED_MS
+  if (Number.isFinite(next) && next < Infinity) return Math.max(0, next - now + 50)
+  return null
+}
+
+export function liveRangeFromCharts(
+  charts?: Partial<Record<TapeId, ChartRange>> | null,
+  clocks?: Partial<Record<TapeId, TapeClock>> | null,
+) {
+  for (const id of TAPE_IDS) {
+    const chart = hydrateChartRange(charts?.[id])
+    const clock = hydrateClock(clocks?.[id])
+    if (chart === '1h' || clock === '1h') return CLOCK_LIVE_RANGE['1h']
+  }
+  return CLOCK_LIVE_RANGE['15m']
+}
+
+export function boardEventTickers(
+  board: { tapes: Record<TapeId, { eventTicker?: string } | null> } | null | undefined,
+): Partial<Record<TapeId, string>> {
+  const out: Partial<Record<TapeId, string>> = {}
+  if (!board) return out
+  for (const id of TAPE_IDS) {
+    const ev = board.tapes[id]?.eventTicker
+    if (ev) out[id] = ev
+  }
+  return out
+}
+
+export function quoteHasClock(q: TapeQuote | null | undefined) {
+  return Boolean(q && q.ticker && (Number(q.beat) > 0 || (q.live != null && q.live > 0) || Number(q.closeAt) > 0))
+}
+
+export function readTestLiveQuote(id: TapeId): TapeQuote | null {
+  if (typeof window === 'undefined') return null
+  const bag = (window as Window & { __HUB_TEST_LIVE_QUOTE?: Partial<Record<TapeId, TapeQuote>> }).__HUB_TEST_LIVE_QUOTE
+  const q = bag?.[id]
+  return q && q.ticker ? q : null
+}
+
+/** Open clock only. Soft FAIL holding a finished run as if it were live. */
+export function quoteIsLiveClock(q: TapeQuote | null | undefined, now = Date.now()) {
+  if (!quoteHasClock(q) || !q) return false
+  if (q.tradingActive === false) return false
+  if (Number(q.closeAt) > 0 && Number(q.closeAt) <= now) return false
+  return true
+}
+
+export const LIVE_NOW_SLACK = 2
+export const LIVE_ASK_SLACK = 1
+export const LIVE_FRESH_MS = 30_000
+
+function lastTrailPx(points: TapeQuote['points'] | undefined) {
+  const pts = points ?? []
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const px = pts[i]?.px
+    if (Number.isFinite(px) && (px as number) > 0) return px as number
+  }
+  return null
+}
+
+/** Soft FAIL a lone NOW-dot as a live series. */
+export function chartHasContinuousSeries(points: TapeQuote['points'] | undefined) {
+  const times: number[] = []
+  for (const p of points ?? []) {
+    const t = pointTime(p.t)
+    if (t == null || !Number.isFinite(p.px) || p.px <= 0) continue
+    times.push(t)
+  }
+  if (times.length < 3) return false
+  times.sort((a, b) => a - b)
+  return times[times.length - 1]! - times[0]! >= 4000
+}
+
+/** Same-second Kalshi clock. Soft FAIL Live POST on stale / expired latch / lone-dot. */
+export function trueLiveGate(opts: {
+  quote: TapeQuote | null | undefined
+  kalshiLive?: number | null
+  kalshiYesAsk?: number | null
+  kalshiNoAsk?: number | null
+  now?: number
+}) {
+  const now = opts.now ?? Date.now()
+  const q = opts.quote
+  if (!quoteIsLiveClock(q, now) || !q) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (now - (q.fetchedAt || 0) > LIVE_FRESH_MS) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  const shown = q.live
+  const kalshi = opts.kalshiLive ?? lastTrailPx(q.points) ?? shown
+  if (shown == null || !Number.isFinite(shown) || shown <= 0 || kalshi == null || !Number.isFinite(kalshi) || kalshi <= 0) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (Math.abs(shown - kalshi) > LIVE_NOW_SLACK) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (!Number.isFinite(q.yesAsk) || !Number.isFinite(q.noAsk) || q.yesAsk < 1 || q.yesAsk > 99 || q.noAsk < 1 || q.noAsk > 99) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (
+    opts.kalshiYesAsk != null &&
+    Number.isFinite(opts.kalshiYesAsk) &&
+    Math.abs(q.yesAsk - opts.kalshiYesAsk) > LIVE_ASK_SLACK
+  ) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (
+    opts.kalshiNoAsk != null &&
+    Number.isFinite(opts.kalshiNoAsk) &&
+    Math.abs(q.noAsk - opts.kalshiNoAsk) > LIVE_ASK_SLACK
+  ) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  if (!chartHasContinuousSeries(q.points)) {
+    return { ok: false as const, stale: true, reason: 'STALE — paper only' }
+  }
+  return { ok: true as const, stale: false, reason: '' }
+}
+
+export function expireClosedQuote<T extends TapeQuote | null | undefined>(q: T, now = Date.now()): T {
+  if (!q || quoteIsLiveClock(q, now) || q.tradingActive === false) return q
+  if ((q.openMarkets ?? 0) > 0) return q
+  return { ...q, tradingActive: false }
+}
+
+export function expireClosedBoard(board: DeskBoard, now = Date.now()): DeskBoard {
+  const tapes = { ...board.tapes }
+  let changed = false
+  for (const id of TAPE_IDS) {
+    const next = expireClosedQuote(tapes[id], now)
+    if (next !== tapes[id]) {
+      tapes[id] = next
+      changed = true
+    }
+  }
+  return changed ? { ...board, tapes } : board
+}
+
+/** Hold only an OPEN clock across a hole. A closed run never blocks the next ticker. */
+export function latchDeskBoard(
+  incoming: DeskBoard | null | undefined,
+  prev: DeskBoard | null | undefined,
+  now = Date.now(),
+): DeskBoard | null {
+  if (!incoming) return prev ? expireClosedBoard(prev, now) : null
+  if (!prev) return expireClosedBoard(incoming, now)
+  const tapes = { ...incoming.tapes }
+  let changed = false
+  for (const id of TAPE_IDS) {
+    const next = tapes[id]
+    const hold = prev.tapes[id]
+    const nextLive = quoteIsLiveClock(next, now)
+    const holdLive = quoteIsLiveClock(hold, now)
+    if (nextLive) {
+      if (hold && hold.ticker === next!.ticker && (next!.live == null || !next!.points.length)) {
+        tapes[id] = {
+          ...next!,
+          live: next!.live ?? hold.live,
+          liveSource: next!.liveSource ?? hold.liveSource,
+          points: next!.points.length ? next!.points : hold.points,
+        }
+        changed = true
+      }
+      continue
+    }
+    if (next && quoteHasClock(next) && next.ticker && next.ticker !== hold?.ticker) {
+      tapes[id] = expireClosedQuote(next, now)
+      changed = true
+      continue
+    }
+    if (holdLive && !quoteHasClock(next)) {
+      tapes[id] = hold
+      changed = true
+      continue
+    }
+    if (hold && !holdLive) {
+      tapes[id] = next && quoteHasClock(next) ? expireClosedQuote(next, now) : expireClosedQuote(hold, now)
+      changed = true
+    } else if (next && quoteHasClock(next) && !nextLive) {
+      tapes[id] = expireClosedQuote(next, now)
+      changed = true
+    }
+  }
+  return expireClosedBoard(
+    { ...incoming, tapes, fetchedAt: Math.max(incoming.fetchedAt || 0, prev.fetchedAt || 0) },
+    now,
+  )
+}
+
+/** Keep last good live / asks / path on a live clock. Soft FAIL empty then snap. */
+function latchLivePrints(incoming: TapeQuote, held?: TapeQuote | null): TapeQuote {
+  if (!held || held.ticker !== incoming.ticker) return incoming
+  return {
+    ...incoming,
+    live: incoming.live != null && incoming.live > 0 ? incoming.live : held.live,
+    liveSource: incoming.liveSource ?? held.liveSource,
+    yesAsk: incoming.yesAsk || held.yesAsk,
+    noAsk: incoming.noAsk || held.noAsk,
+    beat: incoming.beat || held.beat,
+    points: incoming.points?.length ? incoming.points : held.points,
+    openAt: incoming.openAt || held.openAt,
+    closeAt: incoming.closeAt || held.closeAt,
+  }
+}
+
+/** Tape row hold. Soft FAIL showing a dead clock after the run ends. */
+export function holdTapeQuote(
+  incoming: TapeQuote | null | undefined,
+  held: TapeQuote | null | undefined,
+  now = Date.now(),
+): TapeQuote | null {
+  if (quoteIsLiveClock(incoming, now)) return latchLivePrints(incoming, held)
+  if (incoming && incoming.ticker && incoming.ticker !== held?.ticker) return expireClosedQuote(incoming, now) ?? null
+  if (quoteIsLiveClock(held, now) && !quoteHasClock(incoming)) return held ?? null
+  if (incoming && quoteHasClock(incoming)) return expireClosedQuote(incoming, now) ?? null
+  if (held) return expireClosedQuote(held, now) ?? null
+  return incoming ?? held ?? null
+}
+
+export const BOARD_HOLD_KEY = 'hub.desk.board.hold.v1'
+
+export function loadHeldBoard(): DeskBoard | null {
+  const ls = deskStorage()
+  if (!ls) return null
+  try {
+    const raw = ls.getItem(BOARD_HOLD_KEY)
+    if (!raw) return null
+    const o = JSON.parse(raw) as DeskBoard
+    if (!o?.tapes) return null
+    const tapes = {} as DeskBoard['tapes']
+    for (const id of TAPE_IDS) tapes[id] = quoteHasClock(o.tapes[id]) ? o.tapes[id] : null
+    if (!TAPE_IDS.some((id) => tapes[id])) return null
+    return expireClosedBoard({ tapes, fetchedAt: Number(o.fetchedAt) || 0 })
+  } catch {
+    return null
+  }
+}
+
+export function saveHeldBoard(board: DeskBoard | null | undefined) {
+  const ls = deskStorage()
+  if (!ls || !board) return board ?? null
+  try {
+    if (!TAPE_IDS.some((id) => quoteHasClock(board.tapes[id]))) return board
+    ls.setItem(BOARD_HOLD_KEY, JSON.stringify(board))
+  } catch {
+    /* quota */
+  }
+  return board
+}
+
+export function holdLiveEvents(
+  incoming: Partial<Record<TapeId, string>>,
+  prev: Partial<Record<TapeId, string>>,
+): Partial<Record<TapeId, string>> {
+  const next = { ...prev }
+  let any = false
+  for (const id of TAPE_IDS) {
+    if (incoming[id]) {
+      next[id] = incoming[id]
+      any = true
+    }
+  }
+  return any || Object.values(next).some(Boolean) ? next : incoming
+}
+
+/** Overlay Kalshi last prints onto the slower structure board. Soft FAIL swap tickers. */
+export function mergeLiveOntoBoard(
+  board: DeskBoard | null | undefined,
+  prints: LivePrints | null | undefined,
+): DeskBoard | null {
+  if (!board) return null
+  if (!prints) return board
+  const tapes = { ...board.tapes }
+  let changed = false
+  for (const id of TAPE_IDS) {
+    const q = tapes[id]
+    const p = prints.tapes[id]
+    if (!q || !p || !p.eventTicker || p.eventTicker !== q.eventTicker) continue
+    if (!quoteIsLiveClock(q, p.fetchedAt || Date.now())) continue
+    const live = p.live ?? q.live
+    const liveSource = p.liveSource ?? q.liveSource
+    if (live === q.live && liveSource === q.liveSource && !p.points.length) continue
+    tapes[id] = {
+      ...q,
+      live,
+      liveSource,
+      points: p.points.length
+        ? slimLivePoints(mergeRaceTrail(slimLivePoints(q.points, p.fetchedAt), p.points, live, p.fetchedAt), p.fetchedAt)
+        : q.points,
+      fetchedAt: Math.max(q.fetchedAt, p.fetchedAt),
+    }
+    changed = true
+  }
+  if (!changed) return board
+  return { ...board, tapes, fetchedAt: Math.max(board.fetchedAt, prints.fetchedAt) }
+}
+
+export function clockFromTicker(ticker: string): TapeClock | '' {
+  const s = ticker.toUpperCase()
+  if (s.includes('15M')) return '15m'
+  if (s.includes('5M')) return '5m'
+  if (s.includes('1H') || s.endsWith('H') || s.includes('BTCD') || s.includes('GOLDH')) return '1h'
+  return ''
+}
+
+export function windowMsForClock(clock: string) {
+  const id = isTapeClock(clock) ? clock : clockFromTicker(clock)
+  return id ? CLOCK_MS[id] : 0
+}
+
 export type DeskSettings = {
-  liveBets: boolean
   tapes: Record<TapeId, TapeRecipe>
   betsFilter: TapeId[]
   clocks: Record<TapeId, TapeClock>
+  charts: Record<TapeId, ChartRange>
+  /** User chose Bot / Live cash / contracts. Soft FAIL wiping those on refresh. */
+  togglesPicked?: boolean
+  savedAt?: number
+  togglesAt?: number
+  clocksAt?: number
 }
 
 export const TAPE_META: Record<
@@ -82,26 +530,32 @@ export const TAPE_META: Record<
   ng: { id: 'ng', label: 'NG', short: 'NG', series: 'KXNATGAS15M', decimals: 5, pulseName: 'NATURAL GAS 15 MINUTE' },
   cu: { id: 'cu', label: 'CU', short: 'CU', series: 'KXCOPPER15M', decimals: 5, pulseName: 'COPPER 15 MINUTE' },
   gld: { id: 'gld', label: 'GLD', short: 'GLD', series: 'KXGOLD15M', decimals: 2, pulseName: 'GOLD 15 MINUTE' },
+  wti: { id: 'wti', label: 'WTI', short: 'WTI', series: 'KXWTI15M', decimals: 2, pulseName: 'WTI 15 MINUTE' },
+  slv: { id: 'slv', label: 'SLV', short: 'SLV', series: 'KXSILVER15M', decimals: 2, pulseName: 'SILVER 15 MINUTE' },
 }
 
-/** Final locked Grok Build recipes — Soft FAIL inventing new ones. */
+/** Grok Build locked recipes (dump 2026-09-17). BTC Live cash ON. NG/CU/GLD paper. Host write wins. */
 export const GOLD_RECIPES: Record<TapeId, TapeRecipe> = {
-  btc: { contracts: 1, botOn: false, liveOn: false, armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 },
-  ng: { contracts: 1, botOn: false, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
-  cu: { contracts: 1, botOn: false, liveOn: false, armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
-  gld: { contracts: 1, botOn: false, liveOn: false, armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 },
+  btc: { contracts: 30, botOn: true, liveOn: true, armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 },
+  ng: { contracts: 30, botOn: true, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
+  cu: { contracts: 30, botOn: true, liveOn: false, armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 },
+  gld: { contracts: 30, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 },
+  wti: { contracts: 1, botOn: true, liveOn: false, armFromMin: 8, armToMin: 0.45, through: 0.05, centLo: 34, centHi: 89 },
+  slv: { contracts: 1, botOn: true, liveOn: false, armFromMin: 10, armToMin: 3, through: 0.05, centLo: 34, centHi: 89 },
 }
 
 export const DEFAULT_SETTINGS: DeskSettings = {
-  liveBets: false,
   tapes: {
     btc: { ...GOLD_RECIPES.btc },
     ng: { ...GOLD_RECIPES.ng },
     cu: { ...GOLD_RECIPES.cu },
     gld: { ...GOLD_RECIPES.gld },
+    wti: { ...GOLD_RECIPES.wti },
+    slv: { ...GOLD_RECIPES.slv },
   },
   betsFilter: allBetsFilter(),
   clocks: defaultClocks(),
+  charts: defaultChartRanges(),
 }
 
 export const SETTINGS_KEY = 'hub.desk.settings.v1'
@@ -146,84 +600,199 @@ export function clampContracts(n: number) {
   return Math.max(1, Math.min(99, Math.round(n)))
 }
 
-function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe): TapeRecipe {
+function clampNum(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n))
+}
+
+/** Accepted analyst recs persist. Wild values clamp. Gold stays the factory default. */
+export function clampTapeRecipe(id: TapeId, partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe = GOLD_RECIPES[id]): TapeRecipe {
+  const armFrom = clampNum(Number(partial?.armFromMin ?? gold.armFromMin), 1, 14)
+  let armTo = clampNum(Number(partial?.armToMin ?? gold.armToMin), 0.2, 12)
+  if (armTo >= armFrom) armTo = Math.max(0.2, Math.round((armFrom - 0.2) * 100) / 100)
+  const thru = Number(partial?.through ?? gold.through)
+  const thruLo = Math.min(gold.through * 0.25, 0.0005)
+  const thruHi = Math.max(gold.through * 4, gold.through)
+  const through = clampNum(Number.isFinite(thru) ? thru : gold.through, thruLo, thruHi)
+  const minLo = id === 'btc' ? 45 : 20
+  let centLo = Math.round(clampNum(Number(partial?.centLo ?? gold.centLo), minLo, 90))
+  let centHi = Math.round(clampNum(Number(partial?.centHi ?? gold.centHi), centLo + 1, 95))
+  if (centHi <= centLo) centHi = Math.min(95, centLo + 1)
   return {
     contracts: clampContracts(Number(partial?.contracts ?? gold.contracts)),
-    botOn: false,
-    liveOn: false,
-    armFromMin: gold.armFromMin,
-    armToMin: gold.armToMin,
-    through: gold.through,
-    centLo: gold.centLo,
-    centHi: gold.centHi,
+    botOn: partial?.botOn === true,
+    liveOn: partial?.liveOn === true,
+    armFromMin: Math.round(armFrom * 100) / 100,
+    armToMin: Math.round(armTo * 100) / 100,
+    through: through,
+    centLo,
+    centHi,
   }
 }
 
-/** Live boots OFF unless stored true. Bots may persist ON if stored (night paper). Soft FAIL live-cash ON by default. */
+function recipeFrom(partial: Partial<TapeRecipe> | undefined, gold: TapeRecipe, id: TapeId): TapeRecipe {
+  const next = clampTapeRecipe(id, partial, gold)
+  if (partial == null || typeof partial.botOn !== 'boolean') next.botOn = gold.botOn === true
+  else next.botOn = partial.botOn === true
+  if (partial == null || typeof partial.liveOn !== 'boolean') next.liveOn = gold.liveOn === true
+  else next.liveOn = partial.liveOn === true
+  if (!tapeAllowsLive(id)) next.liveOn = false
+  return next
+}
+
+/** Bots default ON. BTC Live cash ON. NG/CU/GLD paper. User toggles persist. Host write wins. */
 export function hydrateSettings(raw: unknown): DeskSettings {
   const o = raw && typeof raw === 'object' ? (raw as Partial<DeskSettings> & { tapes?: Partial<Record<TapeId, Partial<TapeRecipe>>> }) : {}
+  const savedAt = Number((o as { savedAt?: unknown }).savedAt) || undefined
+  const togglesAt = Number((o as { togglesAt?: unknown }).togglesAt) || undefined
+  const userToggles = o.togglesPicked === true || (togglesAt ?? 0) > 0
+  const picked =
+    userToggles ||
+    ((savedAt ?? 0) > 0 &&
+      TAPE_IDS.some((id) => {
+        const stored = o.tapes?.[id]
+        return (
+          (typeof stored?.botOn === 'boolean' && stored.botOn !== GOLD_RECIPES[id].botOn) ||
+          (stored?.contracts != null && clampContracts(Number(stored.contracts)) !== GOLD_RECIPES[id].contracts)
+        )
+      }))
   const tapes = {} as Record<TapeId, TapeRecipe>
   for (const id of TAPE_IDS) {
     const gold = GOLD_RECIPES[id]
     const stored = o.tapes?.[id]
-    const next = recipeFrom(stored, gold)
+    const next = recipeFrom(stored, gold, id)
     if (stored) {
-      next.botOn = stored.botOn === true
-      next.liveOn = stored.liveOn === true
+      if (typeof stored.botOn === 'boolean') next.botOn = stored.botOn === true
+      if (userToggles && typeof stored.liveOn === 'boolean') next.liveOn = stored.liveOn === true
+      else next.liveOn = gold.liveOn === true
+      if (stored.contracts != null) next.contracts = clampContracts(Number(stored.contracts))
     }
+    if (!tapeAllowsLive(id)) next.liveOn = false
     tapes[id] = next
   }
   return {
-    liveBets: o.liveBets === true,
     tapes,
     betsFilter: hydrateBetsFilter((o as { betsFilter?: unknown }).betsFilter),
     clocks: hydrateClocks((o as { clocks?: unknown }).clocks),
+    charts: hydrateChartRanges((o as { charts?: unknown }).charts),
+    togglesPicked: picked,
+    savedAt,
+    togglesAt,
+    clocksAt: Number((o as { clocksAt?: unknown }).clocksAt) || undefined,
   }
+}
+
+export function settingsReadyToPush(settings: DeskSettings) {
+  if (settings.togglesPicked === true) return true
+  if ((Number(settings.togglesAt) || 0) > 0) return true
+  return TAPE_IDS.some(
+    (id) =>
+      settings.tapes[id].liveOn !== GOLD_RECIPES[id].liveOn ||
+      settings.tapes[id].botOn !== GOLD_RECIPES[id].botOn ||
+      settings.tapes[id].contracts !== GOLD_RECIPES[id].contracts,
+  )
 }
 
 export function loadSettings(): DeskSettings {
+  const empty = hydrateSettings(null)
   const ls = deskStorage()
-  if (!ls) return hydrateSettings(null)
+  if (!ls) return empty
   try {
     const raw = ls.getItem(SETTINGS_KEY)
-    return hydrateSettings(raw ? JSON.parse(raw) : null)
+    if (!raw) return empty
+    return hydrateSettings(JSON.parse(raw))
   } catch {
-    return hydrateSettings(null)
+    return empty
   }
 }
 
-export function saveSettings(settings: DeskSettings) {
-  const next = hydrateSettings(settings)
+let lastSavedAt = 0
+function nextSavedAt() {
+  const now = Date.now()
+  lastSavedAt = now > lastSavedAt ? now : lastSavedAt + 1
+  return lastSavedAt
+}
+
+function keepStoredToggles(tapes: Record<TapeId, TapeRecipe>) {
+  const stored = loadSettings()
+  if (!(Number(stored.togglesAt) || 0) && stored.togglesPicked !== true) return tapes
+  const next = { ...tapes }
+  for (const id of TAPE_IDS) {
+    next[id] = {
+      ...next[id],
+      liveOn: stored.tapes[id].liveOn,
+      botOn: stored.tapes[id].botOn,
+      contracts: stored.tapes[id].contracts,
+    }
+  }
+  return next
+}
+
+export function saveSettings(settings: DeskSettings, opts?: { touchToggles?: boolean; touchClocks?: boolean }) {
+  const touch = opts?.touchToggles === true
+  const touchClocks = opts?.touchClocks === true
+  const savedAt = nextSavedAt()
+  const stored = loadSettings()
+  const tapes = touch ? settings.tapes : keepStoredToggles(settings.tapes)
+  const next = hydrateSettings({
+    ...settings,
+    tapes,
+    clocks: touchClocks ? settings.clocks : stored.clocks,
+    charts: touchClocks ? settings.charts : stored.charts,
+    betsFilter: touchClocks ? settings.betsFilter : stored.betsFilter,
+    savedAt,
+    togglesAt: touch ? savedAt : Number(settings.togglesAt) || Number(stored.togglesAt) || undefined,
+    clocksAt: touchClocks ? savedAt : Number(stored.clocksAt) || undefined,
+    togglesPicked: settings.togglesPicked === true || touch,
+  })
   const ls = deskStorage()
-  if (!ls) return next
+  if (!ls) {
+    pushHostDesk({ settings: next })
+    return next
+  }
   try {
     ls.setItem(SETTINGS_KEY, JSON.stringify(next))
   } catch {
     /* quota */
   }
+  pushHostDesk({ settings: next })
   return next
 }
 
 export function patchTape(settings: DeskSettings, id: TapeId, patch: Partial<TapeRecipe>): DeskSettings {
-  return saveSettings({
-    ...settings,
-    tapes: { ...settings.tapes, [id]: { ...settings.tapes[id], ...patch } },
-  })
-}
-
-export function setLiveBets(settings: DeskSettings, liveBets: boolean): DeskSettings {
-  return saveSettings({ ...settings, liveBets })
+  const nextPatch = !tapeAllowsLive(id) && patch.liveOn === true ? { ...patch, liveOn: false } : patch
+  const touch = 'botOn' in nextPatch || 'liveOn' in nextPatch || 'contracts' in nextPatch
+  return saveSettings(
+    {
+      ...settings,
+      togglesPicked: settings.togglesPicked === true || touch,
+      tapes: { ...settings.tapes, [id]: { ...settings.tapes[id], ...nextPatch } },
+    },
+    { touchToggles: touch },
+  )
 }
 
 export function setTapeClock(settings: DeskSettings, id: TapeId, clock: TapeClock): DeskSettings {
-  return saveSettings({
-    ...settings,
-    clocks: { ...hydrateClocks(settings.clocks), [id]: hydrateClock(clock) },
-  })
+  return saveSettings(
+    {
+      ...settings,
+      clocks: { ...hydrateClocks(settings.clocks), [id]: hydrateClock(clock) },
+    },
+    { touchClocks: true },
+  )
+}
+
+export function setTapeChart(settings: DeskSettings, id: TapeId, chart: ChartRange): DeskSettings {
+  return saveSettings(
+    {
+      ...settings,
+      charts: { ...hydrateChartRanges(settings.charts), [id]: hydrateChartRange(chart) },
+    },
+    { touchClocks: true },
+  )
 }
 
 export function applyBetsFilter(settings: DeskSettings, chip: 'all' | TapeId): DeskSettings {
-  const next = saveSettings({ ...settings, betsFilter: nextBetsFilter(settings.betsFilter, chip) })
+  const next = saveSettings({ ...settings, betsFilter: nextBetsFilter(settings.betsFilter, chip) }, { touchClocks: true })
   const ls = deskStorage()
   if (ls) {
     try {
@@ -241,7 +810,7 @@ export function disarmAllBots(settings: DeskSettings): DeskSettings {
   for (const id of TAPE_IDS) {
     tapes[id] = { ...tapes[id], botOn: false }
   }
-  return saveSettings({ ...settings, liveBets: false, tapes })
+  return saveSettings({ ...settings, togglesPicked: true, tapes }, { touchToggles: true })
 }
 
 export function remainingMinutes(closeAt: number, now = Date.now()) {
@@ -288,39 +857,85 @@ export function tabIsOpen() {
   return document.hidden === false && document.visibilityState === 'visible'
 }
 
-/** Master Live + tape bot + tape live cash. Soft FAIL cold ON. Bot ON + live cash OFF = PAPER. */
+/** Tape bot + tape live cash. Soft FAIL master liveBets. Bot ON + Live cash ON posts. */
 export function cashGates(settings: DeskSettings, tape: TapeId) {
   const bot = settings.tapes[tape].botOn === true
-  const liveCash = settings.tapes[tape].liveOn === true
-  const master = settings.liveBets === true
-  return { master, bot, liveCash, ok: master && bot && liveCash }
+  const liveCash = tapeAllowsLive(tape) && settings.tapes[tape].liveOn === true
+  return { bot, liveCash, ok: bot && liveCash }
 }
 
-export type SendClaim = { at: number; tries: number; filled?: string }
+/** Server + client Kalshi POST. Soft FAIL master liveBets. */
+export function livePlaceGate(opts: { botOn?: boolean; liveOn?: boolean; hasKeys?: boolean }) {
+  if (opts.botOn !== true) return { ok: false as const, reason: 'Kalshi POST needs Bot ON' }
+  if (opts.liveOn !== true) return { ok: false as const, reason: 'Kalshi POST needs Live cash ON' }
+  if (!opts.hasKeys) return { ok: false as const, reason: 'Kalshi host keys missing on Windows' }
+  return { ok: true as const }
+}
 
-/** IOC miss retries 3–4x then release. Stale claim >8s cannot block. */
+/** Client Bot + Live cash ON posts even if host recipe is still factory OFF. Explicit client OFF Soft FAIL gold Live ON swallow. Soft FAIL master liveBets. */
+export function hostLivePlaceGate(opts: {
+  settings?: unknown
+  tape?: string
+  clientBotOn?: boolean
+  clientLiveOn?: boolean
+  hasKeys?: boolean
+}) {
+  if (!opts.tape || !isTapeId(opts.tape)) return { ok: false as const, reason: 'Kalshi POST needs a tape' }
+  if (!tapeAllowsLive(opts.tape)) return { ok: false as const, reason: `${opts.tape.toUpperCase()} paper desk — Live cash stays off` }
+  const recipe = hydrateSettings(opts.settings).tapes[opts.tape]
+  return livePlaceGate({
+    botOn: opts.clientBotOn === true || (opts.clientBotOn !== false && recipe.botOn === true),
+    liveOn: opts.clientLiveOn === true || (opts.clientLiveOn !== false && recipe.liveOn === true),
+    hasKeys: opts.hasKeys,
+  })
+}
+
+export type SendClaim = { at: number; tries: number; filled?: string; pending?: boolean }
+
+/** Re-enter the bot loop on the tick bus so in-arm crossing Soft FAIL depends on board identity. */
+export const BOT_SCAN_MS = 1000
+/** After 4 IOC misses, wait this long then Soft FAIL permanent skip for the rest of the clock. */
+export const CLAIM_COOLDOWN_MS = 8000
+export const CLAIM_MAX_TRIES = 4
+
+/** One in-flight POST per ticker. Soft FAIL 4 CU ghosts. IOC miss retries after CLAIM_COOLDOWN_MS. */
 export function claimSend(map: Record<string, SendClaim>, key: string, now = Date.now()): 'send' | 'skip' {
   const c = map[key]
   if (c?.filled) return 'skip'
-  if (c && now - c.at < 180) return 'skip'
-  if (c && c.tries >= 4 && now - c.at < 8500) return 'skip'
-  if (c && now - c.at >= 8000) delete map[key]
+  if (c?.pending) return 'skip'
+  if (c && now - c.at >= CLAIM_COOLDOWN_MS) delete map[key]
   const prev = map[key]
+  if (prev && prev.tries >= CLAIM_MAX_TRIES) return 'skip'
   const tries = (prev?.tries ?? 0) + 1
-  if (tries > 4) {
+  if (tries > CLAIM_MAX_TRIES) {
     delete map[key]
     return 'skip'
   }
-  map[key] = { at: now, tries }
+  map[key] = { at: now, tries, pending: true }
   return 'send'
 }
 
-export function markFilled(map: Record<string, SendClaim>, key: string, orderId: string) {
-  map[key] = { at: Date.now(), tries: 4, filled: orderId }
+/** Why claimSend skipped. Soft FAIL silent sit after 4 IOC cancels. */
+export function claimSendBlock(
+  map: Record<string, SendClaim>,
+  key: string,
+  now = Date.now(),
+): 'filled' | 'pending' | 'cooldown' | 'open' {
+  const c = map[key]
+  if (c?.filled) return 'filled'
+  if (c?.pending) return 'pending'
+  if (c && c.tries >= CLAIM_MAX_TRIES && now - c.at < CLAIM_COOLDOWN_MS) return 'cooldown'
+  return 'open'
 }
 
-export function releaseClaim(map: Record<string, SendClaim>, key: string) {
-  delete map[key]
+export function markFilled(map: Record<string, SendClaim>, key: string, orderId: string) {
+  map[key] = { at: Date.now(), tries: 4, filled: orderId, pending: true }
+}
+
+export function releaseClaim(map: Record<string, SendClaim>, key: string, now = Date.now()) {
+  const c = map[key]
+  if (!c || c.filled) return
+  map[key] = { at: now, tries: c.tries }
 }
 
 export type DeskTicket = {
@@ -331,14 +946,38 @@ export type DeskTicket = {
   contracts: number
   beat: number
   filledAt: number
+  ask?: number
 }
 
+export function isPaperOrderId(id: unknown) {
+  return typeof id === 'string' && /^deskfill-/i.test(id.trim())
+}
+
+/** Kalshi order id only. Soft FAIL deskfill / ARMING as a live fill. */
 export function isRealOrderId(id: unknown): id is string {
   if (typeof id !== 'string') return false
   const s = id.trim()
   if (s.length < 8) return false
-  if (/^(arm|armed|arming|paper|local|fake|pending|wait)/i.test(s)) return false
+  if (isPaperOrderId(s)) return false
+  if (/^(arm|armed|arming|paper|local|fake|pending|wait|deskfill)/i.test(s)) return false
   return true
+}
+
+export function isKeptTicketId(id: unknown): id is string {
+  return isPaperOrderId(id) || isRealOrderId(id)
+}
+
+/** Local paper fill. Soft FAIL Live POST. Id must not start with paper/arm. */
+export function makePaperTicket(input: {
+  tape: TapeId
+  ticker: string
+  side: 'up' | 'down'
+  contracts: number
+  beat: number
+  ask?: number
+}): DeskTicket | null {
+  const orderId = `deskfill-${input.tape}-${Math.random().toString(36).slice(2, 10)}`
+  return makeTicket({ ...input, orderId })
 }
 
 /** Soft FAIL ARMING as a fill. Soft FAIL ticket without a real Kalshi order id. */
@@ -350,10 +989,12 @@ export function makeTicket(input: {
   contracts: number
   beat: number
   filledAt?: number
+  ask?: number
 }): DeskTicket | null {
-  if (!isRealOrderId(input.orderId)) return null
+  if (!isKeptTicketId(input.orderId)) return null
   if (input.side !== 'up' && input.side !== 'down') return null
   if (!input.ticker) return null
+  const ask = Number(input.ask)
   return {
     tape: input.tape,
     ticker: input.ticker,
@@ -362,7 +1003,54 @@ export function makeTicket(input: {
     contracts: clampContracts(input.contracts),
     beat: input.beat,
     filledAt: input.filledAt ?? Date.now(),
+    ask: Number.isFinite(ask) && ask > 0 ? Math.round(ask) : undefined,
   }
+}
+
+export function fillAskCents(
+  ticket: { ask?: unknown; side?: unknown },
+  quote?: { yesAsk?: number; noAsk?: number } | null,
+  booked?: { ask?: unknown } | null,
+) {
+  for (const raw of [ticket.ask, booked?.ask, ticket.side === 'down' ? quote?.noAsk : quote?.yesAsk]) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) return Math.round(n)
+  }
+  return 0
+}
+
+/** Heartbeat fill strip. Soft FAIL raw Kalshi order id as the ticket line. */
+export function ticketFillStrip(
+  ticket: DeskTicket,
+  quote?: { yesAsk?: number; noAsk?: number } | null,
+  booked?: { ask?: number; spent?: number; count?: number } | null,
+) {
+  const count = Math.max(1, Math.round(ticket.contracts || booked?.count || 1))
+  const ask = fillAskCents(ticket, quote, booked)
+  const cost =
+    ticket.ask == null && booked?.spent != null && Number.isFinite(booked.spent)
+      ? Math.round(booked.spent * 100) / 100
+      : ticketCost(count, ask)
+  const win = Math.round((count - cost) * 100) / 100
+  const side = ticket.side === 'down' ? 'DOWN' : 'UP'
+  const noun = count === 1 ? 'contract' : 'contracts'
+  const askLabel = ask > 0 ? `${ask}¢` : '—¢'
+  return `${side} · ${count} ${noun} · ${askLabel} · cost ${formatCash(cost)} · win ${formatCash(win)}`
+}
+
+export function looksLikeOrderUuid(text: string) {
+  return /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text)
+}
+
+/** Latest fill on this tape. Prefer the live ticker, else a fresh ticket so the strip still paints. */
+export function displayTicket(tickets: DeskTicket[], id: TapeId, ticker?: string) {
+  if (ticker) {
+    const hit = tickets.find((t) => t.tape === id && t.ticker === ticker)
+    if (hit) return hit
+  }
+  return tickets
+    .filter((t) => t.tape === id && Date.now() - (Number(t.filledAt) || 0) < 20 * 60_000)
+    .sort((a, b) => (b.filledAt || 0) - (a.filledAt || 0))[0]
 }
 
 export function loadTickets(): DeskTicket[] {
@@ -372,14 +1060,14 @@ export function loadTickets(): DeskTicket[] {
     const raw = ls.getItem(TICKETS_KEY)
     const list = raw ? (JSON.parse(raw) as DeskTicket[]) : []
     if (!Array.isArray(list)) return []
-    return list.filter((t) => t && isRealOrderId(t.orderId) && (t.side === 'up' || t.side === 'down'))
+    return list.filter((t) => t && isKeptTicketId(t.orderId) && (t.side === 'up' || t.side === 'down'))
   } catch {
     return []
   }
 }
 
 export function saveTickets(tickets: DeskTicket[]) {
-  const next = tickets.filter((t) => isRealOrderId(t.orderId))
+  const next = tickets.filter((t) => isKeptTicketId(t.orderId))
   const ls = deskStorage()
   if (!ls) return next
   try {
@@ -387,6 +1075,7 @@ export function saveTickets(tickets: DeskTicket[]) {
   } catch {
     /* quota */
   }
+  pushHostDesk({ tickets: next })
   return next
 }
 
@@ -413,7 +1102,14 @@ export type HitLatch = {
 export const TTL_MS = 24 * 60 * 60 * 1000
 
 function emptyCells(): Record<TapeId, HitCell> {
-  return { btc: { w: 0, l: 0 }, ng: { w: 0, l: 0 }, cu: { w: 0, l: 0 }, gld: { w: 0, l: 0 } }
+  return {
+    btc: { w: 0, l: 0 },
+    ng: { w: 0, l: 0 },
+    cu: { w: 0, l: 0 },
+    gld: { w: 0, l: 0 },
+    wti: { w: 0, l: 0 },
+    slv: { w: 0, l: 0 },
+  }
 }
 
 export function emptyHits(): HitLatch {
@@ -447,7 +1143,7 @@ function settlementAt(s: Record<string, unknown>, now: number) {
   return Number.isFinite(parsed) ? parsed : now
 }
 
-export function eventsFromKalshiSettlements(raw: unknown, now = Date.now()): HitEvent[] {
+export function eventsFromKalshiSettlements(raw: unknown, now = Date.now(), minAt = now - TTL_MS): HitEvent[] {
   const root = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
   const nested = root && typeof root.data === 'object' ? (root.data as Record<string, unknown>) : null
   const list = Array.isArray(root?.settlements)
@@ -460,17 +1156,29 @@ export function eventsFromKalshiSettlements(raw: unknown, now = Date.now()): Hit
   const out: HitEvent[] = []
   for (const s of list) {
     if (!s || typeof s !== 'object') continue
-    const ticker = String(s.ticker ?? '')
+    const ticker = String(s.ticker ?? s.market_ticker ?? '')
     const tape = seriesToTape(ticker)
     if (!tape) continue
     const at = settlementAt(s, now)
-    if (at < now - TTL_MS) continue
-    const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? num(s.yes_total_cost_fp) ?? 0
-    const no = num(s.no_count_fp) ?? num(s.no_count) ?? num(s.no_total_cost_fp) ?? 0
+    if (at < minAt) continue
+    const yes = num(s.yes_count_fp) ?? num(s.yes_count) ?? num(s.yes_contracts) ?? num(s.yes_total_cost_fp) ?? 0
+    const no = num(s.no_count_fp) ?? num(s.no_count) ?? num(s.no_contracts) ?? num(s.no_total_cost_fp) ?? 0
     const result = String(s.market_result ?? s.result ?? '').toLowerCase()
-    const revenue = settlementDollars(s.revenue_dollars ?? s.revenue_fp ?? s.revenue)
-    const yesCost = settlementDollars(s.yes_total_cost_dollars) || settlementDollars(s.yes_total_cost)
-    const noCost = settlementDollars(s.no_total_cost_dollars) || settlementDollars(s.no_total_cost)
+    const revenueDollars = num(s.revenue_dollars) ?? num(s.revenue_fp)
+    const revenue =
+      revenueDollars != null
+        ? kalshiMoney(revenueDollars, 'dollars')
+        : num(s.revenue) != null
+          ? kalshiMoney(s.revenue, 'cents')
+          : 0
+    const yesCost =
+      num(s.yes_total_cost_dollars) != null
+        ? kalshiMoney(s.yes_total_cost_dollars, 'dollars')
+        : kalshiMoney(s.yes_total_cost, 'cents')
+    const noCost =
+      num(s.no_total_cost_dollars) != null
+        ? kalshiMoney(s.no_total_cost_dollars, 'dollars')
+        : kalshiMoney(s.no_total_cost, 'cents')
     const spent = Math.round((yesCost + noCost) * 100) / 100
     const hasFill = yes > 0 || no > 0 || spent > 0 || revenue > 0
     if (!hasFill) continue
@@ -478,8 +1186,14 @@ export function eventsFromKalshiSettlements(raw: unknown, now = Date.now()): Hit
     if (yes > 0 && no <= 0) win = result === 'yes'
     else if (no > 0 && yes <= 0) win = result === 'no'
     else win = revenue > spent || (result === 'yes' && yesCost > noCost) || (result === 'no' && noCost > yesCost)
-    const pnl = spent > 0 || revenue > 0 ? Math.round((revenue - spent) * 100) / 100 : undefined
-    out.push({ tape, ticker, win, at, ...(spent > 0 ? { spent } : {}), ...(pnl != null ? { pnl } : {}) })
+    const rawPnl = spent > 0 || revenue > 0 ? Math.round((revenue - spent) * 100) / 100 : null
+    const pnl =
+      rawPnl != null && rawPnl !== 0
+        ? rawPnl
+        : win
+          ? Math.round(Math.max(spent > 0 ? 1 - spent : 0.01, 0.01) * 100) / 100
+          : -Math.round(Math.max(spent, 0.01) * 100) / 100
+    out.push({ tape, ticker, win, at, ...(spent > 0 ? { spent } : {}), pnl })
   }
   return out
 }
@@ -546,6 +1260,15 @@ function settlementDollars(v: unknown) {
   return n
 }
 
+/** Kalshi money: *_dollars stay dollars; legacy integer fields are cents. */
+export function kalshiMoney(v: unknown, unit: 'dollars' | 'cents'): number {
+  const n = num(v)
+  if (n == null) return 0
+  if (unit === 'cents') return n / 100
+  if (Number.isInteger(n) && Math.abs(n) >= 1000) return n / 100
+  return n
+}
+
 /** Soft KEEP boot hydrate: portfolio settlements → tape 24H chips from Windows-host creds. */
 export function hydrateHitsFromKalshiCash(raw: unknown, prev: HitLatch = loadHits(), now = Date.now()): HitLatch {
   const ev = eventsFromKalshiSettlements(raw, now)
@@ -554,15 +1277,24 @@ export function hydrateHitsFromKalshiCash(raw: unknown, prev: HitLatch = loadHit
 }
 
 export function hydrateCashFromKalshi(
-  raw: { cash?: number | null; deposits?: unknown; settlements?: unknown },
+  raw: { cash?: number | null; deposits?: unknown; settlements?: unknown; raw?: unknown },
   prev: CashLatch = loadCash(),
 ): { cash: CashLatch; hits: HitLatch } {
-  const deposits = depositsFromPayload(raw.deposits) ?? prev.deposits
-  const cashAmt = Number.isFinite(raw.cash as number) ? Number(raw.cash) : prev.cash
+  const meta = depositsMeta(raw.deposits) ?? depositsMeta(raw.raw) ?? null
+  const deposits = meta?.total ?? depositsFromPayload(raw.deposits) ?? depositsFromPayload(raw.raw) ?? prev.deposits
+  const firstDepositAt = meta?.firstAt ?? prev.firstDepositAt
+  const fromPayload = raw.raw != null ? cashFromBalancePayload(raw.raw) : null
+  const cashAmt =
+    Number.isFinite(raw.cash as number) && Number(raw.cash) > 0
+      ? Number(raw.cash)
+      : fromPayload != null && fromPayload > 0
+        ? fromPayload
+        : prev.cash
   const cash = saveCash({
     cash: cashAmt,
     deposits,
-    pnl: cashAmt != null && deposits != null ? cashAmt - deposits : prev.pnl,
+    firstDepositAt,
+    pnl: cashAmt != null && deposits != null ? Math.round((cashAmt - deposits) * 100) / 100 : prev.pnl,
     asOf: Date.now(),
   })
   return { cash, hits: hydrateHitsFromKalshiCash(raw.settlements ?? raw, loadHits()) }
@@ -572,8 +1304,10 @@ export function ttlFromHits(hits: HitLatch) {
   let w = 0
   let l = 0
   for (const id of TAPE_IDS) {
-    w += hits.tapes[id].w
-    l += hits.tapes[id].l
+    const cell = hits.tapes[id]
+    if (!cell) continue
+    w += cell.w
+    l += cell.l
   }
   const n = w + l
   return { w, l, pct: n ? Math.round((w / n) * 100) : 0 }
@@ -584,23 +1318,34 @@ export function hitPct(cell: HitCell) {
   return n ? Math.round((cell.w / n) * 100) : 0
 }
 
-export type CashLatch = { cash: number | null; pnl: number | null; deposits: number | null; asOf: number }
+export type CashLatch = {
+  cash: number | null
+  pnl: number | null
+  deposits: number | null
+  firstDepositAt: number | null
+  asOf: number
+}
+
+function emptyCash(): CashLatch {
+  return { cash: null, pnl: null, deposits: null, firstDepositAt: null, asOf: 0 }
+}
 
 export function loadCash(): CashLatch {
   const ls = deskStorage()
-  if (!ls) return { cash: null, pnl: null, deposits: null, asOf: 0 }
+  if (!ls) return emptyCash()
   try {
     const raw = ls.getItem(CASH_KEY)
-    if (!raw) return { cash: null, pnl: null, deposits: null, asOf: 0 }
+    if (!raw) return emptyCash()
     const o = JSON.parse(raw) as CashLatch
     return {
       cash: Number.isFinite(o.cash) ? Number(o.cash) : null,
       pnl: Number.isFinite(o.pnl) ? Number(o.pnl) : null,
       deposits: Number.isFinite(o.deposits) ? Number(o.deposits) : null,
+      firstDepositAt: Number.isFinite(o.firstDepositAt) ? Number(o.firstDepositAt) : null,
       asOf: Number(o.asOf) || 0,
     }
   } catch {
-    return { cash: null, pnl: null, deposits: null, asOf: 0 }
+    return emptyCash()
   }
 }
 
@@ -615,27 +1360,74 @@ export function saveCash(cash: CashLatch) {
   return cash
 }
 
-export function depositsFromPayload(raw: unknown): number | null {
-  if (!raw || typeof raw !== 'object') return null
+function depositRowDollars(d: Record<string, unknown>) {
+  const officialCents = num(d.amount_cents)
+  if (officialCents != null) return officialCents / 100
+  const dollars =
+    num(d.amount_dollars) ?? num(d.deposit_dollars) ?? num(d.usd) ?? num(d.amount_usd) ?? num(d.value_dollars)
+  if (dollars != null) return dollars
+  const cents = num(d.amount) ?? num(d.deposit) ?? num(d.value)
+  if (cents == null) return 0
+  if (Number.isInteger(cents) && Math.abs(cents) >= 50) return cents / 100
+  return cents
+}
+
+function depositRowAt(d: Record<string, unknown>) {
+  const raw = d.created_ts ?? d.ts ?? d.timestamp ?? d.created_time ?? d.deposit_time ?? d.settled_time
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw < 1e12 ? raw * 1000 : raw
+  const parsed = Date.parse(String(raw ?? ''))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+export function depositsMeta(raw: unknown): { total: number; firstAt: number | null } | null {
+  if (raw == null) return null
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const total = Number.isInteger(raw) && Math.abs(raw) >= 1000 ? raw / 100 : raw
+    return { total, firstAt: null }
+  }
+  if (typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
   const nested = o.data && typeof o.data === 'object' ? (o.data as Record<string, unknown>) : null
+  const flat = Object.assign({}, o, nested || {})
+  for (const key of ['lifetime_deposits', 'total_deposits', 'deposited', 'deposit_total', 'deposits_dollars']) {
+    const n = num(flat[key])
+    if (n != null && !Array.isArray(flat[key])) {
+      const total = Number.isInteger(n) && Math.abs(n) >= 1000 ? n / 100 : n
+      return { total, firstAt: null }
+    }
+  }
   const list = Array.isArray(o.deposits)
     ? (o.deposits as Record<string, unknown>[])
     : Array.isArray(nested?.deposits)
       ? (nested.deposits as Record<string, unknown>[])
-      : []
-  if (!list.length) return null
-  let sum = 0
-  for (const d of list) {
-    const dollars = num(d.amount_dollars) ?? num(d.deposit_dollars)
-    if (dollars != null) {
-      sum += dollars
-      continue
+      : Array.isArray(o.deposit_history)
+        ? (o.deposit_history as Record<string, unknown>[])
+        : Array.isArray(nested?.deposit_history)
+          ? (nested.deposit_history as Record<string, unknown>[])
+          : []
+  if (!list.length) {
+    const n = num(flat.deposits)
+    if (n != null) {
+      const total = Number.isInteger(n) && Math.abs(n) >= 1000 ? n / 100 : n
+      return { total, firstAt: null }
     }
-    const cents = num(d.amount) ?? num(d.deposit)
-    if (cents != null) sum += cents > 50 ? cents / 100 : cents
+    return null
   }
-  return sum
+  let sum = 0
+  let firstAt: number | null = null
+  for (const d of list) {
+    if (!d || typeof d !== 'object') continue
+    const status = String(d.status ?? 'applied').toLowerCase()
+    if (status === 'failed' || status === 'returned') continue
+    sum += depositRowDollars(d)
+    const at = depositRowAt(d)
+    if (at != null && (firstAt == null || at < firstAt)) firstAt = at
+  }
+  return { total: Math.round(sum * 100) / 100, firstAt }
+}
+
+export function depositsFromPayload(raw: unknown): number | null {
+  return depositsMeta(raw)?.total ?? null
 }
 
 export function seriesToTape(seriesOrTicker: string): TapeId | null {
@@ -644,6 +1436,8 @@ export function seriesToTape(seriesOrTicker: string): TapeId | null {
   if (s.startsWith('KXNATGAS') || s.startsWith('KXNG')) return 'ng'
   if (s.startsWith('KXCOPPER') || s.startsWith('KXCU')) return 'cu'
   if (s.startsWith('KXGOLD') || s.startsWith('KXGLD')) return 'gld'
+  if (s.startsWith('KXWTI') || s.startsWith('KXCL')) return 'wti'
+  if (s.startsWith('KXSILVER') || s.startsWith('KXSLV')) return 'slv'
   return null
 }
 
@@ -694,8 +1488,13 @@ export function lastPrintFromLiveData(payload: unknown): { px: number; source: '
   if (Array.isArray(ts) && ts.length) {
     for (let i = ts.length - 1; i >= 0; i--) {
       const row = ts[i]
+      if (Array.isArray(row)) {
+        const v = num(row[1] ?? row[2])
+        if (v != null && v > 0) return { px: v, source: 'kalshi-timeseries' }
+        continue
+      }
       if (!row || typeof row !== 'object') continue
-      const v = livePx(row as Record<string, unknown>, ['v', 'px', 'price', 'close'])
+      const v = livePx(row as Record<string, unknown>, ['v', 'px', 'price', 'close', 'value'])
       if (v != null) return { px: v, source: 'kalshi-timeseries' }
     }
   }
@@ -725,6 +1524,72 @@ export function lastPrintFromLiveData(payload: unknown): { px: number; source: '
   return null
 }
 
+/** Index trail from Kalshi live_data. Soft FAIL mix 1M candle extrema into LIVE. */
+export function pointsFromLiveData(payload: unknown): { t: number; px: number }[] {
+  const root = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
+  const live = (root?.live_data && typeof root.live_data === 'object' ? root.live_data : root) as Record<string, unknown> | null
+  const details = (live?.details && typeof live.details === 'object' ? live.details : live) as Record<string, unknown> | null
+  if (!details) return []
+  const out: Point[] = []
+  const push = (rawT: unknown, rawPx: unknown) => {
+    const t = pointTime(num(rawT) ?? 0)
+    const px = num(rawPx)
+    if (t != null && px != null && px > 0) out.push({ t, px })
+  }
+  const ts = details.timeseries
+  if (Array.isArray(ts) && ts.length) {
+    for (const row of ts) {
+      if (Array.isArray(row)) {
+        push(row[0], row[1] ?? row[2])
+        continue
+      }
+      if (!row || typeof row !== 'object') continue
+      const r = row as Record<string, unknown>
+      const nested = r.price && typeof r.price === 'object' ? (r.price as Record<string, unknown>) : null
+      push(
+        r.t ?? r.ts ?? r.time ?? r.timestamp,
+        r.v ?? r.px ?? r.price ?? r.close ?? r.value ?? nested?.close ?? nested?.last,
+      )
+    }
+    out.sort((a, b) => a.t - b.t)
+    const bag = new Map<number, number>()
+    for (const p of out) bag.set(p.t, p.px)
+    return [...bag.entries()].map(([t, px]) => ({ t, px })).sort((a, b) => a.t - b.t).slice(-LIVE_TRAIL_DOTS)
+  }
+  const sticks = details.candlesticks
+  const groups = sticks && typeof sticks === 'object' ? (sticks as Record<string, unknown>) : null
+  const candles = Array.isArray(sticks)
+    ? sticks
+    : Array.isArray(groups?.['1S'])
+      ? groups!['1S']
+      : Array.isArray(groups?.['1s'])
+        ? groups!['1s']
+        : Array.isArray(groups?.['1M'])
+          ? groups!['1M']
+          : Array.isArray(groups?.['1m'])
+            ? groups!['1m']
+            : []
+  if (Array.isArray(candles) && candles.length) {
+    for (const row of candles) {
+      if (!row || typeof row !== 'object') continue
+      const r = row as Record<string, unknown>
+      push(r.t ?? r.ts ?? r.end_ts ?? r.end_period_ts, r.close ?? r.c ?? r.px ?? r.v)
+    }
+  }
+  const ticks = details.ticks ?? details.trades ?? live?.ticks
+  if (Array.isArray(ticks)) {
+    for (const row of ticks) {
+      if (!row || typeof row !== 'object') continue
+      const r = row as Record<string, unknown>
+      push(r.t ?? r.ts ?? r.created_time, r.v ?? r.px ?? r.price ?? r.close)
+    }
+  }
+  out.sort((a, b) => a.t - b.t)
+  const bag = new Map<number, number>()
+  for (const p of out) bag.set(p.t, p.px)
+  return [...bag.entries()].map(([t, px]) => ({ t, px })).sort((a, b) => a.t - b.t).slice(-LIVE_TRAIL_DOTS)
+}
+
 /** Soft KEEP: Kalshi status=open|active and now < close. `active` is the open-filter field. */
 export function marketTradingActive(
   m: { status?: unknown; close_time?: unknown; open_time?: unknown } | null | undefined,
@@ -739,7 +1604,7 @@ export function marketTradingActive(
   if (Number.isFinite(close) && now >= close) return false
   const open = Date.parse(String(m.open_time ?? ''))
   if (Number.isFinite(open) && now < open) return false
-  return status === 'open' || status === 'active' || m.status == null
+  return status === 'open' || status === 'active' || status === 'initialized' || m.status == null
 }
 
 export function askCentsFromMarket(m: Record<string, unknown>, yes: boolean) {
@@ -779,6 +1644,27 @@ export function formatPnl(n: number | null | undefined) {
   return core
 }
 
+/** NOW vs TO BEAT. Soft KEEP: below target is green, above is red. */
+export function nowTone(live: number | null | undefined, beat: number | null | undefined): 'up' | 'down' | undefined {
+  if (!Number.isFinite(live ?? NaN) || !Number.isFinite(beat ?? NaN) || (beat as number) <= 0) return undefined
+  if ((live as number) < (beat as number)) return 'up'
+  if ((live as number) > (beat as number)) return 'down'
+  return undefined
+}
+
+export function nowDelta(live: number | null | undefined, beat: number | null | undefined) {
+  if (!Number.isFinite(live ?? NaN) || !Number.isFinite(beat ?? NaN) || (beat as number) <= 0) return null
+  const d = (live as number) - (beat as number)
+  return { d, pct: (d / (beat as number)) * 100 }
+}
+
+export function formatNowDelta(id: TapeId, live: number | null | undefined, beat: number | null | undefined) {
+  const delta = nowDelta(live, beat)
+  if (!delta) return '—'
+  const sign = delta.d > 0 ? '+' : delta.d < 0 ? '−' : ''
+  return `${sign}${formatLive(id, Math.abs(delta.d))} (${sign}${Math.abs(delta.pct).toFixed(3)}%)`
+}
+
 export function weThink(live: number | null, beat: number, points: { t: number; px: number }[], now = Date.now()) {
   return weThinkPair(live, beat, points, now).ahead
 }
@@ -810,6 +1696,18 @@ export function formatWeThink(id: TapeId, live: number | null, ahead: number | n
   return `${formatLive(id, live)} / ${formatLive(id, ahead)}`
 }
 
+export function placeFillCount(raw: unknown) {
+  const bag = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  const order = bag?.order && typeof bag.order === 'object' ? (bag.order as Record<string, unknown>) : bag
+  if (!order) return 0
+  for (const key of ['fill_count', 'fill_count_fp', 'filled_count']) {
+    const n = Number(order[key])
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  const fills = order.fills ?? bag?.fills
+  return Array.isArray(fills) ? fills.length : 0
+}
+
 export function extractOrderId(raw: unknown): string | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
@@ -824,6 +1722,26 @@ export function extractOrderId(raw: unknown): string | null {
     }
   }
   return null
+}
+
+export function placeOrderStatus(raw: unknown): 'filled' | 'resting' | 'canceled' | 'none' {
+  const id = extractOrderId(raw)
+  if (!id || isPaperOrderId(id)) return 'none'
+  if (placeFillCount(raw) > 0) return 'filled'
+  const bag = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+  const order = bag?.order && typeof bag.order === 'object' ? (bag.order as Record<string, unknown>) : bag
+  const status = String(order?.status ?? bag?.status ?? '').toLowerCase()
+  if (['resting', 'open', 'pending', 'live', 'working', 'active', 'new'].includes(status)) return 'resting'
+  if (['canceled', 'cancelled', 'expired', 'executed'].includes(status)) return 'canceled'
+  return 'canceled'
+}
+
+/** Real fill only. Soft FAIL canceled / resting / 0-fill order_id as BOT BOUGHT. */
+export function confirmedPlaceOrderId(raw: unknown): string | null {
+  const id = extractOrderId(raw)
+  if (!id || isPaperOrderId(id)) return null
+  if (placeFillCount(raw) <= 0) return null
+  return id
 }
 
 export function pulseTone(ticket: DeskTicket | undefined, live: number | null): 'quiet' | 'green' | 'red' {

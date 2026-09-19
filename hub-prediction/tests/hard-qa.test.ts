@@ -26,23 +26,31 @@ afterEach(() => {
 })
 
 describe('HARD QA 1–10', () => {
-  it('1 header wordmark is HUB / PREDICTIONS not HUBPREDICTIONS', async () => {
-    expect('HUB / PREDICTIONS').toMatch(/HUB\s\/\sPREDICTIONS/)
-    expect('HUB / PREDICTIONS').not.toBe('HUBPREDICTIONS')
-    expect(TAPE_IDS).toEqual(['btc', 'ng', 'cu', 'gld'])
+  it('1 header wordmark is HUB Predictions, not slash or mashed', async () => {
+    expect('HUB Predictions').toBe('HUB Predictions')
+    expect('HUB Predictions').not.toBe('HUBPREDICTIONS')
+    expect('HUB Predictions').not.toMatch(/HUB\s*\/\s*PREDICTIONS/)
+    expect(TAPE_IDS).toEqual(['btc', 'ng', 'cu', 'gld', 'wti', 'slv'])
     const dash = await import('node:fs/promises').then((fs) =>
       fs.readFile(new URL('../src/components/dashboard.tsx', import.meta.url), 'utf8'),
     )
     const css = await import('node:fs/promises').then((fs) =>
       fs.readFile(new URL('../public/desk.css', import.meta.url), 'utf8'),
     )
+    expect(dash).toMatch(/data-testid="desk-title">HUB Predictions</)
+    expect(dash).not.toMatch(/HUB \/ PREDICTIONS/)
+    expect(dash).not.toMatch(/data-testid="kalshi-link"/)
+    expect(dash).not.toMatch(/Kalshi keys on this PC/)
     expect(dash).not.toMatch(/rain-col/)
     expect(dash).not.toMatch(/010011010111001001101001011100100110/)
     expect(css).toMatch(/\.desk-head::before/)
     expect(css).toMatch(/content:\s*none/)
     expect(css).toMatch(/grid-template-columns:\s*repeat\(3/)
     expect(css).toMatch(/\.scoreboard-row \.stat \{[\s\S]*flex-direction:\s*column/)
+    expect(css).toMatch(/\.scoreboard-row \.hud-label \{[\s\S]*font-size:\s*12px/)
     expect(css).toMatch(/\.brand-bar \{[\s\S]*overflow:\s*hidden/)
+    expect(css).toMatch(/\.brand-bar \{[\s\S]*align-items:\s*center/)
+    expect(css).toMatch(/\.desk-head h1 \{[\s\S]*text-align:\s*center/)
     expect(css).toMatch(/\.glyph-plate/)
     expect(css).toMatch(/\.beat-k/)
     expect(css).toMatch(/\.contracts-label/)
@@ -52,31 +60,38 @@ describe('HARD QA 1–10', () => {
     expect(dash).toMatch(/contracts-label/)
   })
 
-  it('2 recipes stay gold — Soft FAIL rewrite', () => {
-    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89 })
-    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 })
-    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89 })
+  it('2 gold factory stays — Accept may persist a clamped retune', () => {
+    expect(GOLD_RECIPES.btc).toMatchObject({ armFromMin: 8, armToMin: 3, through: 40, centLo: 69, centHi: 89, contracts: 30, liveOn: true })
+    expect(GOLD_RECIPES.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89, contracts: 30, liveOn: false })
+    expect(GOLD_RECIPES.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002, centLo: 34, centHi: 89, contracts: 30, liveOn: false })
     expect(GOLD_RECIPES.gld).toMatchObject({ armFromMin: 10, armToMin: 3, through: 2, centLo: 34, centHi: 89 })
+    expect(hydrateSettings(null).tapes.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69, contracts: 30, liveOn: true })
     const forced = hydrateSettings({
       tapes: {
-        btc: { armFromMin: 1, through: 99, centLo: 10 },
-        ng: { armFromMin: 10, through: 3 },
-        cu: { armToMin: 8, through: 9 },
-        gld: { armFromMin: 6, through: 40, centLo: 69 },
+        btc: { armFromMin: 7, through: 46, centLo: 69 },
+        ng: { armFromMin: 10, through: 0.003 },
+        cu: { armToMin: 0.45, through: 0.002 },
+        gld: { armFromMin: 9, through: 2.4, centLo: 34 },
       },
     })
-    expect(forced.tapes.btc).toMatchObject({ armFromMin: 8, through: 40, centLo: 69 })
-    expect(forced.tapes.ng).toMatchObject({ armFromMin: 8, armToMin: 0.45, through: 0.002 })
-    expect(forced.tapes.cu).toMatchObject({ armFromMin: 9, armToMin: 0.45, through: 0.002 })
-    expect(forced.tapes.gld).toMatchObject({ armFromMin: 10, through: 2, centLo: 34 })
+    expect(forced.tapes.btc).toMatchObject({ armFromMin: 7, through: 46, centLo: 69 })
+    expect(forced.tapes.ng.armFromMin).toBe(10)
+    expect(forced.tapes.ng.through).toBeCloseTo(0.003)
+    expect(forced.tapes.gld.armFromMin).toBe(9)
+    expect(forced).not.toHaveProperty('liveBets')
+    expect(forced.tapes.btc.liveOn).toBe(true)
   })
 
   it('3 Live + bots + per-tape cash Soft FAIL cold ON', () => {
     const s = hydrateSettings(null)
-    expect(s.liveBets).toBe(false)
-    expect(DEFAULT_SETTINGS.liveBets).toBe(false)
-    for (const id of TAPE_IDS) {
-      expect(s.tapes[id].botOn).toBe(false)
+    expect(s).not.toHaveProperty('liveBets')
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('liveBets')
+    expect(s.tapes.btc.liveOn).toBe(true)
+    expect(s.tapes.ng.liveOn).toBe(false)
+    expect(s.tapes.cu.liveOn).toBe(false)
+    expect(cashGates(s, 'btc').ok).toBe(true)
+    for (const id of ['gld', 'wti', 'slv'] as const) {
+      expect(s.tapes[id].botOn).toBe(true)
       expect(s.tapes[id].liveOn).toBe(false)
       expect(cashGates(s, id).ok).toBe(false)
     }
@@ -105,7 +120,7 @@ describe('HARD QA 1–10', () => {
     expect(saved.tapes.btc.contracts).toBe(17)
     expect(JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}').tapes.btc.contracts).toBe(17)
     expect(loadSettings().tapes.btc.contracts).toBe(17)
-    expect(loadSettings().liveBets).toBe(false)
+    expect(loadSettings()).not.toHaveProperty('liveBets')
     expect(loadSettings().tapes.btc.armFromMin).toBe(8)
   })
 
@@ -130,6 +145,8 @@ describe('HARD QA 1–10', () => {
     expect(down.self_trade_prevention_type).toBe('taker_at_cross')
     expect(up.client_order_id).toBe(id)
     expect(down.client_order_id).toBe(id)
+    expect(up.time_in_force).toBe('immediate_or_cancel')
+    expect(down.time_in_force).toBe('good_till_canceled')
   })
 
   it('8 Soft FAIL mid-session recipe retune after a loss / KILL', () => {

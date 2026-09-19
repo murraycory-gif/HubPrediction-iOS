@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
 import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
+import { Dashboard } from '../components/dashboard'
 
 export const Route = createRootRoute({
+  notFoundComponent: () => <Dashboard seedBoard={null} />,
   head: () => ({
     meta: [
       { charSet: 'utf-8' },

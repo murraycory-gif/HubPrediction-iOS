@@ -6,6 +6,8 @@ import { cashFromBalancePayload } from './size-cash'
 
 const BASE = 'https://external-api.kalshi.com'
 const ROOT = '/trade-api/v2'
+/** Soft FAIL a hung Kalshi GET spinning the live tab. */
+const SIGNED_ABORT_MS = 4_000
 
 export type KalshiHostCreds = { keyId: string; pem: string }
 
@@ -82,9 +84,15 @@ export function hasKalshiHostCreds() {
   return loadKalshiHostCreds() != null
 }
 
+/** Kalshi signs the URL path only — query string must not be in the signature. */
+export function signRequestPath(path: string) {
+  const i = path.indexOf('?')
+  return i === -1 ? path : path.slice(0, i)
+}
+
 function sign(pem: string, timestamp: string, method: string, path: string) {
   const signer = createSign('RSA-SHA256')
-  signer.update(timestamp + method + path)
+  signer.update(timestamp + method + signRequestPath(path))
   signer.end()
   return signer.sign(
     {
@@ -111,11 +119,19 @@ async function signed(
     Accept: 'application/json',
   }
   if (body) headers['Content-Type'] = 'application/json'
-  const r = await fetch(BASE + path, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  })
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), SIGNED_ABORT_MS)
+  let r: Response
+  try {
+    r = await fetch(BASE + path, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: ac.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
   const text = await r.text()
   let json: unknown = null
   try {
@@ -138,22 +154,184 @@ export async function fetchBalance(keyId: string, pem: string) {
   return { cash: cashFromBalancePayload(json), raw: json }
 }
 
-export async function fetchSettlements(keyId: string, pem: string) {
-  const minTs = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000)
-  const settlements: unknown[] = []
-  let cursor = ''
-  for (let i = 0; i < 5; i++) {
-    const path = `${ROOT}/portfolio/settlements?limit=200&min_ts=${minTs}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
-    const json = (await signed(keyId, pem, 'GET', path)) as { settlements?: unknown[]; cursor?: string }
-    if (Array.isArray(json?.settlements)) settlements.push(...json.settlements)
-    if (!json?.cursor) break
-    cursor = json.cursor
+export function rowsFromKalshiPage(json: unknown, listKeys: string[]) {
+  if (!json || typeof json !== 'object') return { rows: [] as unknown[], cursor: '' }
+  const o = json as Record<string, unknown>
+  const nested = o.data && typeof o.data === 'object' ? (o.data as Record<string, unknown>) : null
+  let rows: unknown[] = []
+  for (const key of listKeys) {
+    if (Array.isArray(o[key])) {
+      rows = o[key] as unknown[]
+      break
+    }
+    if (nested && Array.isArray(nested[key])) {
+      rows = nested[key] as unknown[]
+      break
+    }
   }
-  return { settlements }
+  const cursor = o.cursor ?? nested?.cursor ?? ''
+  return { rows, cursor: cursor ? String(cursor) : '' }
+}
+
+async function paginatedList(
+  keyId: string,
+  pem: string,
+  path: string,
+  listKeys: string[],
+  extraQuery = '',
+  pages = 16,
+) {
+  const rows: unknown[] = []
+  let cursor = ''
+  let last: unknown = null
+  for (let i = 0; i < pages; i++) {
+    const q = `limit=200${extraQuery}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
+    const json = (await signed(keyId, pem, 'GET', `${path}?${q}`)) as Record<string, unknown>
+    last = json
+    const page = rowsFromKalshiPage(json, listKeys)
+    rows.push(...page.rows)
+    if (!page.cursor) break
+    cursor = page.cursor
+  }
+  return { last, rows }
+}
+
+export async function fetchSettlements(keyId: string, pem: string, minTs = 0) {
+  const since = Math.max(0, Math.floor(minTs))
+  const extra = since > 0 ? `&min_ts=${since}` : ''
+  const { rows } = await paginatedList(keyId, pem, `${ROOT}/portfolio/settlements`, ['settlements'], extra)
+  return { settlements: rows }
 }
 
 export async function fetchDeposits(keyId: string, pem: string) {
-  return signed(keyId, pem, 'GET', `${ROOT}/portfolio/deposits?limit=200`)
+  const { last, rows } = await paginatedList(keyId, pem, `${ROOT}/portfolio/deposits`, [
+    'deposits',
+    'deposit_history',
+  ])
+  return last && typeof last === 'object' ? { ...(last as object), deposits: rows } : { deposits: rows }
+}
+
+export async function fetchFills(keyId: string, pem: string) {
+  const current = await paginatedList(keyId, pem, `${ROOT}/portfolio/fills`, ['fills'])
+  let historical: unknown[] = []
+  try {
+    historical = (await paginatedList(keyId, pem, `${ROOT}/historical/fills`, ['fills'])).rows
+  } catch {
+    historical = []
+  }
+  const seen = new Set<string>()
+  const fills: unknown[] = []
+  for (const row of [...current.rows, ...historical]) {
+    if (!row || typeof row !== 'object') continue
+    const o = row as Record<string, unknown>
+    const id = String(o.fill_id ?? o.trade_id ?? `${o.order_id ?? ''}:${o.ticker ?? ''}:${o.ts ?? ''}`)
+    if (seen.has(id)) continue
+    seen.add(id)
+    fills.push(row)
+  }
+  return { fills }
+}
+
+async function fetchPublicMarket(ticker: string) {
+  try {
+    const r = await fetch(`${BASE}${ROOT}/markets/${encodeURIComponent(ticker)}`, {
+      headers: { Accept: 'application/json', 'User-Agent': 'HUB-Prediction/1.0' },
+    })
+    if (!r.ok) return { ticker, result: '' }
+    const json = (await r.json()) as { market?: Record<string, unknown> } & Record<string, unknown>
+    const m = (json.market && typeof json.market === 'object' ? json.market : json) as Record<string, unknown>
+    return {
+      ticker,
+      result: String(m.result ?? ''),
+      closeTime: (m.close_time ?? m.close_ts ?? '') as string | number,
+    }
+  } catch {
+    return { ticker, result: '' }
+  }
+}
+
+function rowsNamed(raw: unknown, keys: string[]) {
+  if (!raw || typeof raw !== 'object') return [] as unknown[]
+  const o = raw as Record<string, unknown>
+  for (const key of keys) {
+    if (Array.isArray(o[key])) return o[key] as unknown[]
+  }
+  return []
+}
+
+function filterTickerRows(raw: unknown, keys: string[], want: Set<string>) {
+  const rows = rowsNamed(raw, keys).filter((row) => {
+    if (!row || typeof row !== 'object') return false
+    const ticker = String((row as { ticker?: unknown }).ticker ?? '')
+    return !want.size || want.has(ticker)
+  })
+  const first = keys[0] || 'rows'
+  return { [first]: rows, ...Object.fromEntries(keys.map((k) => [k, rows])) }
+}
+
+/** One closed ticker: market result + portfolio settlement + cash. Soft FAIL a 20s series drip. */
+export async function fetchClockSettle(keyId: string, pem: string, tickers: string[], minTsMs = 0) {
+  const want = new Set(tickers.map((t) => String(t || '').trim()).filter(Boolean))
+  const minSec =
+    minTsMs > 1e12 ? Math.max(0, Math.floor(minTsMs / 1000) - 180) : Math.max(0, Math.floor(minTsMs || Date.now() / 1000 - 7200))
+  const [bal, settlements, fills, positions, orders, markets] = await Promise.all([
+    fetchBalance(keyId, pem),
+    fetchSettlements(keyId, pem, minSec).catch(() => ({ settlements: [] as unknown[] })),
+    fetchFills(keyId, pem).catch(() => ({ fills: [] as unknown[] })),
+    fetchPositions(keyId, pem).catch(() => ({ market_positions: [] as unknown[], positions: [] as unknown[] })),
+    fetchOrders(keyId, pem).catch(() => ({ orders: [] as unknown[] })),
+    Promise.all([...want].map((ticker) => fetchPublicMarket(ticker))),
+  ])
+  return {
+    cash: bal.cash,
+    raw: bal.raw,
+    settlements: filterTickerRows(settlements, ['settlements'], want),
+    fills: filterTickerRows(fills, ['fills'], want),
+    positions: filterTickerRows(positions, ['market_positions', 'positions'], want),
+    orders: filterTickerRows(orders, ['orders', 'event_orders'], want),
+    markets,
+    tickers: [...want],
+    fetchedAt: Date.now(),
+    hostCreds: true,
+  }
+}
+
+export async function fetchPositions(keyId: string, pem: string) {
+  const { rows } = await paginatedList(
+    keyId,
+    pem,
+    `${ROOT}/portfolio/positions`,
+    ['market_positions', 'positions'],
+    '&count_filter=position,total_traded',
+  )
+  return { market_positions: rows, positions: rows }
+}
+
+export async function fetchOrders(keyId: string, pem: string) {
+  const current = await paginatedList(keyId, pem, `${ROOT}/portfolio/orders`, ['orders', 'event_orders'])
+  return { orders: current.rows, event_orders: current.rows }
+}
+
+/** Entire Kalshi book: balance + fills + settlements + open orders + positions. Soft FAIL a drip. */
+export async function fetchKalshiBook(keyId: string, pem: string) {
+  const [bal, deposits, settlements, fills, positions, orders] = await Promise.all([
+    fetchBalance(keyId, pem),
+    fetchDeposits(keyId, pem).catch(() => null),
+    fetchSettlements(keyId, pem).catch(() => null),
+    fetchFills(keyId, pem).catch(() => null),
+    fetchPositions(keyId, pem).catch(() => null),
+    fetchOrders(keyId, pem).catch(() => null),
+  ])
+  return {
+    ...bal,
+    deposits,
+    settlements,
+    fills,
+    positions,
+    orders,
+    fetchedAt: Date.now(),
+    hostCreds: true,
+  }
 }
 
 function sleep(ms: number) {
@@ -167,7 +345,7 @@ function centsToPrice(cents: number) {
   return (n / 100).toFixed(4)
 }
 
-/** V2 events/orders body. DOWN is side ask at (1 − no_ask), never bid + no_ask. */
+/** V2 events/orders body. bid = BUY YES. ask = BUY NO at 1 − no_ask (YES-leg book). Soft FAIL a bid-YES DOWN. */
 export function v2EventsOrderBody(args: {
   ticker: string
   side: 'up' | 'down'
@@ -183,7 +361,7 @@ export function v2EventsOrderBody(args: {
     side: args.side === 'up' ? 'bid' : 'ask',
     count: String(count),
     price,
-    time_in_force: 'immediate_or_cancel',
+    time_in_force: args.side === 'down' ? 'good_till_canceled' : 'immediate_or_cancel',
     self_trade_prevention_type: 'taker_at_cross',
     client_order_id: args.clientOrderId,
   }

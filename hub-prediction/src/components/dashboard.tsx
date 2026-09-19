@@ -1,24 +1,50 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { getDeskBoard, getKalshiBalance, getKalshiCash, getSettledDesk, placeKalshi } from '../lib/btc-data'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { getClockSettle, getDeskBoard, getDeskBriefs, getDeskState, getKalshiBalance, getKalshiBook, getKalshiCash, getLivePrints, getSettledDesk, getTapePaths, placeKalshi, saveDeskState } from '../lib/btc-data'
+import { applyHostDeskState, hostSettingsNewer, SETTINGS_DEBOUNCE_MS, SETTINGS_LATCH_MS } from '../lib/desk-hydrate'
+import { DESK_TICK_MS, FEED_RECONNECT_MS, FEED_STALE_CHECK_MS, feedNeedsReconnect, feedStaleThreshold, lastDeskTickAt, subscribeDeskTick } from '../lib/desk-tick'
+import { setHostDeskWriter } from '../lib/desk-persist'
 import {
   TAPE_IDS,
   TAPE_META,
   TAPE_CLOCKS,
+  CLOCK_CALLOUT,
   CLOCK_LABELS,
-  GOLD_RECIPES,
+  DEFAULT_CHART,
+  LIVE_PRINT_MS,
   applyBetsFilter,
+  boardEventTickers,
+  boardPollMs,
+  nextBoardRolloverWait,
+  holdLiveEvents,
+  latchDeskBoard,
+  loadHeldBoard,
+  quoteHasClock,
+  quoteIsLiveClock,
+  readTestLiveQuote,
+  holdTapeQuote,
+  trueLiveGate,
+  saveHeldBoard,
+  mergeLiveOntoBoard,
   askInBand,
+  BOT_SCAN_MS,
   cashGates,
   claimSend,
+  claimSendBlock,
   clampContracts,
   disarmAllBots,
   eventsFromTickets,
-  extractOrderId,
+  confirmedPlaceOrderId,
+  placeOrderStatus,
+  tapeAllowsLive,
   formatCash,
+  isPaperOrderId,
+  isRealOrderId,
   formatLive,
+  formatNowDelta,
   formatPnl,
   formatWeThink,
+  nowTone,
   hitPct,
   hydrateCashFromKalshi,
   inArmWindow,
@@ -26,52 +52,114 @@ import {
   loadHits,
   hydrateSettings,
   loadSettings,
+  settingsReadyToPush,
   loadTickets,
+  makePaperTicket,
   makeTicket,
   markFilled,
   mergeHitEvents,
   patchTape,
   releaseClaim,
   saveHits,
-  setLiveBets,
+  setTapeChart,
   setTapeClock,
   tabIsOpen,
   tapeLean,
+  ticketFillStrip,
   ticketStatus,
-  ttlFromHits,
+  displayTicket,
   upsertTicket,
   weThinkPair,
   type DeskSettings,
   type DeskTicket,
   type SendClaim,
+  type ChartRange,
   type TapeClock,
   type TapeId,
   type TapeRecipe,
 } from '../lib/tapes'
 import { ticketCost } from '../lib/size-cash'
-import type { DeskBoard, TapeQuote } from '../lib/types'
+import { nextClockLabel, tapeHoursLine, tapeSessionHours } from '../lib/tape-hours'
+import type { DeskBoard, LivePrints, TapeQuote } from '../lib/types'
 import {
+  betClockLabel,
+  betKind,
+  betWindowMs,
+  cashAfterEachBet,
   bookFill,
+  collapseClockBets,
   clearKill,
   engageKill,
   chasingLosses,
   isAllBetsFilter,
+  HIT_FLOOR,
   last24hBets,
-  liveArmGate,
+  latchDeskBets24,
+  statsFromDeskBets24,
+  tapeHitCell,
+  tapeBotNote,
+  liveBotCall,
+  liveTapeDecision,
+  paperFillAllowed,
+  isLiveBet,
   liveSendGate,
+  liveArmGateForDesk,
+  askAllowedByGold,
+  ASK_CAP,
+  CLOCK_MAX_SPEND,
+  emptyFinance,
   loadFinance,
   recipeRetuneGate,
+  hitFloorGate,
+  recentLiveTapeWL,
   settleBook,
   syncTicketsIntoBook,
+  dailyPnlFloorHit,
+  dailyProfitLockHit,
+  DAILY_PNL_FLOOR_PAPER,
+  DAILY_PROFIT_LOCK,
   type FinanceState,
 } from '../lib/finance'
+import { analyzeDesk, isRehabPaper, loadAutoState, runAutoAnalyst, type AnalystAutoState } from '../lib/analyst'
+import { buildTapeIntel } from '../lib/desk-brief'
 import { AnalystPanel } from './analyst-panel'
 import { CloseClock } from './close-clock'
+import { readTestCloseClock } from '../lib/close-clock'
 import { FinancePanel } from './finance-panel'
-import { RaceChart } from './race-chart'
+import { formatBetWindow, formatWindowRange } from '../lib/chicago-time'
+import { applyKalshiBook, BOOK_LATCH_MS, type KalshiBookPayload } from '../lib/kalshi-book'
+import {
+  loadChief,
+  readTestTapeQuote,
+  runDeskChief,
+  saveChief,
+  tapeLiveArmGate,
+  type ChiefRunInput,
+  type ChiefState,
+} from '../lib/desk-chief'
+import { applyClockSettle, balanceLatchMs, clocksNeedingSettle, readTestClockSettle } from '../lib/settle-latch'
+import {
+  EXIT_SCAN_MS,
+  EXIT_WATCH_LIVE,
+  applyExitDecision,
+  decideExitWatch,
+  formatExitLocked,
+  latestExitFor,
+  loadExitLogs,
+  recentExitLogs,
+  sameExitLogs,
+  type ExitWatchDecision,
+  type ExitWatchInput,
+  type ExitWatchLog,
+} from '../lib/exit-watch'
+import { RaceChart, useSmoothedLive } from './race-chart'
 import { SettingsPanel } from './settings-panel'
+import { TapeIcon } from './tape-icon'
+
+let deskHostReady = false
 
 export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
+  const [hostReady, setHostReady] = useState(deskHostReady)
   const [settings, setSettings] = useState<DeskSettings>(() => hydrateSettings(null))
   const [tickets, setTickets] = useState<DeskTicket[]>(() => loadTickets())
   const [hits, setHits] = useState(() => loadHits())
@@ -80,21 +168,83 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const [msg, setMsg] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [book, setBook] = useState<FinanceState>(() => loadFinance())
-  const [liveConfirm, setLiveConfirm] = useState(false)
-  const [analystOpen, setAnalystOpen] = useState(false)
+  const [analystOpen, setAnalystOpen] = useState(true)
   const [financeOpen, setFinanceOpen] = useState(false)
+  const [chief, setChief] = useState<ChiefState>(() => loadChief())
+  const [rehab, setRehab] = useState<AnalystAutoState>(() => loadAutoState())
+  const [exitLogs, setExitLogs] = useState<ExitWatchLog[]>(() => loadExitLogs())
+  const [heavyReady, setHeavyReady] = useState(false)
+  const [forceFeedStale, setForceFeedStale] = useState(false)
+  const [feedReconnectTick, setFeedReconnectTick] = useState(false)
+  const [latchNow, setLatchNow] = useState(() => Date.now())
   const sentRef = useRef<Record<string, SendClaim>>({})
+  const printFetches = useRef(0)
+  const lastPrintOkAt = useRef(0)
+  const lastPrintRttMs = useRef(0)
+  const printFetchStartedAt = useRef(0)
+  const printsFetchingRef = useRef(false)
+  const printDelayMs = useRef(0)
+  const printDead = useRef(false)
+  const printHoldWaiters = useRef<Array<() => void>>([])
+  const lastRecoverAt = useRef(0)
+  const ticketsRef = useRef(tickets)
+  const bookRef = useRef(book)
+  const boardRef = useRef<DeskBoard | null>(null)
+  const settingsRef = useRef(settings)
+  const rehabRef = useRef(rehab)
+  const holdSaveTimer = useRef(0)
+  ticketsRef.current = tickets
+  bookRef.current = book
+  settingsRef.current = settings
+  rehabRef.current = rehab
+  const clientOrderRef = useRef<Record<string, string>>({})
+  const lastLocalWrite = useRef(0)
+
+  useEffect(() => {
+    const w = window as Window & {
+      __HUB_LIVE_ASK?: {
+        askAllowedByGold: typeof askAllowedByGold
+        liveSendGate: typeof liveSendGate
+        emptyFinance: typeof emptyFinance
+        ASK_CAP: number
+      }
+    }
+    w.__HUB_LIVE_ASK = { askAllowedByGold, liveSendGate, emptyFinance, ASK_CAP }
+    return () => {
+      delete w.__HUB_LIVE_ASK
+    }
+  }, [])
 
   function applyCashAndSettlements(r: {
     cash?: number | null
     deposits?: unknown
     settlements?: unknown
+    fills?: unknown
+    positions?: unknown
+    orders?: unknown
     hostCreds?: boolean
+    fetchedAt?: number
   }) {
     const next = hydrateCashFromKalshi(r, loadCash())
     setCash(next.cash)
     setHits(next.hits)
-    if (r.hostCreds === true) setHostCreds(true)
+    setHostCreds(r.hostCreds === true)
+    if (
+      (r.settlements != null || r.fills != null || r.positions != null || r.orders != null) &&
+      (window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 !== true
+    ) {
+      setBook((prev) =>
+        applyKalshiBook(prev, {
+          cash: r.cash,
+          fills: r.fills,
+          settlements: r.settlements,
+          positions: r.positions,
+          orders: r.orders,
+          fetchedAt: r.fetchedAt ?? Date.now(),
+          hostCreds: r.hostCreds === true,
+        }),
+      )
+    }
   }
 
   useLayoutEffect(() => {
@@ -110,6 +260,62 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
         ask: 50,
       })),
     )
+    setRehab(loadAutoState())
+    let writeChain = Promise.resolve()
+    const writeHost = (patch: { settings?: unknown; tickets?: unknown; finance?: unknown; hits?: unknown; chief?: unknown }) => {
+      if (patch.settings) lastLocalWrite.current = Date.now()
+      writeChain = writeChain.catch(() => undefined).then(() => saveDeskState({ data: patch }).then(() => undefined))
+      return writeChain
+    }
+    setHostDeskWriter(writeHost)
+    const markReady = () => {
+      deskHostReady = true
+      setHostReady(true)
+    }
+    markReady()
+    const readyTimer = window.setTimeout(markReady, 4000)
+    const flushHost = async () => {
+      setHostDeskWriter(writeHost)
+      const local = loadSettings()
+      try {
+        await writeHost({
+          settings: settingsReadyToPush(local) ? local : undefined,
+          tickets: loadTickets(),
+          finance: loadFinance(),
+          chief: loadChief(),
+        })
+      } catch {
+        /* host write miss — Soft FAIL blocking the desk */
+      }
+    }
+    void getDeskState({ data: { t: Date.now() } })
+      .then((host) => {
+        try {
+          if (host && applyHostDeskState(host)) {
+            setSettings(loadSettings())
+            setChief(loadChief())
+            const hostTickets = loadTickets()
+            setTickets(hostTickets)
+            setBook(
+              syncTicketsIntoBook(loadFinance(), hostTickets, () => ({
+                clock: '',
+                closeAt: 0,
+                ask: 50,
+              })),
+            )
+          }
+        } catch {
+          /* host apply miss */
+        }
+        window.clearTimeout(readyTimer)
+        markReady()
+        void flushHost()
+      })
+      .catch(() => {
+        window.clearTimeout(readyTimer)
+        markReady()
+        void flushHost()
+      })
     void getKalshiBalance()
       .then((r) => applyCashAndSettlements(r))
       .catch(() => {
@@ -120,18 +326,169 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       .catch(() => {
         /* settlements follow cash — latch stays */
       })
+    return () => {
+      window.clearTimeout(readyTimer)
+      setHostDeskWriter(null)
+    }
   }, [])
+
+  useEffect(() => {
+    if (!hostReady) return
+    const start = window.setTimeout(() => setHeavyReady(true), 800)
+    return () => window.clearTimeout(start)
+  }, [hostReady])
+
+  useEffect(() => {
+    if (!hostReady) return
+    let cancelled = false
+    const latchHost = async () => {
+      try {
+        const host = await getDeskState({ data: { t: Date.now() } })
+        if (cancelled || !host) return
+        const newer = hostSettingsNewer(host)
+        const applied = applyHostDeskState(host)
+        if (!applied && !newer) return
+        setSettings(loadSettings())
+        setChief(loadChief())
+        if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
+        const hostTickets = loadTickets()
+        setTickets(hostTickets)
+        setBook(
+          syncTicketsIntoBook(loadFinance(), hostTickets, () => ({
+            clock: '',
+            closeAt: 0,
+            ask: 50,
+          })),
+        )
+      } catch {
+        /* host latch stays */
+      }
+    }
+    void latchHost()
+    const id = window.setInterval(() => {
+      void latchHost()
+    }, SETTINGS_LATCH_MS)
+    const onFocus = () => {
+      void latchHost()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [hostReady])
+
+  const heldBoard = useRef<DeskBoard | null>(seedBoard ?? loadHeldBoard())
+  const heldEvents = useRef<Partial<Record<TapeId, string>>>({})
 
   const boardQuery = useQuery({
     queryKey: ['desk-board', settings.clocks],
-    queryFn: () => getDeskBoard({ data: { clocks: settings.clocks } }),
-    refetchInterval: 2000,
+    queryFn: async () => {
+      try {
+        const next = await getDeskBoard({ data: { clocks: settings.clocks } })
+        return latchDeskBoard(next, heldBoard.current) ?? next
+      } catch {
+        if (heldBoard.current) return heldBoard.current
+        throw new Error('desk board miss')
+      }
+    },
+    refetchInterval: (q) => boardPollMs(q.state.data),
+    refetchIntervalInBackground: true,
     placeholderData: keepPreviousData,
     initialData: seedBoard ?? undefined,
-    staleTime: 800,
+    staleTime: 350,
+    retry: 1,
+    retryDelay: 250,
+    refetchOnWindowFocus: false,
   })
 
-  const board = boardQuery.data ?? seedBoard
+  const structure = useMemo(() => {
+    const next = latchDeskBoard(boardQuery.data ?? seedBoard, heldBoard.current)
+    if (next) {
+      heldBoard.current = next
+      if (typeof window !== 'undefined') {
+        if (holdSaveTimer.current) window.clearTimeout(holdSaveTimer.current)
+        holdSaveTimer.current = window.setTimeout(() => {
+          saveHeldBoard(heldBoard.current)
+        }, 2000)
+      }
+    }
+    return next ?? heldBoard.current
+  }, [boardQuery.data, seedBoard])
+  const rolloverKey = TAPE_IDS.map((id) => {
+    const q = structure?.tapes[id]
+    return `${q?.ticker ?? ''}:${q?.closeAt ?? 0}:${q?.tradingActive === false ? 0 : 1}`
+  }).join('|')
+
+  useEffect(() => {
+    const wait = nextBoardRolloverWait(structure)
+    if (wait == null) return
+    const id = window.setTimeout(() => {
+      void boardQuery.refetch()
+    }, wait)
+    return () => window.clearTimeout(id)
+  }, [rolloverKey, boardQuery.refetch])
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const now = Date.now()
+      const board = heldBoard.current
+      if (!board) return
+      if (TAPE_IDS.some((tape) => board.tapes[tape] && !quoteIsLiveClock(board.tapes[tape], now))) {
+        void boardQuery.refetch()
+      }
+    }, 250)
+    return () => window.clearInterval(id)
+  }, [boardQuery.refetch])
+
+  const liveEventKey = TAPE_IDS.map((id) => structure?.tapes[id]?.eventTicker ?? '').join('|')
+  const liveEvents = useMemo(() => {
+    const next = holdLiveEvents(boardEventTickers(structure), heldEvents.current)
+    heldEvents.current = next
+    return next
+  }, [liveEventKey])
+
+  const printsHold = useRef<LivePrints | null>(null)
+  const printsQuery = useQuery({
+    queryKey: ['live-prints', liveEvents, settings.charts, settings.clocks],
+    queryFn: async () => {
+      printFetches.current += 1
+      printFetchStartedAt.current = Date.now()
+      printsFetchingRef.current = true
+      try {
+        if (printDead.current) {
+          await new Promise<void>((resolve) => {
+            printHoldWaiters.current.push(resolve)
+          })
+        }
+        const delay = printDelayMs.current
+        if (delay > 0) await new Promise((resolve) => window.setTimeout(resolve, delay))
+        const started = printFetchStartedAt.current
+        const next = await getLivePrints({ data: { events: liveEvents, charts: settings.charts, clocks: settings.clocks } })
+        lastPrintRttMs.current = Math.max(0, Date.now() - started)
+        lastPrintOkAt.current = Date.now()
+        return next
+      } catch {
+        return printsHold.current ?? { tapes: { btc: null, ng: null, cu: null, gld: null, wti: null, slv: null }, fetchedAt: 0 }
+      } finally {
+        printsFetchingRef.current = false
+      }
+    },
+    enabled: hostReady,
+    refetchInterval: LIVE_PRINT_MS,
+    refetchIntervalInBackground: true,
+    placeholderData: keepPreviousData,
+    staleTime: 40,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  })
+  if (printsQuery.data) printsHold.current = printsQuery.data
+
+  const board = mergeLiveOntoBoard(structure, printsQuery.data ?? printsHold.current) ?? structure
+  boardRef.current = board
 
   async function refreshCash() {
     try {
@@ -142,35 +499,56 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       setMsg(e instanceof Error ? e.message : 'balance failed')
     }
     try {
-      const r = await getKalshiCash()
+      const r = await getKalshiBook()
       applyCashAndSettlements(r)
     } catch {
-      /* cash already painted — settlements optional */
+      try {
+        const r = await getKalshiCash()
+        applyCashAndSettlements(r)
+      } catch {
+        /* cash already painted — book optional */
+      }
     }
   }
 
+  const cashLatch = balanceLatchMs(book.bets, board, latchNow)
+  printsFetchingRef.current = printsQuery.isFetching
+  const feedReconnect =
+    forceFeedStale ||
+    feedReconnectTick ||
+    feedNeedsReconnect({
+      now: latchNow,
+      hostReady,
+      force: forceFeedStale,
+      lastPrintOkAt: lastPrintOkAt.current,
+      fetchStartedAt: printFetchStartedAt.current,
+      fetching: printsQuery.isFetching,
+    })
   const cashQuery = useQuery({
     queryKey: ['kalshi-balance'],
     queryFn: () => getKalshiBalance(),
-    refetchInterval: 15_000,
-    staleTime: 2_000,
+    refetchInterval: cashLatch || 15_000,
+    staleTime: cashLatch ? 0 : 2_000,
     refetchOnMount: 'always',
   })
 
   const cashHitsQuery = useQuery({
     queryKey: ['kalshi-cash-hits'],
-    queryFn: () => getKalshiCash(),
-    refetchInterval: 30_000,
-    staleTime: 8_000,
+    queryFn: () => getKalshiBook(),
+    enabled: heavyReady,
+    refetchInterval: cashLatch || BOOK_LATCH_MS,
+    staleTime: cashLatch ? 0 : 1_000,
     refetchOnMount: 'always',
   })
 
   useEffect(() => {
+    if (readTestClockSettle()) return
     if (!cashQuery.data) return
     applyCashAndSettlements(cashQuery.data)
   }, [cashQuery.data])
 
   useEffect(() => {
+    if (readTestClockSettle()) return
     if (!cashHitsQuery.data) return
     applyCashAndSettlements(cashHitsQuery.data)
   }, [cashHitsQuery.data])
@@ -178,8 +556,23 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
   const settledQuery = useQuery({
     queryKey: ['settled-desk'],
     queryFn: () => getSettledDesk(),
+    enabled: heavyReady,
     refetchInterval: 20_000,
     staleTime: 15_000,
+  })
+
+  const settleNeed = clocksNeedingSettle(book.bets, board, latchNow)
+  const settleQuery = useQuery({
+    queryKey: ['clock-settle', settleNeed.tickers.join('|')],
+    queryFn: async () => {
+      const test = readTestClockSettle()
+      if (test) return test
+      return getClockSettle({ data: { tickers: settleNeed.tickers, minTs: settleNeed.minTs } })
+    },
+    enabled: settleNeed.tickers.length > 0,
+    refetchInterval: settleNeed.latchMs || false,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
   })
 
   useEffect(() => {
@@ -188,32 +581,167 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     const recent = settled.filter((s) => !s.closeAt || s.closeAt >= Date.now() - 24 * 60 * 60 * 1000)
     const ev = eventsFromTickets(tickets, recent)
     if (ev.length) setHits((prev) => saveHits(mergeHitEvents(prev, ev)))
-    setBook((prev) => settleBook(prev, recent))
+    if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
+    setBook((prev) => collapseClockBets(settleBook(prev, recent)))
   }, [settledQuery.data, tickets])
 
-  async function sendLive(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
-    if (!tabIsOpen()) {
-      setMsg('Send needs this tab open')
+  useEffect(() => {
+    const payload = settleQuery.data
+    if (!payload) return
+    if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
+    setBook((prev) => applyClockSettle(prev, payload))
+    if (payload.cash != null || payload.settlements != null || payload.orders != null || payload.fills != null) {
+      applyCashAndSettlements(payload)
+    }
+  }, [settleQuery.dataUpdatedAt])
+
+  useEffect(() => {
+    if (readTestClockSettle()) return
+    if (!settleNeed.tickers.length) return
+    void cashHitsQuery.refetch()
+  }, [settleNeed.tickers.join('|')])
+
+  useEffect(() => {
+    if ((window as Window & { __HUB_HOLD_BETS24?: boolean }).__HUB_HOLD_BETS24 === true) return
+    setBook((prev) =>
+      syncTicketsIntoBook(prev, tickets, (t) => {
+        const q = heldBoard.current?.tapes[t.tape]
+        return {
+          clock: q?.clockId || q?.clock || '',
+          closeAt: q?.closeAt || 0,
+          ask: (t.side === 'down' ? q?.noAsk : q?.yesAsk) ?? 50,
+        }
+      }),
+    )
+  }, [tickets])
+
+  function liveDeskOn(tape: TapeId) {
+    return cashGates(settings, tape).ok || cashGates(loadSettings(), tape).ok
+  }
+
+  function liveDeskFlags(tape: TapeId) {
+    const stored = loadSettings().tapes[tape]
+    const live = settings.tapes[tape]
+    return {
+      botOn: stored.botOn === true || live.botOn === true,
+      liveOn: stored.liveOn === true || live.liveOn === true,
+    }
+  }
+
+  function bookPaper(tape: TapeId, side: 'up' | 'down', quote: TapeQuote, note: string) {
+    if (!quote.ticker) {
+      releaseClaim(sentRef.current, `${tape}:`)
       return
     }
-    const gates = cashGates(settings, tape)
-    if (!gates.ok) {
-      setMsg(
-        !gates.bot
-          ? `${TAPE_META[tape].label} PAPER — bot off / not sent`
-          : !gates.liveCash
-            ? `${TAPE_META[tape].label} PAPER LOCK · not sent to Kalshi`
-            : 'Live bets OFF — paper only. No ticket.',
-      )
-      return
-    }
-    if (!quote.ticker) return
-    if (quote.tradingActive === false) {
-      setMsg(`${TAPE_META[tape].label} Kalshi window closed — sit`)
+    if (liveDeskOn(tape) && !isRehabPaper(rehab, tape)) {
+      releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
+      setMsg(`${TAPE_META[tape].label} Live cash ON — paper fill blocked`)
       return
     }
     const ask = side === 'down' ? quote.noAsk : quote.yesAsk
-    const spent = ticketCost(settings.tapes[tape].contracts, ask)
+    const ticket = makePaperTicket({
+      tape,
+      ticker: quote.ticker,
+      side,
+      contracts: settings.tapes[tape].contracts,
+      beat: quote.beat,
+      ask,
+    })
+    if (!ticket) {
+      releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
+      return
+    }
+    markFilled(sentRef.current, `${tape}:${quote.ticker}`, ticket.orderId)
+    setTickets((prev) => upsertTicket(prev, ticket))
+    setBook((prev) => {
+      const booked = bookFill(prev, {
+        tape,
+        ticker: quote.ticker,
+        clock: quote.clockId || quote.clock,
+        closeAt: quote.closeAt,
+        side,
+        count: ticket.contracts,
+        ask,
+        orderId: ticket.orderId,
+      })
+      return booked.ok ? collapseClockBets(booked.state) : prev
+    })
+    setMsg(note)
+  }
+
+  function sendPaper(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
+    if (!tabIsOpen() || !quote.ticker) return
+    const halt = isRehabPaper(rehab, tape)
+    if (liveDeskOn(tape) && !halt) {
+      void sendLive(tape, side, quote)
+      return
+    }
+    const liveGate = trueLiveGate({
+      quote,
+      kalshiLive: printsQuery.data?.tapes[tape]?.live,
+    })
+    const allow = paperFillAllowed({
+      liveCash: liveDeskOn(tape),
+      rehabPaper: halt,
+      stale: liveGate.stale && quote.tradingActive !== true,
+    })
+    if (!allow.ok) {
+      void sendLive(tape, side, quote)
+      return
+    }
+    bookPaper(tape, side, quote, `${TAPE_META[tape].label} ${allow.reason}`)
+  }
+
+  async function sendLive(tape: TapeId, side: 'up' | 'down', quote: TapeQuote) {
+    const key = quote.ticker ? `${tape}:${quote.ticker}` : `${tape}:`
+    const abortLive = (note: string) => {
+      releaseClaim(sentRef.current, key)
+      setMsg(note)
+    }
+    if (!tabIsOpen()) {
+      abortLive('Send needs this tab open')
+      return
+    }
+    if (isRehabPaper(rehab, tape)) {
+      abortLive(`${TAPE_META[tape].label} live cash halted — paper rehab`)
+      return
+    }
+    if (!tapeAllowsLive(tape)) {
+      abortLive(`${TAPE_META[tape].label} paper desk — Live cash stays off`)
+      return
+    }
+    const flags = liveDeskFlags(tape)
+    const gates = cashGates(settings, tape)
+    if (!flags.botOn || !flags.liveOn) {
+      abortLive(
+        !flags.botOn && !gates.bot
+          ? `${TAPE_META[tape].label} PAPER — bot off / not sent`
+          : `${TAPE_META[tape].label} PAPER LOCK · Live cash OFF — paper only, not sent to Kalshi`,
+      )
+      return
+    }
+    if (!quote.ticker) {
+      abortLive(`${TAPE_META[tape].label} Kalshi error — no ticker`)
+      return
+    }
+    const existing = ticketFor(tickets, tape, quote.ticker)
+    const liveOpen = book.bets.some((b) => b.ticker === quote.ticker && b.status === 'open' && isLiveBet(b))
+    if ((existing && isRealOrderId(existing.orderId)) || liveOpen) {
+      markFilled(sentRef.current, key, existing?.orderId || 'open')
+      setMsg(`${TAPE_META[tape].label} one ticket this clock`)
+      return
+    }
+    if (quote.tradingActive === false || !quoteIsLiveClock(quote)) {
+      abortLive(`${TAPE_META[tape].label} STALE — paper only — not sent`)
+      return
+    }
+    const ask = side === 'down' ? quote.noAsk : quote.yesAsk
+    let count = settings.tapes[tape].contracts
+    let spent = ticketCost(count, ask)
+    if (spent > CLOCK_MAX_SPEND) {
+      count = Math.max(1, Math.floor(CLOCK_MAX_SPEND / Math.max(0.01, ask / 100)))
+      spent = ticketCost(count, ask)
+    }
     const gate = liveSendGate(book, {
       tape,
       ticker: quote.ticker,
@@ -221,159 +749,577 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
       cash: cash.cash,
       deposits: cash.deposits,
       spent,
+      liveOn: true,
+      recipe: settings.tapes[tape],
     })
     if (!gate.ok) {
-      setMsg(gate.reason)
+      abortLive(`${TAPE_META[tape].label} Kalshi error — ${gate.reason}`)
       return
     }
+    const clientOrderId = (clientOrderRef.current[key] ||=
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `hub-${tape}-${Date.now()}`)
     try {
-      const raw = await placeKalshi({
-        data: {
-          ticker: quote.ticker,
-          side,
-          count: settings.tapes[tape].contracts,
-          yesAsk: quote.yesAsk,
-          noAsk: quote.noAsk,
-        },
-      })
-      const orderId = extractOrderId(raw)
+      const hook = (window as Window & { __HUB_PLACE?: (p: unknown) => Promise<unknown> }).__HUB_PLACE
+      const raw = hook
+        ? await hook({
+            ticker: quote.ticker,
+            side,
+            count,
+            yesAsk: quote.yesAsk,
+            noAsk: quote.noAsk,
+            tape,
+            botOn: flags.botOn,
+            liveOn: flags.liveOn,
+            clientOrderId,
+          })
+        : await placeKalshi({
+            data: {
+              ticker: quote.ticker,
+              side,
+              count,
+              yesAsk: quote.yesAsk,
+              noAsk: quote.noAsk,
+              tape,
+              botOn: flags.botOn,
+              liveOn: flags.liveOn,
+              clientOrderId,
+            },
+          })
+      const life = placeOrderStatus(raw)
+      if (life === 'resting') {
+        abortLive(`${TAPE_META[tape].label} RESTING — BUY NO sits, 0 fill`)
+        return
+      }
+      if (life !== 'filled') {
+        abortLive(
+          life === 'canceled'
+            ? `${TAPE_META[tape].label} Kalshi canceled 0-fill — not bought`
+            : `${TAPE_META[tape].label} Kalshi returned no order id — no ticket`,
+        )
+        return
+      }
+      const orderId = confirmedPlaceOrderId(raw)
       const ticket = makeTicket({
         tape,
         ticker: quote.ticker,
         side,
         orderId,
-        contracts: settings.tapes[tape].contracts,
+        contracts: count,
         beat: quote.beat,
+        ask,
       })
-      if (!ticket) {
-        setMsg('Kalshi returned no order id — no ticket')
-        releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
+      if (!ticket || !isRealOrderId(ticket.orderId) || isPaperOrderId(ticket.orderId)) {
+        abortLive(`${TAPE_META[tape].label} Kalshi canceled 0-fill — not bought`)
         return
       }
-      markFilled(sentRef.current, `${tape}:${quote.ticker}`, ticket.orderId)
+      markFilled(sentRef.current, key, ticket.orderId)
       setTickets((prev) => upsertTicket(prev, ticket))
       const booked = bookFill(book, {
         tape,
         ticker: quote.ticker,
-        clock: quote.clock,
+        clock: quote.clockId || quote.clock,
         closeAt: quote.closeAt,
         side,
         count: ticket.contracts,
         ask,
         orderId: ticket.orderId,
       })
-      if (booked.ok) setBook(booked.state)
-      setMsg(`${TAPE_META[tape].label} ${side.toUpperCase()} ${ticket.orderId}`)
+      if (booked.ok) setBook(collapseClockBets(booked.state))
+      else abortLive(`${TAPE_META[tape].label} ${booked.reason}`)
+      if (booked.ok) setMsg(`${TAPE_META[tape].label} ${ticketFillStrip(ticket, quote)}`)
       await refreshCash()
     } catch (e) {
-      releaseClaim(sentRef.current, `${tape}:${quote.ticker}`)
-      setMsg(e instanceof Error ? e.message : 'IOC miss — clock released')
+      abortLive(e instanceof Error ? e.message : `${TAPE_META[tape].label} Kalshi error — IOC miss`)
     }
   }
 
-  useEffect(() => {
-    if (!board || !tabIsOpen() || book.killed) return
-    for (const id of TAPE_IDS) {
-      const quote = board.tapes[id]
-      const recipe = settings.tapes[id]
-      const gold = GOLD_RECIPES[id]
-      if (!quote?.ticker || !recipe.botOn) continue
-      if (quote.tradingActive === false) continue
-      if (ticketFor(tickets, id, quote.ticker)) continue
-      if (!inArmWindow(gold, quote.closeAt)) continue
-      const lean = tapeLean({ id, live: quote.live, beat: quote.beat, recipe: gold })
-      if (lean === 'sit') continue
-      const ask = lean === 'down' ? quote.noAsk : quote.yesAsk
-      if (!askInBand(ask, gold)) continue
-      const key = `${id}:${quote.ticker}`
-      const gates = cashGates(settings, id)
-      if (!gates.ok) continue
-      if (claimSend(sentRef.current, key) !== 'send') continue
-      void sendLive(id, lean, quote)
+  function runExitWatch(input: ExitWatchInput) {
+    const decision = decideExitWatch(input)
+    const next = applyExitDecision(loadExitLogs(), decision)
+    setExitLogs((prev) => (sameExitLogs(prev, next) ? prev : next))
+    if (decision.action === 'exit' && !EXIT_WATCH_LIVE) {
+      setMsg(decision.why)
     }
-  }, [board?.fetchedAt, settings, tickets, book.killed])
+    return decision
+  }
 
-  const ttl = ttlFromHits(hits)
-  const bets24 = last24hBets(book, hits, Date.now(), settings.betsFilter)
+  function scanExitWatch(now = Date.now()) {
+    if (typeof window !== 'undefined' && (window as Window & { __HUB_HOLD_EXIT?: boolean }).__HUB_HOLD_EXIT) {
+      return []
+    }
+    const out: ExitWatchDecision[] = []
+    const openTickets = ticketsRef.current
+    const openBook = bookRef.current
+    const openBoard = boardRef.current
+    for (const t of openTickets) {
+      if (!isRealOrderId(t.orderId) || isPaperOrderId(t.orderId)) continue
+      const booked = openBook.bets.find((b) => b.orderId === t.orderId && b.status === 'open' && isLiveBet(b))
+      if (!booked) continue
+      const quote = readTestLiveQuote(t.tape) ?? openBoard?.tapes[t.tape]
+      if (!quote || !Number.isFinite(quote.live) || !Number.isFinite(quote.beat)) continue
+      out.push(
+        runExitWatch({
+          tape: t.tape,
+          ticker: t.ticker,
+          orderId: t.orderId,
+          side: t.side,
+          contracts: t.contracts,
+          entryAsk: Number(t.ask ?? booked.ask) || 0,
+          beat: t.beat || quote.beat,
+          live: quote.live,
+          closeAt: quote.closeAt || booked.closeAt,
+          points: quote.points,
+          yesAsk: quote.yesAsk,
+          noAsk: quote.noAsk,
+          fillCount: t.contracts,
+          now,
+        }),
+      )
+    }
+    return out
+  }
+  const runExitWatchRef = useRef(runExitWatch)
+  const scanExitWatchRef = useRef(scanExitWatch)
+  runExitWatchRef.current = runExitWatch
+  scanExitWatchRef.current = scanExitWatch
+
+  useEffect(() => {
+    const w = window as Window & {
+      __HUB_TEST_SEND?: (tape: TapeId, side: 'up' | 'down', quote: TapeQuote) => Promise<void>
+    }
+    w.__HUB_TEST_SEND = (tape, side, quote) => sendLive(tape, side, quote)
+    return () => {
+      delete w.__HUB_TEST_SEND
+    }
+  })
+
+  function chiefQuotes(): NonNullable<ChiefRunInput['quotes']> {
+    const out: NonNullable<ChiefRunInput['quotes']> = {}
+    for (const id of TAPE_IDS) {
+      const test = readTestTapeQuote(id)
+      const q = board?.tapes[id]
+      const liveGate = trueLiveGate({
+        quote: q,
+        kalshiLive: printsQuery.data?.tapes[id]?.live,
+      })
+      out[id] = test ?? (q
+        ? { tradingActive: q.tradingActive, stale: liveGate.stale, yesAsk: q.yesAsk, noAsk: q.noAsk }
+        : null)
+    }
+    return out
+  }
+
+  function tickChief(over?: Partial<ChiefRunInput>, opts?: { force?: boolean }) {
+    const stored = loadSettings()
+    const result = runDeskChief({
+      settings: hydrateSettings(over?.settings ?? stored),
+      book: over?.book ?? loadFinance(),
+      cash: over?.cash ?? cash.cash,
+      deposits: over?.deposits ?? cash.deposits,
+      quotes: over?.quotes ?? chiefQuotes(),
+      halt: over?.halt ?? Object.fromEntries(TAPE_IDS.map((id) => [id, isRehabPaper(rehab, id)])) as Record<TapeId, boolean>,
+      typicalAsk: over?.typicalAsk,
+      intel:
+        over?.intel ?? {
+          btc: buildTapeIntel({
+            id: 'btc',
+            points: boardRef.current?.tapes.btc?.points,
+            closeAt: boardRef.current?.tapes.btc?.closeAt,
+          }),
+        },
+      now: over?.now,
+      prev: over?.prev ?? loadChief(),
+    })
+    setChief(saveChief(result.state))
+    const toggledAt = Number(stored.togglesAt) || 0
+    if (!opts?.force && (Date.now() - toggledAt < 2000 || Date.now() - lastLocalWrite.current < 2000)) {
+      return result
+    }
+    for (const a of result.paperApplies) {
+      const cur = loadSettings()
+      if (a.contracts && cur.tapes[a.tape].contracts !== a.contracts) {
+        setSettings(patchTape(cur, a.tape, { contracts: a.contracts }))
+      }
+      if (a.clock && cur.tapes[a.tape].liveOn !== true && loadSettings().clocks[a.tape] !== a.clock) {
+        setSettings(setTapeClock(loadSettings(), a.tape, a.clock))
+      }
+    }
+    return result
+  }
+
+  useEffect(() => {
+    if (!hostReady) return
+    let iv = 0
+    const start = window.setTimeout(() => {
+      tickChief()
+      iv = window.setInterval(() => {
+        tickChief()
+      }, 4000)
+    }, 800)
+    return () => {
+      window.clearTimeout(start)
+      if (iv) window.clearInterval(iv)
+    }
+  }, [hostReady])
+
+  useEffect(() => {
+    const w = window as Window & {
+      __HUB_TEST_CHIEF?: {
+        run: (over?: Partial<ChiefRunInput>) => ReturnType<typeof runDeskChief>
+        snapshot: () => ChiefState
+      }
+      __HUB_APPLY_BOOK?: (payload: KalshiBookPayload) => void
+      __HUB_TEST_BETS?: {
+        replace: (bets: FinanceState['bets']) => void
+        inject: (bets: FinanceState['bets']) => void
+        add: (bet: FinanceState['bets'][number]) => void
+      }
+    }
+    w.__HUB_TEST_CHIEF = {
+      run: (over) => tickChief(over, { force: true }),
+      snapshot: () => loadChief(),
+    }
+    w.__HUB_APPLY_BOOK = (payload) => {
+      setBook((prev) => applyKalshiBook(prev, payload))
+    }
+    w.__HUB_TEST_BETS = {
+      replace: (bets) => {
+        ;(window as Window & { __HUB_RESET_BETS24?: boolean }).__HUB_RESET_BETS24 = true
+        setBook((prev) => ({ ...prev, bets }))
+      },
+      inject: (bets) => {
+        setBook((prev) => ({ ...prev, bets: [...prev.bets, ...bets] }))
+      },
+      add: (bet) => {
+        setBook((prev) => ({ ...prev, bets: [...prev.bets, bet] }))
+      },
+    }
+    return () => {
+      delete w.__HUB_TEST_CHIEF
+      delete w.__HUB_APPLY_BOOK
+      delete w.__HUB_TEST_BETS
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    const w = window as Window & {
+      __HUB_TEST_EXIT?: {
+        apply: (input: ExitWatchInput) => ExitWatchDecision
+        scan: () => ExitWatchDecision[]
+        logs: () => ExitWatchLog[]
+        live: boolean
+      }
+      __HUB_TEST_FEED?: {
+        tickAt: () => number
+        printFetches: () => number
+        printUpdatedAt: () => number
+        stale: () => boolean
+        forceStale: (on?: boolean) => void
+        refetchPrints: () => void
+        delayPrints?: (ms: number) => void
+        killPrints?: (on?: boolean) => void
+        threshold?: () => number
+        lastRtt?: () => number
+        resetRtt?: () => void
+      }
+    }
+    w.__HUB_TEST_EXIT = {
+      apply: (input) => runExitWatchRef.current(input),
+      scan: () => scanExitWatchRef.current(),
+      logs: () => loadExitLogs(),
+      live: EXIT_WATCH_LIVE,
+    }
+    w.__HUB_TEST_FEED = {
+      tickAt: () => lastDeskTickAt(),
+      printFetches: () => printFetches.current,
+      printUpdatedAt: () => lastPrintOkAt.current,
+      stale: () => Boolean((document.querySelector('[data-testid="feed-reconnect"]') as HTMLElement | null)?.dataset.stale),
+      forceStale: (on = true) => {
+        setForceFeedStale(on)
+        setFeedReconnectTick(on)
+      },
+      refetchPrints: () => {
+        /* filled after printsQuery exists — overwritten below */
+      },
+      delayPrints: (ms) => {
+        printDelayMs.current = Math.max(0, Number(ms) || 0)
+      },
+      killPrints: (on = true) => {
+        printDead.current = on === true
+        if (!printDead.current) {
+          printFetchStartedAt.current = Date.now()
+          const waiters = printHoldWaiters.current.splice(0)
+          for (const resume of waiters) resume()
+        }
+      },
+      threshold: () => feedStaleThreshold(lastPrintRttMs.current),
+      lastRtt: () => lastPrintRttMs.current,
+      resetRtt: () => {
+        lastPrintRttMs.current = 0
+      },
+    }
+    return () => {
+      delete w.__HUB_TEST_EXIT
+      delete w.__HUB_TEST_FEED
+    }
+  }, [])
+
+  function tryLiveBots() {
+    if (!hostReady || !tabIsOpen() || book.killed) return
+    const stored = loadSettings()
+    const boardNow = boardRef.current
+    const settingsNow = settingsRef.current
+    const ticketsNow = ticketsRef.current
+    const bookNow = bookRef.current
+    const rehabNow = rehabRef.current
+    for (const id of TAPE_IDS) {
+      const quote = readTestLiveQuote(id) ?? boardNow?.tapes[id]
+      const recipe = settingsNow.tapes[id]
+      const botOn = stored.tapes[id].botOn === true || recipe.botOn === true
+      const liveCash = tapeAllowsLive(id) && (stored.tapes[id].liveOn === true || recipe.liveOn === true)
+      if (!quote?.ticker || !botOn) continue
+      if (quote.tradingActive === false) continue
+      const liveGate = trueLiveGate({
+        quote,
+        kalshiLive: printsHold.current?.tapes[id]?.live,
+      })
+      const have = ticketFor(ticketsNow, id, quote.ticker)
+      const recent = recentLiveTapeWL(bookNow.bets, id, 12)
+      const decision = liveTapeDecision({
+        id,
+        quote,
+        recipe,
+        botOn,
+        liveCash,
+        haveRealOrder: Boolean(have && (isRealOrderId(have.orderId) || isPaperOrderId(have.orderId))),
+        killed: bookNow.killed,
+        tabOpen: true,
+        rehabPaper: isRehabPaper(rehabNow, id),
+        hitOk: hitFloorGate(recent.w, recent.l).ok,
+        fresh: liveGate.ok,
+        stale: liveGate.stale,
+      })
+      if (decision.action === 'sit') continue
+      const key = `${id}:${quote.ticker}`
+      if (claimSend(sentRef.current, key) !== 'send') {
+        if (liveCash && claimSendBlock(sentRef.current, key) === 'cooldown') {
+          setMsg(`${TAPE_META[id].label} Sit — send cooldown (IOC miss, retry 8s)`)
+        }
+        continue
+      }
+      if (decision.call === 'paper') {
+        sendPaper(id, decision.lean, quote)
+        continue
+      }
+      void sendLive(id, decision.lean, quote)
+    }
+  }
+  const tryLiveBotsRef = useRef(tryLiveBots)
+  tryLiveBotsRef.current = tryLiveBots
+
+  useEffect(() => {
+    const w = window as Window & {
+      __HUB_TEST_BOTS?: {
+        scan: () => void
+        liveBotCall: typeof liveBotCall
+        liveTapeDecision: typeof liveTapeDecision
+      }
+    }
+    w.__HUB_TEST_BOTS = {
+      scan: () => tryLiveBotsRef.current(),
+      liveBotCall,
+      liveTapeDecision,
+    }
+    return () => {
+      delete w.__HUB_TEST_BOTS
+    }
+  })
+
+  useEffect(() => {
+    if (!hostReady || !tabIsOpen() || book.killed) return
+    tryLiveBots()
+  }, [hostReady, board, settings, tickets, book, hits, rehab])
+
+  useEffect(() => {
+    if (!hostReady) return
+    let last = 0
+    return subscribeDeskTick((now) => {
+      if (now - last < BOT_SCAN_MS) return
+      last = now
+      tryLiveBotsRef.current()
+    })
+  }, [hostReady])
+
+  useEffect(() => {
+    if (!hostReady) return
+    let last = 0
+    return subscribeDeskTick((now) => {
+      if (now - last < EXIT_SCAN_MS) return
+      last = now
+      scanExitWatchRef.current(now)
+    })
+  }, [hostReady])
+
+  useEffect(() => {
+    if (!hostReady) return
+    let lastLatch = 0
+    let lastStale = 0
+    return subscribeDeskTick((now) => {
+      if (now - lastLatch >= 1000) {
+        lastLatch = now
+        setLatchNow(now)
+      }
+      if (now - lastStale < FEED_STALE_CHECK_MS) return
+      lastStale = now
+      setFeedReconnectTick(
+        feedNeedsReconnect({
+          now,
+          hostReady: true,
+          force: forceFeedStale,
+          lastPrintOkAt: lastPrintOkAt.current,
+          fetchStartedAt: printFetchStartedAt.current,
+          fetching: printsFetchingRef.current,
+        }),
+      )
+    })
+  }, [hostReady, forceFeedStale])
+
+  useEffect(() => {
+    if (!feedReconnect || forceFeedStale || printsQuery.isFetching) return
+    const now = Date.now()
+    if (now - lastRecoverAt.current < FEED_RECONNECT_MS) return
+    const id = window.setTimeout(() => {
+      if (printsFetchingRef.current || printDead.current) return
+      lastRecoverAt.current = Date.now()
+      void printsQuery.refetch()
+    }, 1000)
+    return () => window.clearTimeout(id)
+  }, [feedReconnect, forceFeedStale, printsQuery.isFetching, printsQuery.refetch])
+
+  useEffect(() => {
+    const w = window as Window & {
+      __HUB_TEST_FEED?: {
+        tickAt: () => number
+        printFetches: () => number
+        printUpdatedAt: () => number
+        stale: () => boolean
+        forceStale: (on?: boolean) => void
+        refetchPrints: () => void
+        delayPrints: (ms: number) => void
+        killPrints: (on?: boolean) => void
+        threshold: () => number
+        lastRtt: () => number
+        resetRtt: () => void
+      }
+    }
+    w.__HUB_TEST_FEED = {
+      tickAt: () => lastDeskTickAt(),
+      printFetches: () => printFetches.current,
+      printUpdatedAt: () => lastPrintOkAt.current,
+      stale: () => feedReconnect,
+      forceStale: (on = true) => {
+        setForceFeedStale(on)
+        setFeedReconnectTick(on)
+      },
+      refetchPrints: () => {
+        void printsQuery.refetch()
+      },
+      delayPrints: (ms) => {
+        printDelayMs.current = Math.max(0, Number(ms) || 0)
+      },
+      killPrints: (on = true) => {
+        printDead.current = on === true
+        if (!printDead.current) {
+          printFetchStartedAt.current = Date.now()
+          const waiters = printHoldWaiters.current.splice(0)
+          for (const resume of waiters) resume()
+        }
+      },
+      threshold: () => feedStaleThreshold(lastPrintRttMs.current),
+      lastRtt: () => lastPrintRttMs.current,
+      resetRtt: () => {
+        lastPrintRttMs.current = 0
+      },
+    }
+  })
+
+  useEffect(() => {
+    if (!hostReady || book.killed) return
+    if (!dailyPnlFloorHit(book)) return
+    setBook(engageKill(book))
+    setSettings(disarmAllBots(loadSettings()))
+    setMsg(`floor hit — daily P/L ≤ ${DAILY_PNL_FLOOR_PAPER}. KILL on. Place blocked.`)
+  }, [hostReady, book])
+
+  useEffect(() => {
+    if (!hostReady || book.killed) return
+    const stored = loadSettings()
+    const report = analyzeDesk(board ?? null, hits, book.bets, stored.tapes)
+    const next = runAutoAnalyst({
+      settings: stored,
+      report,
+      bets: book.bets,
+      rehab,
+      killed: book.killed,
+    })
+    if (!next.didChange) return
+    setSettings(next.settings)
+    setRehab(next.rehab)
+    if (next.msg && !/Accept to apply/.test(next.msg)) setMsg(next.msg)
+  }, [hostReady, board, book.bets, book.killed, hits, rehab, settings])
+
+  const desk24 = last24hBets(book, hits, Date.now(), TAPE_IDS)
+  const desk24Ref = useRef(desk24)
+  const reset24 =
+    typeof window !== 'undefined' && (window as Window & { __HUB_RESET_BETS24?: boolean }).__HUB_RESET_BETS24 === true
+  if (reset24) {
+    desk24Ref.current = desk24
+    delete (window as Window & { __HUB_RESET_BETS24?: boolean }).__HUB_RESET_BETS24
+  } else {
+    desk24Ref.current = latchDeskBets24(desk24Ref.current, desk24)
+  }
+  const ttl = desk24Ref.current
+  const stripRows = isAllBetsFilter(settings.betsFilter)
+    ? ttl.rows
+    : ttl.rows.filter((b) => settings.betsFilter.includes(b.tape))
+  const bets24 = { rows: stripRows, ...statsFromDeskBets24(stripRows) }
+  const cashByBet = useMemo(
+    () => cashAfterEachBet(book.bets, cash.cash, cash.deposits),
+    [book.bets, cash.cash, cash.deposits],
+  )
 
   return (
-    <div className="desk">
-      <header className="desk-head" data-testid="desk-head">
+    <div className="desk" data-testid="desk" data-desk-tick={DESK_TICK_MS} data-print-ms={LIVE_PRINT_MS} data-feed-stale="0" data-feed-stale-ms={FEED_RECONNECT_MS} data-feed-reconnect={feedReconnect ? '1' : '0'} data-exit-scan={EXIT_SCAN_MS} data-settle-latch={settleNeed.latchMs || 0} data-balance-latch={cashLatch || 0} data-book-latch={BOOK_LATCH_MS} data-settings-latch={SETTINGS_LATCH_MS}>
+      <header className="desk-head" data-testid="desk-head" data-host-ready={hostReady ? '1' : '0'}>
         <div className="brand-bar">
           <div className="wordmark" data-testid="wordmark">
-            <h1 data-testid="desk-title">HUB / PREDICTIONS</h1>
+            <h1 data-testid="desk-title">HUB Predictions</h1>
           </div>
           <div className="rain" data-testid="rain" aria-hidden="true" />
-          <div className="brand-actions">
-            <label className={`toggle glyph-plate ${settings.liveBets ? 'toggle-hot' : ''}`}>
-              <input
-                type="checkbox"
-                data-testid="live-bets"
-                checked={settings.liveBets}
-                onChange={(e) => {
-                  if (e.target.checked) setLiveConfirm(true)
-                  else {
-                    setLiveConfirm(false)
-                    setSettings(setLiveBets(settings, false))
-                  }
-                }}
-              />
-              Live {settings.liveBets ? 'ON' : 'OFF'}
-            </label>
-            <button
-              type="button"
-              className="chip-btn glyph-plate"
-              data-testid="settings-toggle"
-              onClick={() => setSettingsOpen((v) => !v)}
-            >
-              {settingsOpen ? 'Hide' : 'Settings'}
-            </button>
-          </div>
         </div>
         <div className="stat-row scoreboard-row" data-testid="scoreboard">
           <Stat
-            label="P&L VS DEPOSITS"
-            value={
-              cash.pnl == null && cash.deposits == null
-                ? '—'
-                : `${formatPnl(cash.pnl)} from ${formatCash(cash.deposits)}`
-            }
+            label="P&L"
+            value={cash.pnl != null ? formatPnl(cash.pnl) : '—'}
             testId="pnl"
             tone={cash.pnl != null && cash.pnl < 0 ? 'down' : cash.pnl != null && cash.pnl > 0 ? 'up' : undefined}
           />
-          <Stat label="TTL 24H" value={`${ttl.pct}% ${ttl.w}W–${ttl.l}L`} testId="ttl" />
+          <Stat
+            label="TTL 24H"
+            value={`${ttl.pct}% ${ttl.w}W–${ttl.l}L · ${ttl.w + ttl.l >= 4 && ttl.pct < HIT_FLOOR ? `<${HIT_FLOOR}%` : `${HIT_FLOOR}% goal`}`}
+            testId="ttl"
+          />
           <Stat label="KALSHI CASH" value={formatCash(cash.cash)} testId="kalshi-cash" />
         </div>
-        {liveConfirm ? (
-          <div className="live-banner" data-testid="live-banner">
-            <p>Confirm LIVE — keys + paper 48h + cash floor. Soft FAIL silent Paper→Live.</p>
-            <button
-              type="button"
-              className="chip-btn toggle-hot"
-              data-testid="confirm-live"
-              onClick={() => {
-                const gate = liveArmGate(book, {
-                  cash: cash.cash,
-                  deposits: cash.deposits,
-                  hasKeys: hostCreds,
-                })
-                setLiveConfirm(false)
-                if (!gate.ok) {
-                  setSettings(setLiveBets(settings, false))
-                  setMsg(gate.reason)
-                  return
-                }
-                setSettings(setLiveBets(settings, true))
-                setMsg('LIVE armed — confirm + keys + floor')
-              }}
-            >
-              Confirm LIVE
-            </button>
-            <button type="button" className="chip-btn" data-testid="cancel-live" onClick={() => setLiveConfirm(false)}>
-              Cancel
-            </button>
-          </div>
-        ) : null}
+        {feedReconnect ? (
+          <p className="feed-reconnect" data-testid="feed-reconnect" data-stale="1">
+            reconnecting
+          </p>
+        ) : (
+          <p hidden data-testid="feed-ok" data-stale="0" />
+        )}
       </header>
 
       <main className="desk-main">
@@ -383,24 +1329,82 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
               key={id}
               id={id}
               quote={board?.tapes[id] ?? null}
-              ticket={ticketFor(tickets, id, board?.tapes[id]?.ticker)}
-              hits={hits.tapes[id]}
+              ticket={displayTicket(tickets, id, board?.tapes[id]?.ticker)}
+              booked={book.bets.find((b) => b.orderId === displayTicket(tickets, id, board?.tapes[id]?.ticker)?.orderId)}
+              hits={tapeHitCell(id, hits, book.bets, Date.now())}
               recipe={settings.tapes[id]}
               clock={settings.clocks[id]}
-              liveBets={settings.liveBets}
+              chart={settings.charts?.[id] ?? DEFAULT_CHART}
+              rehabPaper={isRehabPaper(rehab, id)}
               recipeLocked={chasingLosses(book) || book.killed}
-              onClock={(next) => setSettings(setTapeClock(settings, id, next))}
+              hostReady={hostReady}
+              stale={trueLiveGate({ quote: board?.tapes[id], kalshiLive: printsQuery.data?.tapes[id]?.live }).stale}
+              botNote={(() => {
+                const quote = board?.tapes[id]
+                const recipe = settings.tapes[id]
+                const lean = tapeLean({
+                  id,
+                  live: quote?.live ?? null,
+                  beat: quote?.beat ?? 0,
+                  recipe,
+                })
+                const ask = lean === 'down' ? quote?.noAsk : quote?.yesAsk
+                const cell = tapeHitCell(id, hits, book.bets, Date.now())
+                const liveGate = trueLiveGate({
+                  quote,
+                  kalshiLive: printsQuery.data?.tapes[id]?.live,
+                })
+                return tapeBotNote({
+                  botOn: recipe.botOn,
+                  liveCash: recipe.liveOn,
+                  rehabPaper: isRehabPaper(rehab, id),
+                  hostCreds,
+                  tradingActive: quoteIsLiveClock(quote),
+                  inArm: quote?.closeAt ? inArmWindow(recipe, quote.closeAt) : false,
+                  askOk:
+                    ask != null &&
+                    (recipe.liveOn ? askAllowedByGold(id, ask, { recipe }) : askInBand(ask, recipe)),
+                  lean,
+                  hitOk: hitFloorGate(cell.w, cell.l).ok,
+                  armFromMin: recipe.armFromMin,
+                  armToMin: recipe.armToMin,
+                  stale: liveGate.stale,
+                })
+              })()}
+              onClock={(next) => setSettings(setTapeClock(loadSettings(), id, next))}
+              onChart={(next) => setSettings(setTapeChart(loadSettings(), id, next))}
               onTape={(patch) => {
                 if (book.killed && patch.botOn) {
                   setMsg('KILL on — bots stay off')
                   return
+                }
+                if (patch.liveOn === true && !tapeAllowsLive(id)) {
+                  setMsg(`${TAPE_META[id].label} paper desk — Live cash stays off`)
+                  return
+                }
+                if (patch.liveOn === true) {
+                  const quote = readTestTapeQuote(id) ?? board?.tapes[id]
+                  const tapeGate = tapeLiveArmGate(id, quote)
+                  if (!tapeGate.ok) {
+                    setMsg(tapeGate.reason)
+                    return
+                  }
+                  const arm = liveArmGateForDesk(book, {
+                    cash: cash.cash,
+                    deposits: cash.deposits,
+                    hasKeys: hostCreds,
+                  })
+                  if (!arm.ok) {
+                    setMsg(arm.reason)
+                    return
+                  }
                 }
                 const gate = recipeRetuneGate(book, patch)
                 if (!gate.ok) {
                   setMsg(gate.reason)
                   return
                 }
-                setSettings(patchTape(settings, id, patch))
+                setSettings(patchTape(loadSettings(), id, patch))
               }}
             />
           ))}
@@ -411,8 +1415,12 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           w={bets24.w}
           l={bets24.l}
           pnl={bets24.pnl}
+          open={bets24.open}
+          pct={bets24.pct}
+          rows={bets24.rows}
+          cashByBet={cashByBet}
           filter={settings.betsFilter}
-          onFilter={(chip) => setSettings((cur) => applyBetsFilter(cur, chip))}
+          onFilter={(chip) => setSettings(applyBetsFilter(loadSettings(), chip))}
         />
 
         <div className="under-desk" data-testid="under-desk">
@@ -432,17 +1440,64 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           >
             {financeOpen ? 'Hide Finance' : 'Finance'}
           </button>
+          <button
+            type="button"
+            className="chip-btn tap"
+            data-testid="settings-toggle"
+            onClick={() => setSettingsOpen((v) => !v)}
+          >
+            {settingsOpen ? 'Hide Settings' : 'Settings'}
+          </button>
         </div>
-        {analystOpen ? <AnalystPanel board={board ?? null} hits={hits} /> : null}
+        {analystOpen ? (
+          <AnalystDesk
+            board={board ?? null}
+            hits={hits}
+            settings={settings}
+            bets={book.bets}
+            events={liveEvents}
+            killed={book.killed}
+            rehab={rehab}
+            intelOn={heavyReady}
+          />
+        ) : null}
+        <section className="exit-watch" data-testid="exit-watch">
+          <p className="settings-note" data-testid="exit-watch-lock">
+            EXIT WATCH · paper first · no Live sell until PASS. Drafts only. No ghost sells. Recipe stays.
+          </p>
+          {TAPE_IDS.filter((id) => id === 'btc' || latestExitFor(exitLogs, id)).map((id) => {
+            const row = latestExitFor(exitLogs, id)
+            return (
+              <p key={id} className="tape-line" data-testid={`exit-watch-${id}`}>
+                <span data-testid={`exit-action-${id}`}>{row?.action === 'exit' ? 'EXIT' : 'HOLD'}</span>
+                {' · '}
+                <span data-testid={`exit-locked-${id}`}>{formatExitLocked(row?.locked ?? 0)}</span>
+                {' · '}
+                <span data-testid={`exit-why-${id}`}>{row?.why ?? 'waiting on a real fill'}</span>
+              </p>
+            )
+          })}
+          {recentExitLogs(exitLogs).map((row) => (
+            <p
+              key={`${row.orderId}-${row.action}-${row.at}`}
+              className="tape-line"
+              data-testid={`exit-log-${row.orderId}`}
+              data-exit-action={row.action}
+            >
+              {row.action === 'exit' ? 'EXIT' : 'HOLD'} · {formatExitLocked(row.locked)} · {row.why}
+            </p>
+          ))}
+        </section>
         {financeOpen ? (
           <FinancePanel
             book={book}
             cash={cash}
             board={board ?? null}
+            chief={chief}
+            exitLogs={exitLogs}
             onKill={() => {
               setBook(engageKill(book))
               setSettings(disarmAllBots(settings))
-              setLiveConfirm(false)
               setMsg('KILL on — bots disarmed, Place blocked')
             }}
             onClearKill={() => {
@@ -452,37 +1507,116 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
           />
         ) : null}
 
-        {msg ? <p className="desk-msg">{msg}</p> : null}
+        {book.killed && dailyPnlFloorHit(book) ? (
+          <p className="desk-msg" data-testid="floor-hit">
+            floor hit — daily P/L ≤ {DAILY_PNL_FLOOR_PAPER}. KILL on. Place blocked.
+          </p>
+        ) : null}
+
+        {chief.lockIn || dailyProfitLockHit(book) ? (
+          <p className="desk-msg" data-testid="lock-in">
+            lock-in sit — daily P/L ≥ ${DAILY_PROFIT_LOCK}. Live place sat. Live cash stays.
+          </p>
+        ) : null}
+
+        {msg ? <p className="desk-msg" data-testid="desk-msg">{msg}</p> : null}
 
         {settingsOpen ? (
           <SettingsPanel
             settings={settings}
             cashLabel={`Cash ${formatCash(cash.cash)}`}
-            onLiveBets={(on) => {
-              if (on) setLiveConfirm(true)
-              else {
-                setLiveConfirm(false)
-                setSettings(setLiveBets(settings, false))
-              }
-            }}
             recipeLocked={chasingLosses(book) || book.killed}
             onTape={(id, patch) => {
               if (book.killed && patch.botOn) {
                 setMsg('KILL on — bots stay off')
                 return
               }
+              if (patch.liveOn === true && !tapeAllowsLive(id)) {
+                setMsg(`${TAPE_META[id].label} paper desk — Live cash stays off`)
+                return
+              }
+              if (patch.liveOn === true) {
+                const quote = readTestTapeQuote(id) ?? board?.tapes[id]
+                const tapeGate = tapeLiveArmGate(id, quote)
+                if (!tapeGate.ok) {
+                  setMsg(tapeGate.reason)
+                  return
+                }
+                const arm = liveArmGateForDesk(book, {
+                  cash: cash.cash,
+                  deposits: cash.deposits,
+                  hasKeys: hostCreds,
+                })
+                if (!arm.ok) {
+                  setMsg(arm.reason)
+                  return
+                }
+              }
               const gate = recipeRetuneGate(book, patch)
               if (!gate.ok) {
                 setMsg(gate.reason)
                 return
               }
-              setSettings(patchTape(settings, id, patch))
+              setSettings(patchTape(loadSettings(), id, patch))
             }}
             onRefreshCash={() => void refreshCash()}
           />
         ) : null}
       </main>
     </div>
+  )
+}
+
+function AnalystDesk({
+  board,
+  hits,
+  settings,
+  bets,
+  events,
+  killed,
+  rehab,
+  intelOn,
+}: {
+  board: DeskBoard | null
+  hits: ReturnType<typeof loadHits>
+  settings: DeskSettings
+  bets: FinanceState['bets']
+  events: Partial<Record<TapeId, string>>
+  killed: boolean
+  rehab: AnalystAutoState
+  intelOn: boolean
+}) {
+  const liveSig = TAPE_IDS.map((id) => {
+    const q = board?.tapes[id]
+    return `${id}:${q?.tradingActive === true ? 1 : 0}:${q?.ticker ?? ''}`
+  }).join('|')
+  const pathQuery = useQuery({
+    queryKey: ['tape-paths', events, liveSig],
+    queryFn: () => getTapePaths({ data: { events } }),
+    enabled: intelOn,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
+  })
+  const briefQuery = useQuery({
+    queryKey: ['desk-briefs', settings.clocks, liveSig],
+    queryFn: () => getDeskBriefs({ data: { clocks: settings.clocks } }),
+    enabled: intelOn,
+    staleTime: 8 * 60_000,
+    refetchInterval: 8 * 60_000,
+    placeholderData: keepPreviousData,
+  })
+  return (
+    <AnalystPanel
+      board={board}
+      hits={hits}
+      settings={settings}
+      bets={bets}
+      paths={pathQuery.data ?? null}
+      briefs={briefQuery.data ?? null}
+      killed={killed}
+      rehab={rehab}
+    />
   )
 }
 
@@ -518,58 +1652,205 @@ function TapeRow({
   id,
   quote,
   ticket,
+  booked,
   hits,
   recipe,
   clock,
-  liveBets,
+  chart,
+  rehabPaper,
   recipeLocked,
+  stale,
+  botNote,
+  hostReady,
   onClock,
+  onChart,
   onTape,
 }: {
   id: TapeId
   quote: TapeQuote | null
   ticket: DeskTicket | undefined
+  booked?: { ask?: number; spent?: number; count?: number; kind?: unknown; orderId?: string } | null
   hits: { w: number; l: number }
   recipe: TapeRecipe
   clock: TapeClock
-  liveBets: boolean
+  chart: ChartRange
+  rehabPaper: boolean
   recipeLocked: boolean
+  stale?: boolean
+  botNote: string
+  hostReady?: boolean
   onClock: (clock: TapeClock) => void
+  onChart: (chart: ChartRange) => void
   onTape: (patch: Partial<TapeRecipe>) => void
 }) {
-  const status = ticketStatus(ticket)
+  const liveFill =
+    Boolean(ticket && isRealOrderId(ticket.orderId) && !isPaperOrderId(ticket.orderId) && booked?.kind === 'live')
+  const paperFill = Boolean(
+    ticket && (isPaperOrderId(ticket.orderId) || booked?.kind === 'paper') && !recipe.liveOn,
+  )
+  const shownTicket = liveFill || paperFill ? ticket : undefined
+  const status = ticketStatus(liveFill ? ticket : undefined)
   const pct = hitPct(hits)
-  const live = quote?.live ?? null
-  const beat = quote?.beat ?? 0
-  const think = weThinkPair(live, beat, quote?.points ?? [])
-  const paper = recipe.botOn && !(liveBets && recipe.botOn && recipe.liveOn)
+  const heldQuote = useRef(quote)
+  heldQuote.current = holdTapeQuote(quote, heldQuote.current)
+  const shownQuote = heldQuote.current
+  const live = shownQuote?.live ?? null
+  const shownLive = useSmoothedLive(live)
+  const beat = shownQuote?.beat ?? 0
+  const think = weThinkPair(live, beat, shownQuote?.points ?? [])
+  const paper = recipe.botOn && !recipe.liveOn
+  const callout = CLOCK_CALLOUT[clock]
+  const tone = nowTone(shownLive, beat)
+  const testClock = readTestCloseClock()
+  const liveOn = (testClock?.tradingActive ?? shownQuote?.tradingActive) === true
+  const staleFlag = testClock?.stale ?? stale
   const [draft, setDraft] = useState(recipe.contracts)
   const contractsRef = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    setDraft(recipe.contracts)
+  const saveTimer = useRef(0)
+  const typedRef = useRef(false)
+  const lastTicker = useRef(quote?.ticker ?? '')
+  useLayoutEffect(() => {
+    if (!typedRef.current) setDraft(recipe.contracts)
   }, [recipe.contracts])
+  useEffect(() => () => window.clearTimeout(saveTimer.current), [])
+  useEffect(() => {
+    const flush = () => {
+      window.clearTimeout(saveTimer.current)
+      if (hostReady !== true || !typedRef.current) return
+      const fromDom = contractsRef.current ? Number(contractsRef.current.value) : draft
+      if (!Number.isFinite(fromDom)) return
+      const n = clampContracts(fromDom)
+      if (n === recipe.contracts) return
+      if (n === 1 && recipe.contracts > 1 && !typedRef.current) return
+      onTape({ contracts: n })
+    }
+    window.addEventListener('pagehide', flush)
+    window.addEventListener('beforeunload', flush)
+    document.addEventListener('visibilitychange', flush)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      window.removeEventListener('beforeunload', flush)
+      document.removeEventListener('visibilitychange', flush)
+    }
+  }, [draft, recipe.contracts, onTape, hostReady])
+  useEffect(() => {
+    const ticker = quote?.ticker ?? ''
+    if (lastTicker.current && ticker && lastTicker.current !== ticker && chart !== DEFAULT_CHART) {
+      onChart(DEFAULT_CHART)
+    }
+    lastTicker.current = ticker
+  }, [quote?.ticker, chart, onChart])
 
   function saveContracts(raw?: number) {
+    window.clearTimeout(saveTimer.current)
+    if (hostReady !== true) return
+    if (!typedRef.current) {
+      setDraft(recipe.contracts)
+      return
+    }
     const fromDom = contractsRef.current ? Number(contractsRef.current.value) : draft
     const n = clampContracts(Number(raw ?? fromDom))
+    if (n === recipe.contracts) {
+      setDraft(n)
+      return
+    }
+    if (n === 1 && recipe.contracts > 1 && !typedRef.current) return
     setDraft(n)
-    patchTape(loadSettings(), id, { contracts: n })
     onTape({ contracts: n })
   }
 
+  function queueContracts(raw: number) {
+    typedRef.current = true
+    const n = clampContracts(raw)
+    setDraft(n)
+    if (hostReady !== true) return
+    window.clearTimeout(saveTimer.current)
+    saveContracts(n)
+  }
+
+  const fillLine = shownTicket ? ticketFillStrip(shownTicket, shownQuote, booked) : ''
+  const session = tapeSessionHours(id)
+  const tradingLive = liveOn
+  const hoursLine = tapeHoursLine(id, shownQuote, clock, Date.now(), tradingLive)
+  const nextOpenLabel = session.open ? nextClockLabel(Date.now(), clock, shownQuote) : session.nextOpenLabel
+  const modeLabel = liveFill ? 'LIVE' : paperFill ? 'PAPER' : booked?.kind === 'hist' ? 'HIST' : 'PAPER'
+
   return (
-    <article className={`tape tape-${id}`} data-testid={`tape-${id}`} data-tape={id}>
+    <article className={`tape tape-${id}`} data-testid={`tape-${id}`} data-tape={id} data-ticker={shownQuote?.ticker ?? ''}>
+      <header className="tape-head">
+        <div className="tape-identity">
+          <TapeIcon id={id} />
+          <div className="tape-callout">
+            <p className="tape-kicker glyph-plate">
+              {TAPE_META[id].label} / {callout.kicker}
+            </p>
+            <h2 className="tape-title glyph-plate" data-testid={`name-${id}`}>
+              {TAPE_META[id].label} {callout.title}
+            </h2>
+            <p className="tape-window glyph-plate">
+              <span className="tape-name">
+                {formatWindowRange(shownQuote?.openAt, shownQuote?.closeAt)}
+              </span>
+              {staleFlag ? (
+                <span className="stale-flag" data-testid={`stale-${id}`}>
+                  STALE
+                </span>
+              ) : liveOn ? (
+                <span className="tape-live-flag">
+                  <span className="live-dot" /> LIVE
+                </span>
+              ) : null}
+            </p>
+            <p className="tape-hours glyph-plate" data-testid={`hours-${id}`}>
+              {hoursLine}
+            </p>
+          </div>
+        </div>
+        <div className="tape-head-tools">
+          <CloseClock
+            tape={id}
+            closeAt={shownQuote?.closeAt}
+            live={tradingLive}
+            stale={staleFlag}
+            tradingActive={testClock?.tradingActive ?? shownQuote?.tradingActive}
+            openMarkets={shownQuote?.openMarkets}
+            nextOpenLabel={nextOpenLabel}
+          />
+          <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
+            {status}
+          </p>
+        </div>
+      </header>
+
+      <div className="tape-marks">
+        <div className="mark-beat glyph-plate" data-testid={`beat-${id}`}>
+          <p className="mark-label beat-k" data-testid={`beat-label-${id}`}>
+            TO BEAT
+          </p>
+          <p className="tape-num" data-testid={`beat-value-${id}`} suppressHydrationWarning>
+            {formatLive(id, beat || null)}
+          </p>
+          <p className="mark-sub">{shownQuote?.clock || '—'}</p>
+        </div>
+        <div className="mark-now live-read glyph-plate" data-testid={`live-plate-${id}`}>
+          <p className="mark-label">NOW</p>
+          <p className={`tape-num${tone ? ` tone-${tone}` : ''}`} data-testid={`live-${id}`} suppressHydrationWarning>
+            {formatLive(id, shownLive)}
+          </p>
+          <p className={`mark-sub now-delta${tone ? ` tone-${tone}` : ''}`} data-testid={`now-delta-${id}`} suppressHydrationWarning>
+            {formatNowDelta(id, shownLive, beat)}
+          </p>
+        </div>
+      </div>
+
       <div className="tape-row">
         <div className="hit-chip" data-testid={`hit-${id}`}>
-          <span className="hit-k">24H</span>
+          <span className="hit-k">Hit · {HIT_FLOOR}% goal</span>
           <span className="tape-hit">{pct}%</span>
           <span className="tape-wl" data-testid={`wl-${id}`}>
             {hits.w}W–{hits.l}L
           </span>
         </div>
-        <p className="tape-name">
-          {TAPE_META[id].label} · {quote?.clock || '—'}
-        </p>
         <label className="clock-field glyph-plate">
           Clock
           <select
@@ -585,41 +1866,28 @@ function TapeRow({
             ))}
           </select>
         </label>
-        <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
-          {status}
-        </p>
         <p className="tape-ticket" data-testid={`ticket-${id}`}>
-          {ticket
-            ? `${status} · ${ticket.contracts} · ${ticket.orderId}`
-            : 'No ticket this clock'}
-        </p>
-        <CloseClock closeAt={quote?.closeAt} />
-        <p className="tape-num glyph-plate" data-testid={`beat-${id}`}>
-          <span className="beat-k" data-testid={`beat-label-${id}`}>
-            BEAT
-          </span>{' '}
-          <span data-testid={`beat-value-${id}`}>{formatLive(id, beat || null)}</span>
+          {shownTicket ? fillLine : 'No ticket this clock'}
+          {shownTicket ? (
+            <span className="ticket-id" data-testid={`ticket-id-${id}`} title={shownTicket.orderId}>
+              {modeLabel}
+            </span>
+          ) : null}
         </p>
       </div>
 
       <div className="tape-reads">
-        <div className="live-read glyph-plate" data-testid={`live-plate-${id}`}>
-          <p className="hud-label">LIVE</p>
-          <p className="tape-num" data-testid={`live-${id}`}>
-            {formatLive(id, live)}
-          </p>
-        </div>
         <div>
           <p className="hud-label">WE THINK</p>
-          <p className="tape-think" data-testid={`we-think-${id}`}>
+          <p className="tape-think" data-testid={`we-think-${id}`} suppressHydrationWarning>
             {formatWeThink(id, think.live, think.ahead)}
           </p>
         </div>
         <div className="tape-cents">
           <p className="hud-label">UP / DOWN ¢</p>
           <p className="tape-ask" data-testid={`ask-${id}`}>
-            <span className="tone-up">UP {Number.isFinite(quote?.yesAsk) ? `${quote!.yesAsk}¢` : '—'}</span>
-            <span className="tone-down">DOWN {Number.isFinite(quote?.noAsk) ? `${quote!.noAsk}¢` : '—'}</span>
+            <span className="tone-up">UP {Number.isFinite(shownQuote?.yesAsk) ? `${shownQuote!.yesAsk}¢` : '—'}</span>
+            <span className="tone-down">DOWN {Number.isFinite(shownQuote?.noAsk) ? `${shownQuote!.noAsk}¢` : '—'}</span>
           </p>
         </div>
       </div>
@@ -628,15 +1896,24 @@ function TapeRow({
         id={id}
         beat={beat}
         live={live}
-        points={quote?.points}
+        displayLive={shownLive}
+        points={shownQuote?.points}
         clock={clock}
-        openAt={quote?.openAt}
-        closeAt={quote?.closeAt}
+        chart={chart}
+        ticker={shownQuote?.ticker}
+        openAt={shownQuote?.openAt}
+        closeAt={shownQuote?.closeAt}
+        onChart={onChart}
       />
 
-      {paper || ticket ? (
+      {paper || shownTicket ? (
         <p className="tape-banner glyph-plate" data-testid={`banner-${id}`}>
-          {ticket ? `LIVE ${status}` : 'PAPER'}
+          {shownTicket ? `${modeLabel} ${status}` : 'PAPER'}
+        </p>
+      ) : null}
+      {botNote ? (
+        <p className="settings-note" data-testid={`bot-note-${id}`}>
+          {botNote}
         </p>
       ) : null}
 
@@ -650,14 +1927,24 @@ function TapeRow({
           />
           Bot {recipe.botOn ? 'ON' : 'OFF'}
         </label>
-        <label className={`toggle tap glyph-plate ${recipe.liveOn ? 'toggle-hot' : ''}`}>
+        <label
+          className={`toggle tap glyph-plate ${rehabPaper ? 'toggle-halt' : recipe.liveOn ? 'toggle-hot' : ''}`}
+          data-testid={`live-cash-box-${id}`}
+          data-halt={rehabPaper ? '1' : '0'}
+          onClick={() => {
+            if (!tapeAllowsLive(id)) onTape({ liveOn: true })
+          }}
+        >
           <input
             type="checkbox"
             data-testid={`live-cash-${id}`}
             checked={recipe.liveOn}
-            onChange={(e) => onTape({ liveOn: e.target.checked })}
+            disabled={!tapeAllowsLive(id) || recipeLocked}
+            onChange={(e) => {
+              onTape({ liveOn: e.target.checked })
+            }}
           />
-          Live cash {recipe.liveOn ? 'ON' : 'OFF'}
+          Live cash {rehabPaper ? 'HALT' : !tapeAllowsLive(id) ? 'PAPER' : recipe.liveOn ? 'ON' : 'OFF'}
         </label>
         <label className="contracts-field">
           <span className="contracts-label glyph-plate" data-testid={`contracts-label-${id}`}>
@@ -673,31 +1960,17 @@ function TapeRow({
             value={draft}
             disabled={recipeLocked}
             ref={contractsRef}
-            onChange={(e) => {
-              const n = clampContracts(Number(e.target.value))
-              setDraft(n)
-              onTape({ contracts: n })
-            }}
-            onInput={(e) => {
-              const n = clampContracts(Number((e.target as HTMLInputElement).value))
-              setDraft(n)
-              onTape({ contracts: n })
-            }}
+            onChange={(e) => queueContracts(Number(e.target.value))}
+            onInput={(e) => queueContracts(Number((e.target as HTMLInputElement).value))}
             onBlur={() => saveContracts()}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') saveContracts()
+              if (e.key === 'Enter') {
+                saveContracts()
+                ;(e.target as HTMLInputElement).blur()
+              }
             }}
           />
         </label>
-        <button
-          type="button"
-          className="chip-btn tap glyph-plate"
-          data-testid={`save-${id}`}
-          disabled={recipeLocked}
-          onClick={() => saveContracts()}
-        >
-          Save
-        </button>
       </div>
     </article>
   )
@@ -708,6 +1981,10 @@ function Bets24Strip({
   w,
   l,
   pnl,
+  open,
+  pct,
+  rows,
+  cashByBet,
   filter,
   onFilter,
 }: {
@@ -715,13 +1992,33 @@ function Bets24Strip({
   w: number
   l: number
   pnl: number
+  open: number
+  pct: number
+  rows: Array<{
+    betId: string
+    tape: TapeId
+    ticker: string
+    side: 'up' | 'down'
+    status: 'open' | 'settled'
+    spent: number
+    pnl: number | null
+    clock?: string
+    closeAt?: number
+    filledAt?: number
+    kind?: 'live' | 'paper' | 'hist'
+    orderId?: string
+  }>
+  cashByBet: Record<string, number | null>
   filter: TapeId[]
   onFilter: (chip: 'all' | TapeId) => void
 }) {
   const allOn = isAllBetsFilter(filter)
   return (
     <section className="bets-24h" data-testid="bets-24h" data-filter={filter.join(',')}>
-      <p className="hud-label">Last 24H bets</p>
+      <p className="hud-label">
+        Last 24 hours · desk paper + live · no hist dump · LIVE walks CASH · PAPER
+        CASH N/A · WINDOW · CLOCK · MODE · CASH · {HIT_FLOOR}% win-ratio goal
+      </p>
       <div className="bets-filter" data-testid="bets-filter">
         <button
           type="button"
@@ -749,14 +2046,81 @@ function Bets24Strip({
         })}
       </div>
       <div className="scoreboard-row">
-        <Stat label="PLACED" value={placed > 0 ? formatCash(placed) : '—'} testId="bets-placed" />
-        <Stat label="WINS–LOSSES" value={`${w}W–${l}L`} testId="bets-wl" />
+        <Stat label="PLACED" value={placed > 0 || open > 0 ? formatCash(placed) : '—'} testId="bets-placed" />
         <Stat
-          label="P&L 24H"
-          value={w + l === 0 && placed === 0 ? '—' : formatPnl(pnl)}
+          label="WINS–LOSSES"
+          value={`${w}W–${l}L · ${open} open${w + l > 0 ? ` · ${pct}%${pct > 0 && pct < HIT_FLOOR ? ` <${HIT_FLOOR}%` : ''}` : ''}`}
+          testId="bets-wl"
+        />
+        <Stat
+          label="P&L"
+          value={w + l === 0 && placed === 0 && pnl === 0 ? '—' : formatPnl(pnl)}
           testId="bets-pnl"
           tone={pnl < 0 ? 'down' : pnl > 0 ? 'up' : undefined}
         />
+      </div>
+      <div className="bets-log-wrap">
+        <div className="bets-log-scroll">
+          <div className="bets-log-row bets-log-head" aria-hidden>
+            <span>TAPE</span>
+            <span>WINDOW</span>
+            <span>CLOCK</span>
+            <span>SIDE</span>
+            <span>RESULT</span>
+            <span>MODE</span>
+            <span>SPENT</span>
+            <span>P&L</span>
+            <span data-testid="bets-cash-head">CASH</span>
+          </div>
+          <ul className="bets-log" data-testid="bets-log">
+            {rows.map((b) => {
+              const settled = b.status === 'settled' && b.pnl != null
+              const result = b.status === 'open' ? 'OPEN' : (b.pnl ?? 0) > 0 ? 'WIN' : (b.pnl ?? 0) < 0 ? 'LOSS' : 'PUSH'
+              const rowPnl = settled ? (b.pnl as number) : null
+              const mode = betKind(b)
+              const windowLabel = formatBetWindow(b.closeAt, betWindowMs(b), b.filledAt)
+              const clockLabel = betClockLabel(b)
+              const cashAmt = cashByBet[b.betId]
+              const cashText = mode === 'live' ? (cashAmt == null ? '—' : formatCash(cashAmt)) : 'N/A'
+              const modeClass = mode === 'live' ? 'mode-live' : mode === 'hist' ? 'mode-hist' : 'mode-paper'
+              const modeLabel = mode === 'hist' ? 'HIST' : mode === 'live' ? 'LIVE' : 'PAPER'
+              return (
+                <li key={b.betId} className="bets-log-row" data-kind={mode} data-order-id={b.orderId}>
+                  <span>{b.tape.toUpperCase()}</span>
+                  <span data-testid="bets-window" className="bets-window" title={windowLabel}>
+                    {windowLabel}
+                  </span>
+                  <span data-testid="bets-clock">{clockLabel}</span>
+                  <span>{b.side.toUpperCase()}</span>
+                  <span
+                    data-testid="bets-result"
+                    className={
+                      result === 'WIN' ? 'result-win' : result === 'LOSS' ? 'result-loss' : result === 'OPEN' ? 'result-open' : undefined
+                    }
+                  >
+                    {result}
+                  </span>
+                  <span data-testid="bets-mode" className={modeClass}>
+                    {modeLabel}
+                  </span>
+                  <span>{formatCash(b.spent)}</span>
+                  <span
+                    data-testid="bets-row-pnl"
+                    className={rowPnl == null ? undefined : rowPnl > 0 ? 'tone-up' : rowPnl < 0 ? 'tone-down' : undefined}
+                  >
+                    {rowPnl == null ? '—' : formatPnl(rowPnl)}
+                  </span>
+                  <span data-testid="bets-cash">{cashText}</span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+        {rows.length ? null : (
+          <p className="settings-note" data-testid="bets-empty">
+            No fills since first deposit. Paper deskfill and Kalshi HIST show here.
+          </p>
+        )}
       </div>
     </section>
   )

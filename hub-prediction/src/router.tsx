@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRouter } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { Dashboard } from './components/dashboard'
 import { routeTree } from './routeTree.gen'
 
 export function getRouter() {
@@ -17,6 +18,7 @@ export function getRouter() {
     routeTree,
     scrollRestoration: true,
     context: { queryClient },
+    defaultNotFoundComponent: () => <Dashboard seedBoard={null} />,
     Wrap({ children }: { children: ReactNode }) {
       return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     },

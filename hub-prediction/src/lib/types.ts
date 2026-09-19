@@ -88,9 +88,24 @@ export type TapeQuote = {
   clock: string
   clockId?: '5m' | '15m' | '1h'
   tradingActive: boolean
+  /** Kalshi series status=open count. CLOSED only when this is 0. */
+  openMarkets?: number
 }
 
 export type DeskBoard = {
   tapes: Record<TapeId, TapeQuote | null>
+  fetchedAt: number
+}
+
+export type LiveOverlay = {
+  eventTicker: string
+  live: number | null
+  liveSource: TapeQuote['liveSource']
+  points: Point[]
+  fetchedAt: number
+}
+
+export type LivePrints = {
+  tapes: Record<TapeId, LiveOverlay | null>
   fetchedAt: number
 }

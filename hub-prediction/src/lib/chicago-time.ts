@@ -44,6 +44,18 @@ export function weekdayName(ms: number) {
   return parts(ms).weekday
 }
 
+export function chicagoHour(ms: number) {
+  return parts(ms).hour
+}
+
+export function chicagoMinute(ms: number) {
+  return parts(ms).minute
+}
+
+export function isChicagoSaturday(ms: number) {
+  return parts(ms).weekday === 'Sat'
+}
+
 export function formatClock(ms: number) {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: TZ,
@@ -59,6 +71,55 @@ export function formatDayLabel(ms: number) {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
+  }).format(new Date(ms))
+}
+
+/** Readable Chicago window for the bets log: Sep 18, 11:30–11:45 AM CDT */
+export function formatBetWindow(closeAt?: number | null, windowMs?: number, filledAt?: number | null) {
+  const end = Number(closeAt) > 1e11 ? Number(closeAt) : Number(filledAt) > 1e11 ? Number(filledAt) : 0
+  if (!end) return '—'
+  const start = windowMs && windowMs > 0 ? end - windowMs : 0
+  const day = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(end))
+  if (start > 0) {
+    const open = formatClock(start)
+    const close = formatClock(end)
+    const same = /[AP]M$/i.test(open) && open.slice(-2).toUpperCase() === close.slice(-2).toUpperCase()
+    return `${day}, ${same ? open.replace(/\s?[AP]M$/i, '') : open}–${close} CDT`
+  }
+  return `${day}, ${formatClock(end)} CDT`
+}
+
+/** Kalshi-style window: September 18, 11:30 – 11:45 AM CDT */
+export function formatWindowRange(openAt?: number, closeAt?: number) {
+  if (!openAt || !closeAt || !Number.isFinite(openAt) || !Number.isFinite(closeAt)) return '—'
+  const open = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(new Date(openAt))
+  const close = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(new Date(closeAt))
+  return `${open} – ${close} CDT`
+}
+
+export function formatChartTick(ms: number, windowMs = 15 * 60_000) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ,
+    hour: 'numeric',
+    minute: '2-digit',
+    second: windowMs <= 5 * 60_000 ? '2-digit' : undefined,
+    hour12: true,
   }).format(new Date(ms))
 }
 
