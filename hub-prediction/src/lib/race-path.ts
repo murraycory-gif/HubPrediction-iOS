@@ -40,6 +40,19 @@ export function mergeRaceTrail(
     .sort((a, b) => a.t - b.t)
 }
 
+/** Keep last-good trail on ticker rollover until new prints land. Soft FAIL wipe-to-empty. */
+export function holdChartTrail(
+  prev: Point[] | undefined,
+  incoming: Point[] | undefined,
+  live: number | null | undefined,
+  reset: boolean,
+  now = Date.now(),
+) {
+  const base = reset && incoming?.length ? [] : prev
+  const next = mergeRaceTrail(base, incoming, live, now)
+  return next.length ? next : prev ?? next
+}
+
 function bucketExtrema(pts: Point[], maxDots: number): Point[] {
   if (pts.length <= maxDots) return pts
   const t0 = pts[0]!.t

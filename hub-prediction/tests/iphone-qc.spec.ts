@@ -805,26 +805,62 @@ test('Live cash ON survives reload; no master Live switch', async ({ page }) => 
   await assertNoMasterLive(page)
 })
 
+async function sampleLivePaint(page: Page) {
+  const tapes = ['btc', 'ng', 'cu', 'gld'] as const
+  const rows: string[] = []
+  for (const id of tapes) {
+    rows.push(
+      [
+        (await page.getByTestId(`beat-value-${id}`).innerText()).trim(),
+        (await page.getByTestId(`live-${id}`).innerText()).trim(),
+        (await page.getByTestId(`ask-${id}`).innerText()).trim(),
+      ].join('|'),
+    )
+  }
+  rows.push((await page.getByTestId('close-clock').first().innerText()).trim())
+  return rows.join('||')
+}
+
+function paintLooksFull(sample: string) {
+  return !/--:--/.test(sample) && /\$|¢|\d/.test(sample) && !/NOW\s*$|TO BEAT\s*$/.test(sample)
+}
+
 test('live numbers stay painted without empty glitch frames', async ({ page }) => {
+  test.setTimeout(90_000)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('desk-head')).toHaveAttribute('data-host-ready', '1', { timeout: 20_000 })
   await expect(page.getByTestId('live-btc')).toBeVisible()
   const samples: string[] = []
-  for (let i = 0; i < 6; i++) {
-    samples.push(
-      [
-        (await page.getByTestId('beat-value-btc').innerText()).trim(),
-        (await page.getByTestId('live-btc').innerText()).trim(),
-        (await page.getByTestId('ask-btc').innerText()).trim(),
-        (await page.getByTestId('close-clock').first().innerText()).trim(),
-      ].join('|'),
-    )
-    await page.waitForTimeout(350)
+  const started = Date.now()
+  while (Date.now() - started < 30_000) {
+    samples.push(await sampleLivePaint(page))
+    await page.waitForTimeout(1000)
   }
-  expect(samples.every((s) => !/TO BEAT\s*$|NOW\s*$|\|\s*$|--:--/.test(s) || /\$|¢|\d/.test(s))).toBeTruthy()
+  expect(samples.length).toBeGreaterThanOrEqual(28)
+  expect(samples.every((s) => paintLooksFull(s))).toBeTruthy()
   expect(samples.some((s) => /\$|¢|\d/.test(s))).toBeTruthy()
   await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-live-numbers.png', clip: { x: 0, y: 0, width: 390, height: 520 } })
+  await assertNoMasterLive(page)
+})
+
+test('desktop live paint stays full for 30s — no empty NOW/ask/timer', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('desk-head')).toHaveAttribute('data-host-ready', '1', { timeout: 20_000 })
+  await expect(page.getByTestId('live-btc')).toBeVisible()
+  const samples: string[] = []
+  const started = Date.now()
+  while (Date.now() - started < 30_000) {
+    samples.push(await sampleLivePaint(page))
+    await page.waitForTimeout(1000)
+  }
+  expect(samples.every((s) => paintLooksFull(s))).toBeTruthy()
+  await expect
+    .poll(async () => page.locator('[data-testid="race-btc"] .race-path').count(), { timeout: 15_000 })
+    .toBeGreaterThan(0)
+  await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/desktop-live-numbers.png', fullPage: false })
   await assertNoMasterLive(page)
 })
 

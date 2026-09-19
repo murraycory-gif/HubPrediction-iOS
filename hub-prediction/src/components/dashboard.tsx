@@ -68,7 +68,7 @@ import {
   type TapeRecipe,
 } from '../lib/tapes'
 import { ticketCost } from '../lib/size-cash'
-import type { DeskBoard, TapeQuote } from '../lib/types'
+import type { DeskBoard, LivePrints, TapeQuote } from '../lib/types'
 import {
   betClockLabel,
   betKind,
@@ -269,9 +269,16 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     return next
   }, [liveEventKey])
 
+  const printsHold = useRef<LivePrints | null>(null)
   const printsQuery = useQuery({
     queryKey: ['live-prints', liveEvents, settings.charts, settings.clocks],
-    queryFn: () => getLivePrints({ data: { events: liveEvents, charts: settings.charts, clocks: settings.clocks } }),
+    queryFn: async () => {
+      try {
+        return await getLivePrints({ data: { events: liveEvents, charts: settings.charts, clocks: settings.clocks } })
+      } catch {
+        return printsHold.current ?? { tapes: { btc: null, ng: null, cu: null, gld: null }, fetchedAt: 0 }
+      }
+    },
     enabled: Object.values(liveEvents).some(Boolean),
     refetchInterval: LIVE_PRINT_MS,
     refetchIntervalInBackground: true,
@@ -280,8 +287,9 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     retry: 1,
     refetchOnWindowFocus: false,
   })
+  if (printsQuery.data) printsHold.current = printsQuery.data
 
-  const board = mergeLiveOntoBoard(structure, printsQuery.data) ?? structure
+  const board = mergeLiveOntoBoard(structure, printsQuery.data ?? printsHold.current) ?? structure
 
   async function refreshCash() {
     try {

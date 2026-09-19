@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
 import { cleanRacePoints, raceDomain } from '../src/components/race-chart'
-import { mergeRaceTrail, pointTime, raceLinePath, smoothDrawPoints, MAX_RACE_DOTS } from '../src/lib/race-path'
+import { holdChartTrail, mergeRaceTrail, pointTime, raceLinePath, smoothDrawPoints, MAX_RACE_DOTS } from '../src/lib/race-path'
+import { DESK_TICK_MS, holdCloseAt } from '../src/lib/desk-tick'
 import {
   DEFAULT_CLOCK,
   DEFAULT_SETTINGS,
@@ -478,6 +479,15 @@ describe('gold race path', () => {
     const hourPts = cleanRacePoints(hour, now, 60 * 60_000)
     expect(hourPts.length).toBeGreaterThan(20)
     expect(cleanRacePoints(hour, now, 15 * 60_000).length).toBeLessThan(hourPts.length)
+    const prev = [
+      { t: now - 8000, px: 4358 },
+      { t: now - 4000, px: 4358.4 },
+      { t: now - 1000, px: 4358.6 },
+    ]
+    expect(holdChartTrail(prev, [], 4358.6, true, now).length).toBeGreaterThan(2)
+    expect(holdCloseAt(undefined, now + 60_000)).toBe(now + 60_000)
+    expect(holdCloseAt(now + 90_000, now + 60_000)).toBe(now + 90_000)
+    expect(DESK_TICK_MS).toBeLessThanOrEqual(250)
     const gold = raceDomain('gld', 4358, 4360, cleaned)
     expect(gold.hi - gold.lo).toBeLessThan(40)
     const jagged = [
@@ -497,14 +507,15 @@ describe('gold race path', () => {
     expect(empty.lo).toBe(0)
   })
 
-  it('LIVE chart eases NOW and ticks the wall on rAF — Soft FAIL 250ms hop', async () => {
+  it('LIVE chart eases NOW on the shared 200ms desk tick — Soft FAIL a rAF per tape', async () => {
     const src = await readFile(new URL('../src/components/race-chart.tsx', import.meta.url), 'utf8')
     expect(src).toMatch(/export function useSmoothedLive\(live: number \| null, ms = 180\)/)
-    expect(src).toMatch(/t - last >= 48/)
-    expect(src).toMatch(/requestAnimationFrame\(tick\)/)
+    expect(src).toMatch(/useDeskTick/)
+    expect(src).toMatch(/holdChartTrail/)
     expect(src).toMatch(/displayLive/)
     expect(src).toMatch(/Waiting on this clock/)
-    expect(src).toMatch(/if \(target == null \|\| !Number.isFinite\(target\) \|\| target <= 0\) next = cur/)
+    expect(src).toMatch(/held\.current/)
+    expect(src).not.toMatch(/requestAnimationFrame/)
     expect(src).not.toMatch(/setInterval\(\(\) => setNow\(Date\.now\(\)\), 250\)/)
   })
 

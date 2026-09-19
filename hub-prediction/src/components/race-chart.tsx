@@ -1,8 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { formatChartTick } from '../lib/chicago-time'
+import { DESK_TICK_MS, useDeskTick } from '../lib/desk-tick'
 import {
   cleanRacePoints,
-  mergeRaceTrail,
+  holdChartTrail,
   raceLinePath,
   smoothDrawPoints,
 } from '../lib/race-path'
@@ -57,59 +58,34 @@ export function raceDomain(id: TapeId, beat: number, live: number | null, pts: P
   return { lo, hi }
 }
 
-/** Ease NOW toward the latest Kalshi last without restarting on each print. */
+/** Ease NOW toward the latest Kalshi last. Soft FAIL blank last-good. Soft FAIL a rAF per tape. */
 export function useSmoothedLive(live: number | null, ms = 180) {
-  const [shown, setShown] = useState(live)
-  const shownRef = useRef(live)
-  const targetRef = useRef(live)
-  targetRef.current = live
+  const tick = useDeskTick()
+  const lastTick = useRef(tick)
+  const held = useRef(live)
+  if (live != null && Number.isFinite(live) && live > 0) held.current = live
+  const target = live != null && Number.isFinite(live) && live > 0 ? live : held.current
+  const [shown, setShown] = useState(target)
+  const shownRef = useRef(target)
+  if (shownRef.current == null && target != null && target > 0) {
+    shownRef.current = target
+  }
   useEffect(() => {
-    let raf = 0
-    let lastT = performance.now()
-    let lastPaint = 0
-    const tick = (t: number) => {
-      const target = targetRef.current
-      const cur = shownRef.current
-      const dt = Math.max(0, t - lastT)
-      lastT = t
-      let next = cur
-      if (target == null || !Number.isFinite(target) || target <= 0) next = cur
-      else if (cur == null || !Number.isFinite(cur) || (cur as number) <= 0) next = target
-      else {
-        const k = 1 - Math.exp(-dt / ms)
-        next = (cur as number) + (target - (cur as number)) * k
-        if (Math.abs(next - target) <= Math.max(Math.abs(target) * 1e-7, 1e-6)) next = target
-      }
-      shownRef.current = next
-      if (t - lastPaint >= 32 || next === target) {
-        lastPaint = t
-        setShown(next)
-      }
-      raf = requestAnimationFrame(tick)
+    const dt = Math.max(0, tick - lastTick.current)
+    lastTick.current = tick
+    const cur = shownRef.current
+    let next = cur
+    if (target == null || !Number.isFinite(target) || target <= 0) next = cur ?? held.current
+    else if (cur == null || !Number.isFinite(cur) || (cur as number) <= 0) next = target
+    else {
+      const k = 1 - Math.exp(-(dt || DESK_TICK_MS) / ms)
+      next = (cur as number) + (target - (cur as number)) * k
+      if (Math.abs(next - target) <= Math.max(Math.abs(target) * 1e-7, 1e-6)) next = target
     }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [ms])
-  return shown
-}
-
-function useWallClock(on: boolean) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!on) return
-    let raf = 0
-    let last = 0
-    const tick = (t: number) => {
-      if (t - last >= 48) {
-        last = t
-        setNow(Date.now())
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [on])
-  return now
+    shownRef.current = next
+    if (next !== shown) setShown(next)
+  }, [tick, target, ms, shown])
+  return shown ?? held.current
 }
 
 export const RaceChart = memo(function RaceChart({
@@ -137,24 +113,26 @@ export const RaceChart = memo(function RaceChart({
   closeAt?: number
   onChart?: (chart: ChartRange) => void
 }) {
-  const wall = useWallClock(chart === 'live')
+  const wall = useDeskTick()
   const trailRef = useRef<Point[]>([])
+  const lineHold = useRef('')
   const [trail, setTrail] = useState<Point[]>([])
+  const resetRef = useRef(false)
 
   useEffect(() => {
-    trailRef.current = []
-    setTrail([])
+    resetRef.current = true
   }, [id, ticker])
 
   useEffect(() => {
-    const next = mergeRaceTrail(trailRef.current, points, live, Date.now())
+    const next = holdChartTrail(trailRef.current, points, live, resetRef.current, Date.now())
+    if (resetRef.current && points?.length) resetRef.current = false
     const prev = trailRef.current
     const same =
       prev.length === next.length &&
       prev[prev.length - 1]?.t === next[next.length - 1]?.t &&
       prev[prev.length - 1]?.px === next[next.length - 1]?.px
     trailRef.current = next
-    if (!same) setTrail(next)
+    if (!same && next.length) setTrail(next)
   }, [points, live])
 
   const shown =
@@ -202,6 +180,8 @@ export const RaceChart = memo(function RaceChart({
   const yOf = (px: number) => PAD.t + innerH - ((px - lo) / range) * innerH
 
   const line = raceLinePath(drawPts, xOf, yOf)
+  if (line) lineHold.current = line
+  const paintLine = line || lineHold.current
   const area = drawPts.length
     ? `${line} L${xOf(drawPts[drawPts.length - 1]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} L${xOf(drawPts[0]!.t).toFixed(2)},${(PAD.t + innerH).toFixed(2)} Z`
     : ''
@@ -257,8 +237,8 @@ export const RaceChart = memo(function RaceChart({
           TARGET
         </text>
         {area ? <path d={area} fill={`url(#fill-${id})`} /> : null}
-        {line ? (
-          <path d={line} className="race-path" fill="none" stroke={stroke} />
+        {paintLine ? (
+          <path d={paintLine} className="race-path" fill="none" stroke={stroke} />
         ) : (
           <line x1={PAD.l} y1={h / 2} x2={PAD.l + innerW} y2={h / 2} className="race-empty" />
         )}
