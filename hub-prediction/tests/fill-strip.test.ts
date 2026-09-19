@@ -37,7 +37,7 @@ describe('ticket fill strip — Soft FAIL raw order id', () => {
     expect(looksLikeOrderUuid(line)).toBe(false)
   })
 
-  it('prefers booked spent/ask over the quote', () => {
+  it('uses the stored fill ask, not a later quote', () => {
     const t = makeTicket({
       tape: 'cu',
       ticker: 'KXCOPPER15M-FILL',
@@ -45,10 +45,23 @@ describe('ticket fill strip — Soft FAIL raw order id', () => {
       orderId: 'ord-cu-real-fill01',
       contracts: 1,
       beat: 4.4,
-      ask: 50,
+      ask: 98,
     })
-    const line = ticketFillStrip(t!, { yesAsk: 40, noAsk: 61 }, { ask: 40, spent: 0.4, count: 1 })
-    expect(line).toBe('DOWN · 1 contract · 40¢ · cost $0.40 · win $0.60')
+    const line = ticketFillStrip(t!, { yesAsk: 40, noAsk: 50 }, { ask: 50, spent: 0.5, count: 1 })
+    expect(line).toBe('DOWN · 1 contract · 98¢ · cost $0.98 · win $0.02')
+  })
+
+  it('falls back to booked spend when the ticket has no ask', () => {
+    const t = makeTicket({
+      tape: 'gld',
+      ticker: 'KXGOLD15M-FILL',
+      side: 'up',
+      orderId: 'ord-gld-real-fill01',
+      contracts: 1,
+      beat: 2600,
+    })
+    const line = ticketFillStrip(t!, { yesAsk: 61, noAsk: 40 }, { ask: 40, spent: 0.4, count: 1 })
+    expect(line).toBe('UP · 1 contract · 40¢ · cost $0.40 · win $0.60')
   })
 })
 

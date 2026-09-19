@@ -872,7 +872,7 @@ export function fillAskCents(
   quote?: { yesAsk?: number; noAsk?: number } | null,
   booked?: { ask?: unknown } | null,
 ) {
-  for (const raw of [booked?.ask, ticket.ask, ticket.side === 'down' ? quote?.noAsk : quote?.yesAsk]) {
+  for (const raw of [ticket.ask, booked?.ask, ticket.side === 'down' ? quote?.noAsk : quote?.yesAsk]) {
     const n = Number(raw)
     if (Number.isFinite(n) && n > 0) return Math.round(n)
   }
@@ -888,7 +888,9 @@ export function ticketFillStrip(
   const count = Math.max(1, Math.round(ticket.contracts || booked?.count || 1))
   const ask = fillAskCents(ticket, quote, booked)
   const cost =
-    booked?.spent != null && Number.isFinite(booked.spent) ? Math.round(booked.spent * 100) / 100 : ticketCost(count, ask)
+    ticket.ask == null && booked?.spent != null && Number.isFinite(booked.spent)
+      ? Math.round(booked.spent * 100) / 100
+      : ticketCost(count, ask)
   const win = Math.round((count - cost) * 100) / 100
   const side = ticket.side === 'down' ? 'DOWN' : 'UP'
   const noun = count === 1 ? 'contract' : 'contracts'
