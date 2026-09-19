@@ -177,15 +177,13 @@ test('phone desk: four tapes, settings persist, live/bots off', async ({ page })
     return { display: s.display, cols: s.gridTemplateColumns, dir: s.flexDirection, wrap: s.flexWrap }
   })
   expect(boardCss.display).toBe('grid')
-  expect(boardCss.cols.split(' ').length).toBe(3)
+  expect(boardCss.cols.split(/\s+/).filter(Boolean).length).toBe(1)
   const pnlBox = await page.getByTestId('pnl').boundingBox()
   const ttlBox = await page.getByTestId('ttl').boundingBox()
   const cashBox = await page.getByTestId('kalshi-cash').boundingBox()
   expect(pnlBox && ttlBox && cashBox).toBeTruthy()
-  expect((ttlBox?.x ?? 0)).toBeGreaterThan((pnlBox?.x ?? 0) + (pnlBox?.width ?? 0) - 2)
-  expect((cashBox?.x ?? 0)).toBeGreaterThan((ttlBox?.x ?? 0) + (ttlBox?.width ?? 0) - 2)
-  expect(Math.abs((pnlBox?.y ?? 0) - (ttlBox?.y ?? 0))).toBeLessThan(8)
-  expect(Math.abs((ttlBox?.y ?? 0) - (cashBox?.y ?? 0))).toBeLessThan(8)
+  expect((ttlBox?.y ?? 0)).toBeGreaterThan((pnlBox?.y ?? 0) + (pnlBox?.height ?? 0) - 4)
+  expect((cashBox?.y ?? 0)).toBeGreaterThan((ttlBox?.y ?? 0) + (ttlBox?.height ?? 0) - 4)
   for (const id of ['pnl', 'ttl', 'kalshi-cash']) {
     const dir = await page.getByTestId(id).evaluate((el) => getComputedStyle(el).flexDirection)
     expect(dir).toBe('column')
@@ -1150,6 +1148,52 @@ test('phone 390: ticket line is contracts + ¢ + cost + win, not a 36-char uuid'
   }
   await expect(page.getByTestId('ticket-btc')).toContainText('DOWN · 1 contract · 98¢ · cost $0.98 · win $0.02')
   await expect(page.getByTestId('ticket-id-btc')).toHaveText(/LIVE|PAPER/)
+  await assertNoMasterLive(page)
+})
+
+test('phone 390: TO BEAT and NOW are not same-line; tape cards do not overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await waitHost(page)
+  const boardCss = await page.getByTestId('scoreboard').evaluate((el) => getComputedStyle(el).gridTemplateColumns)
+  expect(boardCss.split(/\s+/).filter(Boolean).length).toBe(1)
+  const pnlBox = await page.getByTestId('pnl').boundingBox()
+  const ttlBox = await page.getByTestId('ttl').boundingBox()
+  const cashBox = await page.getByTestId('kalshi-cash').boundingBox()
+  expect((ttlBox?.y ?? 0)).toBeGreaterThan((pnlBox?.y ?? 0) + (pnlBox?.height ?? 0) - 4)
+  expect((cashBox?.y ?? 0)).toBeGreaterThan((ttlBox?.y ?? 0) + (ttlBox?.height ?? 0) - 4)
+  for (const id of ['btc', 'ng', 'cu', 'gld'] as const) {
+    const tape = page.getByTestId(`tape-${id}`)
+    await expect(tape).toBeVisible()
+    const hit = await page.evaluate((tapeId) => {
+      const card = document.querySelector(`[data-testid="tape-${tapeId}"]`) as HTMLElement
+      const beat = document.querySelector(`[data-testid="beat-${tapeId}"]`) as HTMLElement
+      const nowEl = document.querySelector(`[data-testid="live-plate-${tapeId}"]`) as HTMLElement
+      const beatR = beat.getBoundingClientRect()
+      const nowR = nowEl.getBoundingClientRect()
+      const overlap = !(nowR.right <= beatR.left + 2 || nowR.left >= beatR.right - 2 || nowR.bottom <= beatR.top + 2 || nowR.top >= beatR.bottom - 2)
+      const sameLine = Math.abs(nowR.top - beatR.top) < 8 && nowR.left < beatR.right - 4 && beatR.left < nowR.right - 4
+      return {
+        overflow: card.scrollWidth - card.clientWidth,
+        nowBelow: nowR.top > beatR.bottom - 4,
+        nowClearRight: nowR.left > beatR.right - 2,
+        overlap,
+        sameLine,
+        clock: (document.querySelector(`[data-testid="close-clock-${tapeId}"]`) as HTMLElement | null)?.textContent || '',
+        kind: (document.querySelector(`[data-testid="close-clock-${tapeId}"]`) as HTMLElement | null)?.getAttribute('data-clock-kind') || '',
+      }
+    }, id)
+    expect(hit.sameLine).toBe(false)
+    expect(hit.overlap).toBe(false)
+    expect(hit.nowBelow || hit.nowClearRight).toBe(true)
+    expect(hit.overflow).toBeLessThanOrEqual(1)
+    expect(hit.clock).not.toMatch(/\d{3,}:/)
+    if (hit.kind === 'closed') expect(hit.clock).toMatch(/CLOSED/)
+    if (hit.kind === 'live') expect(hit.clock.trim()).toMatch(/^\d{1,2}:\d{2}$/)
+    await expect(page.getByTestId(`beat-label-${id}`)).toHaveText('TO BEAT')
+    await expect(page.getByTestId(`hours-${id}`)).toContainText(/Hours/)
+  }
+  await page.screenshot({ path: '/opt/cursor/artifacts/screenshots/phone-390-tape-stack.png', fullPage: false })
   await assertNoMasterLive(page)
 })
 

@@ -71,7 +71,7 @@ import {
   type TapeRecipe,
 } from '../lib/tapes'
 import { ticketCost } from '../lib/size-cash'
-import { tapeHoursLine } from '../lib/tape-hours'
+import { nextClockLabel, tapeHoursLine, tapeSessionHours } from '../lib/tape-hours'
 import type { DeskBoard, LivePrints, TapeQuote } from '../lib/types'
 import {
   betClockLabel,
@@ -1044,7 +1044,10 @@ function TapeRow({
   }
 
   const fillLine = ticket ? ticketFillStrip(ticket, shownQuote, booked) : ''
-  const hoursLine = tapeHoursLine(id, shownQuote, clock, Date.now(), liveOn && !stale)
+  const session = tapeSessionHours(id)
+  const tradingLive = Boolean(liveOn && !stale && session.open)
+  const hoursLine = tapeHoursLine(id, shownQuote, clock, Date.now(), tradingLive)
+  const nextOpenLabel = session.open ? nextClockLabel(Date.now(), clock, shownQuote) : session.nextOpenLabel
   const modeLabel = ticket ? (ticket.orderId.startsWith('deskfill') || booked?.kind === 'paper' ? 'PAPER' : 'LIVE') : 'PAPER'
 
   return (
@@ -1079,7 +1082,12 @@ function TapeRow({
           </div>
         </div>
         <div className="tape-head-tools">
-          <CloseClock closeAt={shownQuote?.closeAt} />
+          <CloseClock
+            tape={id}
+            closeAt={shownQuote?.closeAt}
+            live={tradingLive}
+            nextOpenLabel={nextOpenLabel}
+          />
           <p className={`tape-status status-${status.toLowerCase()}`} data-testid={`status-${id}`}>
             {status}
           </p>
