@@ -227,6 +227,7 @@ export function Dashboard({ seedBoard }: { seedBoard: DeskBoard | null }) {
     }
     setHostDeskWriter(writeHost)
     const markReady = () => setHostReady(true)
+    markReady()
     const readyTimer = window.setTimeout(markReady, 4000)
     const flushHost = async () => {
       setHostDeskWriter(writeHost)

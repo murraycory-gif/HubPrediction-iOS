@@ -14,13 +14,18 @@ export const Route = createFileRoute('/')({
   component: Home,
 })
 
+let deskClient = false
+
 function Home() {
   const seed = Route.useLoaderData()
-  const [mounted, setMounted] = useState(false)
+  const [, bump] = useState(0)
   useLayoutEffect(() => {
-    setMounted(true)
+    if (!deskClient) {
+      deskClient = true
+      bump(1)
+    }
   }, [])
-  if (!mounted) {
+  if (!deskClient) {
     return (
       <div className="desk" data-testid="desk">
         <header className="desk-head" data-testid="desk-head" data-host-ready="0">
