@@ -91,7 +91,7 @@ describe('analyst Soft KEEP gold factory + auto recipe', () => {
     expect(report.tapes.find((t) => t.id === 'btc')?.hug).toBe('hug')
     expect(report.tapes.find((t) => t.id === 'gld')?.hug).toBe('hug')
     expect(report.tapes.find((t) => t.id === 'btc')?.proposed).toMatch(/BTC 8–3 \/ \$40/)
-    expect(report.tapes.find((t) => t.id === 'btc')?.proposed).toMatch(/83%/)
+    expect(report.tapes.find((t) => t.id === 'btc')?.proposed).toMatch(/80%/)
     expect(report.tapes.find((t) => t.id === 'gld')?.proposed).toMatch(/GLD 10–3 \/ \$2/)
     expect(report.tapes.find((t) => t.id === 'btc')?.w).toBe(20)
     expect(report.tapes.find((t) => t.id === 'btc')?.l).toBe(9)
@@ -234,7 +234,7 @@ describe('analyst 24h / 48h path and bets vs recipe', () => {
     )
     const sit = cold.tapes.find((t) => t.id === 'btc')
     expect(sit?.changed).toBe(false)
-    expect(sit?.proposed).toMatch(/83%/)
+    expect(sit?.proposed).toMatch(/80%/)
   })
 })
 
@@ -245,7 +245,7 @@ describe('analyst current rules + profit dollars', () => {
     expect(rules.through).toMatch(/\$40/)
     expect(rules.cents).toMatch(/69–89/)
     expect(rules.size).toMatch(/Live cash OFF/)
-    expect(expectedTakeDollars(72, 1, 83)).toBeCloseTo(0.11)
+    expect(expectedTakeDollars(72, 1, 80)).toBeCloseTo(0.08)
     expect(expectedTakeDollars(72, 1, 50)).toBeCloseTo(-0.22)
   })
 
@@ -253,7 +253,7 @@ describe('analyst current rules + profit dollars', () => {
     const quiet = analyzeDesk(board(), emptyHits())
     const btc = quiet.tapes.find((t) => t.id === 'btc')!
     const keep = profitImpact(btc, 72)
-    expect(keep.headline).toMatch(/\$0\.11/)
+    expect(keep.headline).toMatch(/\$0\.08/)
     expect(keep.detail).toMatch(/grows dollars/)
     expect(keep.detail).toMatch(/Live/)
 
@@ -273,7 +273,7 @@ describe('analyst current rules + profit dollars', () => {
   })
 })
 
-describe('analyst auto 83% + 3-loss paper rehab', () => {
+describe('analyst auto 80% + 3-loss paper rehab', () => {
   function settled(
     tape: 'btc' | 'ng' | 'cu' | 'gld',
     pnl: number,
@@ -306,7 +306,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     expect(consecutiveLosses([settled('btc', -1, now), settled('btc', 1, now - 1)], 'btc')).toBe(1)
   })
 
-  it('proposes an 83% retune and does not auto-apply into Live recipes', () => {
+  it('proposes an 80% retune and does not auto-apply into Live recipes', () => {
     const now = Date.now()
     const bets = [
       { tape: 'btc' as const, side: 'up' as const, ask: 72, pnl: 0.28, status: 'settled' as const, filledAt: now - 1000, settledAt: now - 500, closeAt: now + 4 * 60_000, betId: 'a' },
@@ -372,7 +372,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     expect(chasing.ok).toBe(false)
   })
 
-  it('halts live cash after 3 losses, papers 12, then restores at 83%', () => {
+  it('halts live cash after 3 losses, papers 12, then restores at 80%', () => {
     const now = 5_000_000
     const losses = [0, 1, 2].map((i) => settled('btc', -1, now - i * 1000, { kind: 'live' }))
     const armed = hydrateSettings({
@@ -392,7 +392,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
       settled('btc', i < 10 ? 0.2 : -0.7, now + 10_000 + i * 1000, { kind: 'paper', betId: `paper_${i}` }),
     )
     expect(paperRehabStats(paper, 'btc', now).n).toBe(12)
-    expect(paperRehabStats(paper, 'btc', now).pct).toBeGreaterThanOrEqual(83)
+    expect(paperRehabStats(paper, 'btc', now).pct).toBeGreaterThanOrEqual(80)
     const done = runAutoAnalyst({
       settings: halted.settings,
       report: analyzeDesk(board(), emptyHits(), [...losses, ...paper], halted.settings.tapes),
@@ -406,7 +406,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     expect(done.settings).not.toHaveProperty('liveBets')
   })
 
-  it('does not restore live cash when the 12 paper runs miss 83%', () => {
+  it('does not restore live cash when the 12 paper runs miss 80%', () => {
     const now = 6_000_000
     const losses = [0, 1, 2].map((i) => settled('ng', -1, now - i * 1000))
     const armed = hydrateSettings({
@@ -422,7 +422,7 @@ describe('analyst auto 83% + 3-loss paper rehab', () => {
     const paper = Array.from({ length: 12 }, (_, i) =>
       settled('ng', i < 8 ? 0.2 : -0.4, now + 10_000 + i * 1000, { kind: 'paper', betId: `ngp_${i}` }),
     )
-    expect(paperRehabStats(paper, 'ng', now).pct).toBeLessThan(83)
+    expect(paperRehabStats(paper, 'ng', now).pct).toBeLessThan(80)
     const stay = runAutoAnalyst({
       settings: halted.settings,
       report: analyzeDesk(board(), emptyHits(), [...losses, ...paper], halted.settings.tapes),

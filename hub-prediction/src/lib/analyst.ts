@@ -524,7 +524,7 @@ export function typicalAskCents(recipe: TapeRecipe) {
   return Math.round((recipe.centLo + recipe.centHi) / 2)
 }
 
-/** Expected $ per take at a win-ratio. 72¢ / 83% ≈ +$0.11. */
+/** Expected $ per take at a win-ratio. 72¢ / 80% ≈ +$0.08. */
 export function expectedTakeDollars(askCents: number, contracts: number, winPct = HIT_FLOOR) {
   const ask = Math.max(1, Math.min(99, askCents)) / 100
   const n = Math.max(1, contracts)

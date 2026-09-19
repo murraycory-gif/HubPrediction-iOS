@@ -67,7 +67,7 @@ export const ASK_CAP = 80
 export const PAPER_HOURS = 48
 export const DAILY_PNL_FLOOR_PAPER = -50
 export const CLOCK_MAX_SPEND = 25
-export const HIT_FLOOR = 83
+export const HIT_FLOOR = 80
 
 export type BetKind = 'live' | 'paper' | 'hist'
 
@@ -588,7 +588,7 @@ export function tapeBotNote(opts: {
   return 'Live cash ON — next through posts to Kalshi'
 }
 
-/** Sit when the tape is under the 83% goal after enough settled results. */
+/** Sit when the tape is under the 80% goal after enough settled results. */
 export function hitFloorGate(w: number, l: number): Gate {
   const n = Math.max(0, Math.round(w) + Math.round(l))
   if (n < 4) return { ok: true }

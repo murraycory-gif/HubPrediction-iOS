@@ -1,4 +1,5 @@
 import { formatWindowRange } from './chicago-time'
+import { HIT_FLOOR } from './finance'
 import { slopeFromPoints } from './forecast'
 import { GOLD_RECIPES, formatLive, remainingMinutes, TAPE_META, type TapeId, type TapeRecipe } from './tapes'
 import type { PathWindow, TapePathStats } from './analyst'
@@ -166,7 +167,7 @@ export function forecastSwing(opts: {
       risk: 'quiet',
       atClose,
       vsBeat,
-      good: `Forecast hug at close (${px} inside through). Sitting protects the 83% goal.`,
+      good: `Forecast hug at close (${px} inside through). Sitting protects the ${HIT_FLOOR}% goal.`,
       bad: `A late spike through ${formatLive(opts.id, thru)} flips the clock. Watch last 90s.`,
     }
   }

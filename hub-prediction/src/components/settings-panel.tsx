@@ -1,3 +1,4 @@
+import { HIT_FLOOR } from '../lib/finance'
 import type { DeskSettings, TapeId, TapeRecipe } from '../lib/tapes'
 import { TAPE_IDS, TAPE_META } from '../lib/tapes'
 
@@ -13,7 +14,7 @@ export function SettingsPanel(props: {
       <p className="hud-label">Settings · same desk on phone</p>
       <p className="settings-note">
         Bot, live cash, and contracts sit on each tape card. Factory gold is the default. Analyst auto-updates
-        each tape toward 83%. Three losses in a row halt that desk’s live cash and paper-test 12 runs. For a
+        each tape toward {HIT_FLOOR}%. Three losses in a row halt that desk’s live cash and paper-test 12 runs. For a
         manual paper test: Bot ON, Live cash OFF. Live cash ON + Bot ON + host keys posts to Kalshi. Soft
         FAIL paste PEM. Soft FAIL Live POST without Bot + Live cash + keys. Soft FAIL flipping Live cash from
         Analyst.

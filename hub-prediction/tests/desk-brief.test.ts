@@ -115,7 +115,7 @@ describe('forecastSwing good / bad', () => {
     expect(swing.side).toBe('sit')
     expect(swing.risk).toBe('quiet')
     expect(swing.good).toMatch(/hug/)
-    expect(swing.good).toMatch(/83%/)
+    expect(swing.good).toMatch(/80%/)
     expect(swing.bad).toMatch(/late spike/)
   })
 
