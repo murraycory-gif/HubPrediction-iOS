@@ -446,6 +446,15 @@ test('NG/CU/GLD paper tickets fire in bets strip when rules fire', async ({ page
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await waitHost(page)
+  await page.waitForTimeout(1200)
+  if (await page.getByTestId('live-cash-btc').isEnabled()) await setToggle(page, 'live-cash-btc', false)
+  for (const id of ['ng', 'cu', 'gld'] as const) {
+    await setToggle(page, `bot-${id}`, true)
+    if (await page.getByTestId(`live-cash-${id}`).isEnabled()) await setToggle(page, `live-cash-${id}`, false)
+  }
+  await expect(page.getByTestId('live-cash-ng')).not.toBeChecked()
+  await expect(page.getByTestId('live-cash-cu')).not.toBeChecked()
+  await expect(page.getByTestId('live-cash-gld')).not.toBeChecked()
   const closeAt = Date.now() + 5 * 60_000
   await page.evaluate(({ at }) => {
     const w = window as Window & {
